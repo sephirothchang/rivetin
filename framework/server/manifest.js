@@ -38,7 +38,7 @@ export function validateManifest(value) {
     !languageText(value.name) || !languageText(value.description) || !text(value.author, 120) || value.license !== 'MIT' ||
     !object(value.compatibility) || value.compatibility.frameworkApi !== 1 || !text(value.compatibility.tower, 120) ||
     !object(value.frontend) || value.frontend.format !== 'pluginkit-global-v1' || !safePath(value.frontend.entry) || !value.frontend.entry.endsWith('.js') ||
-    !Array.isArray(value.permissions) || value.permissions.length > 20 || value.permissions.some(permission => !['inventory.read', 'host.ipmi.enhance', 'bmc.session.launch'].includes(permission)) ||
+    !Array.isArray(value.permissions) || value.permissions.length > 20 || value.permissions.some(permission => !['inventory.read', 'host.ipmi.enhance', 'bmc.session.launch', 'ui.context-menu'].includes(permission)) ||
     !Array.isArray(value.locales) || !['zh-CN', 'en-US'].every(locale => value.locales.includes(locale)) ||
     !object(value.configuration) || !Number.isSafeInteger(value.configuration.version) || value.configuration.version < 1 ||
     !object(value.lifecycle) || value.lifecycle.reset !== 'defaults' || value.lifecycle.uninstall !== 'retain-config') throw new Error('INVALID_MANIFEST');

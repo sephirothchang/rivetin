@@ -25,6 +25,14 @@ test('permanent Tower region uses an unversioned registry key; release version r
   assert.equal(manifest.data[0].region, 'PERMANENT_CLUSTER_MANAGER_MODAL');
 });
 
+test('context menu metadata is supported without permitting backend execution capabilities', () => {
+  const pkg = JSON.parse(bundle());
+  pkg.manifest.permissions = ['ui.context-menu'];
+  assert.deepEqual(validateManifest(pkg.manifest).permissions, ['ui.context-menu']);
+  pkg.manifest.permissions = ['ui.context-menu', 'root.exec'];
+  assert.throws(() => validateManifest(pkg.manifest), /INVALID_MANIFEST/);
+});
+
 test('CLI bootstrap is persistent, disabled by default and idempotent', async t => {
   const { service, directory } = await fixture(t);
   assert.equal((await service.runtime()).enabled, false);
