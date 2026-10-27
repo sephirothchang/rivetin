@@ -12,7 +12,9 @@ async function visit(name) {
     try { license = await readFile(path.join(path.dirname(file), candidate), 'utf8'); break; } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   if (!license) throw new Error(`License missing: ${name}`);
-  seen.set(name, { name, version: pkg.version, license: pkg.license, text: license.trim() });
+  const licenseId = typeof pkg.license === 'string' ? pkg.license : pkg.license?.type || pkg.licenses?.map(item => item.type).filter(Boolean).join(' AND ');
+  if (!licenseId) throw new Error(`License identifier missing: ${name}`);
+  seen.set(name, { name, version: pkg.version, license: licenseId, text: license.trim() });
   for (const dependency of Object.keys(pkg.dependencies || {})) await visit(dependency);
 }
 for (const name of Object.keys(JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8')).dependencies)) await visit(name);

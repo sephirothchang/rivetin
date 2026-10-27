@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 import { validId } from './storage.js';
+import { validateSshRegistration } from './ssh-policy.js';
+import { validateCompatibility } from './compatibility.js';
 
 export const FRAMEWORK_VERSION = '0.1.0';
 export const MAX_PACKAGE_BYTES = 16 * 1024 * 1024;
@@ -37,15 +39,20 @@ export function validateManifest(value) {
   if (!object(value) || value.manifestVersion !== 1 || !validId(value.id) || !semver.test(value.version) ||
     !languageText(value.name) || !languageText(value.description) || !text(value.author, 120) || value.license !== 'MIT' ||
     !object(value.compatibility) || value.compatibility.frameworkApi !== 1 || !text(value.compatibility.tower, 120) ||
-    !object(value.frontend) || value.frontend.format !== 'pluginkit-global-v1' || !safePath(value.frontend.entry) || !value.frontend.entry.endsWith('.js') ||
-    !Array.isArray(value.permissions) || value.permissions.length > 20 || value.permissions.some(permission => !['inventory.read', 'host.ipmi.enhance', 'bmc.session.launch', 'ui.context-menu'].includes(permission)) ||
+    !object(value.frontend) || value.frontend.format !== 'rivetin-global-v1' || !safePath(value.frontend.entry) || !value.frontend.entry.endsWith('.js') ||
+    !Array.isArray(value.permissions) || value.permissions.length > 20 || value.permissions.some(permission => !['inventory.read', 'host.ipmi.enhance', 'bmc.session.launch', 'ui.context-menu', 'ssh.channel.use', 'disk.smart.read', 'resource.actions'].includes(permission)) ||
     !Array.isArray(value.locales) || !['zh-CN', 'en-US'].every(locale => value.locales.includes(locale)) ||
     !object(value.configuration) || !Number.isSafeInteger(value.configuration.version) || value.configuration.version < 1 ||
     !object(value.lifecycle) || value.lifecycle.reset !== 'defaults' || value.lifecycle.uninstall !== 'retain-config') throw new Error('INVALID_MANIFEST');
+  try { validateCompatibility(value.compatibility); } catch { throw new Error('INVALID_MANIFEST'); }
   validateSettings(value.configuration.defaults, value.configuration.schema);
+  if (value.ssh !== undefined) {
+    if (!value.permissions.includes('ssh.channel.use')) throw new Error('SSH_PERMISSION_REQUIRED');
+    validateSshRegistration(value.ssh);
+  }
   if (JSON.stringify(value).length > 100000) throw new Error('INVALID_MANIFEST');
   // Metadata is data only. Hooks, arbitrary server entry points and package scripts are not accepted.
-  const allowed = new Set(['manifestVersion', 'id', 'version', 'name', 'description', 'author', 'license', 'homepage', 'repository', 'compatibility', 'frontend', 'permissions', 'locales', 'configuration', 'lifecycle', 'releaseNotes']);
+  const allowed = new Set(['manifestVersion', 'id', 'version', 'name', 'description', 'author', 'license', 'homepage', 'repository', 'compatibility', 'frontend', 'permissions', 'locales', 'configuration', 'lifecycle', 'releaseNotes', 'ssh']);
   if (Object.keys(value).some(key => !allowed.has(key))) throw new Error('INVALID_MANIFEST');
   for (const key of ['homepage', 'repository']) if (value[key] && (!text(value[key], 500) || !/^https:\/\//.test(value[key]))) throw new Error('INVALID_MANIFEST');
   return structuredClone(value);
@@ -54,7 +61,7 @@ export function validatePackage(input) {
   const bytes = Buffer.isBuffer(input) ? input : Buffer.from(input);
   if (bytes.length > MAX_PACKAGE_BYTES) throw new Error('PACKAGE_TOO_LARGE');
   let pkg; try { pkg = JSON.parse(bytes); } catch { throw new Error('INVALID_PACKAGE'); }
-  if (!object(pkg) || pkg.format !== 'pluginkit-package-v1' || !Array.isArray(pkg.files) || !pkg.files.length || pkg.files.length > 100 || Object.keys(pkg).some(key => !['format', 'manifest', 'files'].includes(key))) throw new Error('INVALID_PACKAGE');
+  if (!object(pkg) || pkg.format !== 'rivetin-package-v1' || !Array.isArray(pkg.files) || !pkg.files.length || pkg.files.length > 100 || Object.keys(pkg).some(key => !['format', 'manifest', 'files'].includes(key))) throw new Error('INVALID_PACKAGE');
   const manifest = validateManifest(pkg.manifest), files = [], names = new Set(); let total = 0;
   for (const file of pkg.files) {
     if (!object(file) || Object.keys(file).sort().join() !== 'data,path,sha256' || !safePath(file.path) || !/^(web\/.*\.(js|css|json)|LICENSE)$/.test(file.path) ||

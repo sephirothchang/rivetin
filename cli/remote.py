@@ -2,7 +2,6 @@
 No client programs are launched. All subprocesses use fixed argv, bounded timeouts.
 """
 import base64
-import copy
 from contextlib import contextmanager
 import hashlib
 import io
@@ -19,29 +18,17 @@ import time
 import uuid
 from urllib.parse import urlsplit
 
-BASE = Path('/var/cache/appcache/pluginkit')
+BASE = Path('/var/cache/appcache/rivetin')
 NS = 'cloudtower-system'
-OWNER = 'pluginkit-cli-v1'
+OWNER = 'rivetin-cli-v1'
+RESOURCE_NAME = 'rivetin'
+API_PREFIXES = ['/api/rivetin/']
 KINDS = ['deployment', 'service', 'ingress']
 IMAGE = 'registry.smtx.io/cloudtower/tower:v4.9.0-rc-20260517114030'
 # The client owns a shared five-minute verification budget. Leave at least
 # thirty seconds after a successful Pod rollout for init and ingress readback.
 APPLY_ROLLOUT_SECONDS = 270
 APPLY_ROLLOUT_PROCESS_SECONDS = 280
-# Exact server-side bytes from the legacy 0.1.0 manual deployment (617cdb0).
-LEGACY_SOURCE_SHA256 = {
-    'cli.mjs': 'c0395b21b85da6c7129cd46eaeabc72640539711973c7e755448690af2d0807e',
-    'LICENSE': '684bcbdab63a2fef35293d3a36b13e01a755dff694c18f0aa8367710c36e4d22',
-    'package.json': 'e03391fb8e23438a8777fa6cb06352af6dd6e9cfc444e12f69ae1b210b17afd0',
-    'server/audit.js': '4ea0bc1c8b9a4930e00488bed819e9e425df03ee463c13b8d6d93b5835e765e3',
-    'server/http.js': 'a88db88dd1d4c6d3f6ccbc2c4519cd8583608fad29d0c3e229f368c71a606104',
-    'server/main.js': '0f7525dfd4056d2dd3be4e79c76f0e549c65f0f7fa2b847236bdc932bd4cad4a',
-    'server/manifest.js': '5c80fe86f51573a2308be89d0099e31cce7b63b9eac9102c5a4d1d1738184b62',
-    'server/options.js': 'cc7a6d7ac9b29d4bf8cb5fab5037332af5a29bddc0904fdfb521363f1b48ae76',
-    'server/service.js': '70ccef789f77f3cf49c66c697839f5a53392047a4c5fb2ee2df33303ade35adb',
-    'server/storage.js': 'b5a485d48f638dbeb32a5f90a24d998d004cb7a1f4f18ca7578ea24d35046fc3',
-    'server/tower.js': 'c80a365f62808346f1adebfd27d8c33f285eb4299a3022ef0072e7ad9359447a',
-}
 
 def fail(code):
     raise RuntimeError(code)
@@ -60,16 +47,16 @@ def kube(*args, **kw):
 def resources():
     result = []
     for kind in KINDS:
-        raw = kube('get', kind, 'pluginkit', '--ignore-not-found', '-o', 'json')
+        raw = kube('get', kind, 'rivetin', '--ignore-not-found', '-o', 'json')
         if raw.strip():
             result.append(json.loads(raw))
     return result
 
 def owned(items):
     kinds = {'Deployment', 'Service', 'Ingress'}
-    return all(x.get('kind') in kinds and x.get('metadata', {}).get('name') == 'pluginkit' and
+    return all(x.get('kind') in kinds and x.get('metadata', {}).get('name') == 'rivetin' and
                x.get('metadata', {}).get('namespace') == NS and
-               x.get('metadata', {}).get('annotations', {}).get('pluginkit/managed-by') == OWNER for x in items)
+               x.get('metadata', {}).get('annotations', {}).get('rivetin/managed-by') == OWNER for x in items)
 
 def owner_marker():
     file = BASE / 'installer-owner'
@@ -141,7 +128,13 @@ def disable():
     directory.mkdir(parents=True, exist_ok=True)
     os.chown(str(BASE / 'data'), 1000, 1000)
     os.chown(str(directory), 1000, 1000)
-    atomic(directory / 'disabled.json', dict(disabledAt=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), actor='pluginkit-cli'), True)
+    atomic(directory / 'disabled.json', dict(disabledAt=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), actor='rivetin-cli'), True)
+    # Independent of Kubernetes and the plugin lifecycle lock. API resume also
+    # rotates this epoch, so a very fast disable/resume cannot revive approvals.
+    try:
+        atomic(directory / 'ssh-revocation.json', dict(nonce=uuid.uuid4().hex), True)
+    except Exception:
+        pass  # The emergency disabled marker already committed; never undo it.
 
 def record_audit(action, result='success'):
     """Best-effort safe metadata only. An unavailable audit must never block rescue."""
@@ -154,7 +147,7 @@ def record_audit(action, result='success'):
         if file.parent.resolve() != file.parent or file.is_symlink() or file.resolve() != file:
             return False
         event = dict(id=str(uuid.uuid4()), time=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-            actor=dict(id='pluginkit-cli', name='PluginKit CLI', source='cli'), action=action,
+            actor=dict(id='rivetin-cli', name='Rivetin CLI', source='cli'), action=action,
             pluginId=None, result=result, code=None)
         data = (json.dumps(event, separators=(',', ':')) + '\n').encode('utf-8')
         if len(data) >= 2048:
@@ -221,7 +214,7 @@ def snapshot_locks():
                         time.sleep(0.02)
                 files.append((lock, fd))
                 os.chown(str(lock), 1000, 1000)
-                os.write(fd, json.dumps(dict(pid=os.getpid(), source='pluginkit-cli')).encode())
+                os.write(fd, json.dumps(dict(pid=os.getpid(), source='rivetin-cli')).encode())
                 os.fsync(fd)
         yield
     finally:
@@ -239,7 +232,7 @@ def transaction(op):
     return BASE / 'backups' / op
 
 def extract_release(data, target):
-    allowed = {'cli.mjs', 'package.json', 'LICENSE'}
+    allowed = {'cli.mjs', 'package.json', 'LICENSE', 'THIRD_PARTY_NOTICES.txt'}
     contents = {}
     if len(data) > 8 * 1024 * 1024:
         fail('SERVICE_ARCHIVE_LIMIT')
@@ -255,10 +248,10 @@ def extract_release(data, target):
             if not name or name.startswith('/') or '..' in name.split('/') or '\\' in name or m.issym() or m.islnk():
                 fail('SERVICE_ARCHIVE_INVALID')
             if m.isdir():
-                if name not in ['server', 'deploy']:
+                if name not in ['server', 'deploy', 'server/vendor', 'server/builtins', 'shared']:
                     fail('SERVICE_ARCHIVE_INVALID')
                 continue
-            if not m.isfile() or not (name in allowed or re.fullmatch(r'(server/[a-z-]+\.js|deploy/[a-z.-]+)', name)):
+            if not m.isfile() or not (name in allowed or name in ['shared/identity.js', 'server/vendor/ssh2.cjs', 'server/builtins/rivetin-ssh-channel.json'] or re.fullmatch(r'(server/[a-z-]+\.js|deploy/[a-z.-]+)', name)):
                 fail('SERVICE_ARCHIVE_INVALID')
             if name in contents:
                 fail('SERVICE_ARCHIVE_INVALID')
@@ -340,7 +333,7 @@ def validate_manifest(manifest, checksum):
             fail('MANIFEST_INVALID')
         if set(item) != {'apiVersion', 'kind', 'metadata', 'spec'} or set(item['metadata']) != {'name', 'namespace', 'annotations'}:
             fail('MANIFEST_INVALID')
-        annotations = {'pluginkit/managed-by': OWNER}
+        annotations = {'rivetin/managed-by': OWNER}
         if item['kind'] == 'Ingress':
             annotations.update({'kubernetes.io/ingress.class': 'nginx',
                 'nginx.ingress.kubernetes.io/proxy-body-size': '16m',
@@ -352,10 +345,10 @@ def validate_manifest(manifest, checksum):
     spec = deployment.get('spec', {})
     template = spec.get('template', {})
     pod = template.get('spec', {})
-    labels = {'app': 'pluginkit'}
+    labels = {'app': 'rivetin'}
     if spec.get('replicas') != 1 or spec.get('strategy') != {'type': 'Recreate'} or spec.get('selector') != {'matchLabels': labels} or template.get('metadata', {}).get('labels') != labels:
         fail('MANIFEST_INVALID')
-    if template.get('metadata') != {'labels': labels, 'annotations': {'pluginkit/code-sha256': checksum}}:
+    if template.get('metadata') != {'labels': labels, 'annotations': {'rivetin/code-sha256': checksum}}:
         fail('MANIFEST_INVALID')
     if set(pod) != {'automountServiceAccountToken', 'enableServiceLinks', 'containers', 'volumes'} or pod.get('automountServiceAccountToken') is not False or pod.get('enableServiceLinks') is not False:
         fail('MANIFEST_INVALID')
@@ -365,7 +358,7 @@ def validate_manifest(manifest, checksum):
     container = containers[0]
     if set(container) != {'name', 'image', 'imagePullPolicy', 'workingDir', 'command', 'env', 'ports', 'resources', 'securityContext', 'readinessProbe', 'livenessProbe', 'volumeMounts'}:
         fail('MANIFEST_INVALID')
-    if container.get('name') != 'pluginkit' or container.get('image') != IMAGE or container.get('imagePullPolicy') != 'IfNotPresent' or container.get('workingDir') != '/opt/pluginkit' or container.get('command') != ['node', 'server/main.js']:
+    if container.get('name') != 'rivetin' or container.get('image') != IMAGE or container.get('imagePullPolicy') != 'IfNotPresent' or container.get('workingDir') != '/opt/rivetin' or container.get('command') != ['node', 'server/main.js']:
         fail('MANIFEST_INVALID')
     security = {'runAsUser': 1000, 'runAsGroup': 1000, 'allowPrivilegeEscalation': False,
                 'readOnlyRootFilesystem': True, 'capabilities': {'drop': ['ALL']}}
@@ -375,16 +368,19 @@ def validate_manifest(manifest, checksum):
         {'name': 'code', 'hostPath': {'path': str(BASE / 'releases' / checksum), 'type': 'Directory'}},
         {'name': 'data', 'hostPath': {'path': str(BASE / 'data'), 'type': 'Directory'}}]
     if pod.get('volumes') != expected_volumes or container.get('volumeMounts') != [
-            {'name': 'code', 'mountPath': '/opt/pluginkit', 'readOnly': True},
-            {'name': 'data', 'mountPath': '/var/lib/pluginkit'}]:
+            {'name': 'code', 'mountPath': '/opt/rivetin', 'readOnly': True},
+            {'name': 'data', 'mountPath': '/var/lib/rivetin'}]:
         fail('MANIFEST_INVALID')
     environment = container.get('env', [])
     if len(environment) != 3 or any(set(item) != {'name', 'value'} for item in environment):
         fail('MANIFEST_INVALID')
     values = {item['name']: item['value'] for item in environment}
-    if set(values) != {'PLUGINKIT_DATA', 'PLUGINKIT_TOWER_URL', 'PLUGINKIT_ORIGINS'} or values['PLUGINKIT_DATA'] != '/var/lib/pluginkit' or values['PLUGINKIT_TOWER_URL'] != 'http://cloudtower-cloudtower.cloudtower-system.svc.cluster.local':
+    if set(values) != {'RIVETIN_' + key for key in ['DATA', 'TOWER_URL', 'ORIGINS']}:
         fail('MANIFEST_INVALID')
-    origin = urlsplit(values['PLUGINKIT_ORIGINS'])
+    values = {key: values['RIVETIN_' + key] for key in ['DATA', 'TOWER_URL', 'ORIGINS']}
+    if values['DATA'] != '/var/lib/rivetin' or values['TOWER_URL'] != 'http://cloudtower-cloudtower.cloudtower-system.svc.cluster.local':
+        fail('MANIFEST_INVALID')
+    origin = urlsplit(values['ORIGINS'])
     if origin.scheme != 'https' or not origin.hostname or origin.username or origin.password or origin.path or origin.query or origin.fragment:
         fail('MANIFEST_INVALID')
     expected_probe = {'httpGet': {'path': '/healthz', 'port': 8787}}
@@ -397,234 +393,11 @@ def validate_manifest(manifest, checksum):
     if service.get('spec') != {'selector': labels, 'ports': [{'port': 8787, 'targetPort': 8787}]}:
         fail('MANIFEST_INVALID')
     ingress = next(item for item in items if item['kind'] == 'Ingress')
-    if ingress.get('spec') != {'rules': [{'http': {'paths': [{'path': '/api/pluginkit/', 'pathType': 'Prefix',
-            'backend': {'service': {'name': 'pluginkit', 'port': {'number': 8787}}}}]}}], 'tls': [{'secretName': 'cloudtower-tls'}]}:
+    def ingress_spec(paths):
+        return {'rules': [{'http': {'paths': [{'path': prefix, 'pathType': 'Prefix',
+            'backend': {'service': {'name': RESOURCE_NAME, 'port': {'number': 8787}}}} for prefix in paths]}}], 'tls': [{'secretName': 'cloudtower-tls'}]}
+    if ingress.get('spec') != ingress_spec(API_PREFIXES):
         fail('MANIFEST_INVALID')
-
-def validate_island_backup(raw):
-    if not raw or len(raw) > 16 * 1024 * 1024:
-        fail('MIGRATION_ISLAND_INVALID')
-    manifest = None
-    total = 0
-    with tarfile.open(fileobj=io.BytesIO(raw), mode='r:gz') as archive:
-        for index, item in enumerate(archive):
-            total += item.size
-            if index >= 20 or item.size < 0 or total > 20 * 1024 * 1024 or not item.isfile():
-                fail('MIGRATION_ISLAND_INVALID')
-            name = item.name[2:] if item.name.startswith('./') else item.name
-            if name not in ['sea-map.json', 'build.tar.gz']:
-                fail('MIGRATION_ISLAND_INVALID')
-            if name == 'sea-map.json':
-                if manifest is not None or item.size > 65536:
-                    fail('MIGRATION_ISLAND_INVALID')
-                manifest = json.load(archive.extractfile(item))
-    if not isinstance(manifest, dict) or manifest.get('name') != 'pluginkit' or manifest.get('metadata', {}).get('version') is not None:
-        fail('MIGRATION_ISLAND_INVALID')
-    mounts = manifest.get('data')
-    if not isinstance(mounts, list) or len(mounts) != 1 or mounts[0].get('region') != 'PERMANENT_CLUSTER_MANAGER_MODAL' or mounts[0].get('island') != './PluginKit':
-        fail('MIGRATION_ISLAND_INVALID')
-
-def strip_default(value, name, expected):
-    if name in value:
-        if value[name] != expected:
-            fail('LEGACY_RESOURCE_MISMATCH')
-        del value[name]
-
-def legacy_resource_projection(item):
-    spec = copy.deepcopy(item['spec'])
-    if item['kind'] == 'Deployment':
-        strip_default(spec, 'progressDeadlineSeconds', 600)
-        strip_default(spec, 'revisionHistoryLimit', 10)
-        if set(spec) != {'replicas', 'strategy', 'selector', 'template'}:
-            fail('LEGACY_RESOURCE_MISMATCH')
-        template = spec['template']
-        strip_default(template['metadata'], 'creationTimestamp', None)
-        pod = template['spec']
-        for key, value in [('dnsPolicy', 'ClusterFirst'), ('restartPolicy', 'Always'),
-                           ('schedulerName', 'default-scheduler'), ('securityContext', {}),
-                           ('terminationGracePeriodSeconds', 30)]:
-            strip_default(pod, key, value)
-        for container in pod['containers']:
-            strip_default(container, 'terminationMessagePath', '/dev/termination-log')
-            strip_default(container, 'terminationMessagePolicy', 'File')
-            for port in container.get('ports', []):
-                strip_default(port, 'protocol', 'TCP')
-            for key in ['readinessProbe', 'livenessProbe']:
-                probe = container[key]
-                for name, value in [('failureThreshold', 3), ('periodSeconds', 10), ('successThreshold', 1), ('timeoutSeconds', 1)]:
-                    strip_default(probe, name, value)
-                strip_default(probe['httpGet'], 'scheme', 'HTTP')
-    elif item['kind'] == 'Service':
-        strip_default(spec, 'sessionAffinity', 'None')
-        strip_default(spec, 'type', 'ClusterIP')
-        cluster_ip = spec.pop('clusterIP', None)
-        if cluster_ip is not None:
-            import ipaddress
-            ipaddress.ip_address(cluster_ip)
-        strip_default(spec, 'clusterIPs', [cluster_ip])
-        for port in spec['ports']:
-            strip_default(port, 'protocol', 'TCP')
-    return spec
-
-def validate_legacy_resources(items, origin):
-    if len(items) != 3 or sorted(x.get('kind', '') for x in items) != ['Deployment', 'Ingress', 'Service']:
-        fail('LEGACY_RESOURCE_MISMATCH')
-    declared = []
-    for item in items:
-        metadata = item.get('metadata', {})
-        if metadata.get('name') != 'pluginkit' or metadata.get('namespace') != NS or not re.fullmatch('[a-zA-Z0-9-]{1,128}', metadata.get('uid', '')) or not re.fullmatch('[0-9]{1,40}', metadata.get('resourceVersion', '')):
-            fail('LEGACY_RESOURCE_MISMATCH')
-        annotations = metadata.get('annotations', {})
-        allowed = {'kubectl.kubernetes.io/last-applied-configuration'}
-        if item['kind'] == 'Deployment':
-            allowed.add('deployment.kubernetes.io/revision')
-        if item['kind'] == 'Ingress':
-            allowed.update({'kubernetes.io/ingress.class', 'nginx.ingress.kubernetes.io/proxy-body-size',
-                'nginx.ingress.kubernetes.io/proxy-read-timeout', 'nginx.ingress.kubernetes.io/force-ssl-redirect'})
-        if not set(annotations).issubset(allowed):
-            fail('LEGACY_RESOURCE_MISMATCH')
-        desired = json.loads(annotations.get('kubectl.kubernetes.io/last-applied-configuration', '{}'))
-        if desired.get('kind') != item['kind'] or desired.get('apiVersion') != item.get('apiVersion'):
-            fail('LEGACY_RESOURCE_MISMATCH')
-        meta = desired.get('metadata', {})
-        if set(meta) - {'name', 'namespace', 'annotations'} or meta.get('name') != 'pluginkit' or meta.get('namespace') != NS:
-            fail('LEGACY_RESOURCE_MISMATCH')
-        if legacy_resource_projection(item) != desired.get('spec'):
-            fail('LEGACY_RESOURCE_MISMATCH')
-        desired = copy.deepcopy(desired)
-        desired['metadata'] = {'name': 'pluginkit', 'namespace': NS,
-            'annotations': dict(meta.get('annotations', {}), **{'pluginkit/managed-by': OWNER})}
-        if item['kind'] == 'Ingress':
-            for key, value in meta.get('annotations', {}).items():
-                if annotations.get(key) != value:
-                    fail('LEGACY_RESOURCE_MISMATCH')
-        if item['kind'] == 'Deployment':
-            template = desired['spec']['template']
-            checksum = template.get('metadata', {}).get('annotations', {}).get('pluginkit/code-sha256', '')
-            if not re.fullmatch('[a-f0-9]{64}', checksum):
-                fail('LEGACY_RESOURCE_MISMATCH')
-            template['metadata']['annotations']['pluginkit/code-sha256'] = '0.1.0'
-            environment = {x['name']: x.get('value') for x in template['spec']['containers'][0]['env']}
-            if environment.get('PLUGINKIT_ORIGINS') != origin:
-                fail('LEGACY_RESOURCE_MISMATCH')
-        declared.append(desired)
-    validate_manifest({'apiVersion': 'v1', 'kind': 'List', 'items': declared}, '0.1.0')
-
-def legacy_sources():
-    code = BASE / 'releases' / '0.1.0'
-    if not code.is_dir():
-        fail('LEGACY_SOURCE_MISMATCH')
-    files = {str(p.relative_to(code)).replace(os.sep, '/'): p for p in code.rglob('*') if p.is_file()}
-    if set(files) != set(LEGACY_SOURCE_SHA256):
-        fail('LEGACY_SOURCE_MISMATCH')
-    for name, path in files.items():
-        if path.stat().st_size > 1024 * 1024 or hashlib.sha256(path.read_bytes()).hexdigest() != LEGACY_SOURCE_SHA256[name]:
-            fail('LEGACY_SOURCE_MISMATCH')
-    settings = json.loads((BASE / 'data' / 'framework' / 'settings.json').read_text())
-    if settings.get('version') != '0.1.0' or settings.get('apiVersion') != 1:
-        fail('FRAMEWORK_MIGRATION_REQUIRED')
-    return code
-
-def metadata_patch(item, add):
-    metadata = item['metadata']
-    operations = [{'op': 'test', 'path': '/metadata/uid', 'value': metadata['uid']},
-        {'op': 'test', 'path': '/metadata/resourceVersion', 'value': metadata['resourceVersion']}]
-    operations.append({'op': 'add', 'path': '/metadata/annotations/pluginkit~1managed-by', 'value': OWNER} if add else
-        {'op': 'remove', 'path': '/metadata/annotations/pluginkit~1managed-by'})
-    kube('patch', item['kind'].lower(), 'pluginkit', '--type=json', '-p', json.dumps(operations), '-o', 'json')
-
-def rollback_migration(backup):
-    before = {x['kind']: x for x in json.loads((backup / 'resources.json').read_text())}
-    current = resources()
-    if len(current) != len(before):
-        fail('MIGRATION_RECOVERY_REQUIRED')
-    for item in current:
-        old = before.get(item.get('kind'))
-        if not old or item['metadata'].get('uid') != old['metadata']['uid'] or item.get('spec') != old.get('spec'):
-            fail('MIGRATION_RECOVERY_REQUIRED')
-        value = item['metadata'].get('annotations', {}).get('pluginkit/managed-by')
-        if value not in [None, OWNER]:
-            fail('MIGRATION_RECOVERY_REQUIRED')
-    for item in current:
-        if item['metadata'].get('annotations', {}).get('pluginkit/managed-by') == OWNER:
-            metadata_patch(item, False)
-    marker = BASE / 'installer-owner'
-    if marker.exists():
-        if not owner_marker():
-            fail('MIGRATION_RECOVERY_REQUIRED')
-        marker.unlink()
-
-def migrate(req, found):
-    op = req.get('operation', '')
-    if not re.fullmatch('[a-f0-9]{32}', op):
-        fail('INVALID_OPERATION_ID')
-    if found['pending']:
-        fail('INSTALLER_RECOVERY_REQUIRED')
-    if found['managed']:
-        return dict(managed=True, migrated=False)
-    if not found['installed'] or (BASE / 'installer-owner').exists():
-        fail('LEGACY_RESOURCE_MISMATCH')
-    old = base64.b64decode(req.get('islandBackup', ''), validate=True)
-    validate_island_backup(old)
-    before = resources()
-    validate_legacy_resources(before, req.get('origin', ''))
-    code = legacy_sources()
-    backup = BASE / 'backups' / op
-    if backup.exists():
-        fail('OPERATION_ALREADY_EXISTS')
-    lock = BASE / 'installer-lock'
-    try:
-        lock.mkdir()
-    except FileExistsError:
-        fail('INSTALLER_RECOVERY_REQUIRED')
-    (lock / 'operation').write_text(op)
-    os.chmod(str(lock / 'operation'), 0o600)
-    backup.mkdir(parents=True)
-    os.chmod(str(backup), 0o700)
-    atomic(backup / 'resources.json', before)
-    atomic(backup / 'state.json', dict(mode='migrate', phase='preparing', operation=op))
-    (backup / 'island.tar.gz').write_bytes(old)
-    with snapshot_locks():
-        with tarfile.open(str(backup / 'data.tar.gz'), 'w:gz') as archive:
-            archive.add(str(BASE / 'data'), arcname='data',
-                filter=lambda item: None if item.name in ['data/.write.lock', 'data/framework/.write.lock'] else item)
-        with tarfile.open(str(backup / 'legacy-code.tar.gz'), 'w:gz') as archive:
-            archive.add(str(code), arcname='legacy-code')
-    # No metadata changes happen until the complete recovery set is durable.
-    for name in ['data.tar.gz', 'legacy-code.tar.gz', 'island.tar.gz']:
-        with open(str(backup / name), 'r+b') as stream:
-            os.fsync(stream.fileno())
-    atomic(backup / 'state.json', dict(mode='migrate', phase='prepared', operation=op))
-    record_audit('framework.migrate.started', 'started')
-    try:
-        latest = resources()
-        if latest != before:
-            fail('LEGACY_RESOURCE_CHANGED')
-        atomic(backup / 'state.json', dict(mode='migrate', phase='migrating', operation=op))
-        for item in before:
-            metadata_patch(item, True)
-        after = resources()
-        if not owned(after) or any(item['spec'] != next(old['spec'] for old in before if old['kind'] == item['kind']) or
-                item['metadata']['uid'] != next(old['metadata']['uid'] for old in before if old['kind'] == item['kind']) for item in after):
-            fail('MIGRATION_READBACK_FAILED')
-        marker = BASE / 'installer-owner'
-        with tempfile.NamedTemporaryFile(mode='w', prefix='.owner-', dir=str(BASE), delete=False) as stream:
-            temporary = Path(stream.name)
-            os.chmod(str(temporary), 0o600)
-            stream.write(OWNER)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(str(temporary), str(marker))
-        finish(backup, 'migrated')
-        return dict(managed=True, migrated=True, operation=op, auditRecorded=record_audit('framework.migrate'))
-    except Exception:
-        try:
-            rollback_migration(backup)
-            finish(backup, 'rolled-back')
-            record_audit('framework.migrate', 'failed')
-        except Exception:
-            fail('MIGRATION_RECOVERY_REQUIRED')
-        fail('MIGRATION_FAILED_ROLLED_BACK')
 
 def apply(req, backup):
     state = json.loads((backup / 'state.json').read_text())
@@ -653,9 +426,9 @@ def apply(req, backup):
     atomic(backup / 'desired.json', manifest)
     atomic(backup / 'state.json', dict(mode=state['mode'], phase='applying', operation=req['operation']))
     kube('apply', '-f', '-', data=json.dumps(manifest).encode())
-    kube('rollout', 'status', 'deployment/pluginkit', '--timeout=%ss' % APPLY_ROLLOUT_SECONDS,
+    kube('rollout', 'status', 'deployment/rivetin', '--timeout=%ss' % APPLY_ROLLOUT_SECONDS,
          timeout=APPLY_ROLLOUT_PROCESS_SECONDS)
-    kube('exec', 'deployment/pluginkit', '--', 'node', 'cli.mjs', 'init', '--data', '/var/lib/pluginkit')
+    kube('exec', 'deployment/rivetin', '--', 'node', 'cli.mjs', 'init', '--data', '/var/lib/rivetin')
     atomic(backup / 'state.json', dict(mode=req['mode'], phase='backend-ready', operation=req['operation']))
     return dict(phase='backend-ready')
 
@@ -665,7 +438,7 @@ def remove_owned():
         fail('RESOURCE_OWNERSHIP_MISMATCH')
     for item in items:
         # Only three fixed names belonging to this installer. Data/releases/backups remain.
-        kube('delete', item['kind'].lower(), 'pluginkit', '--ignore-not-found', '--wait=true', '--timeout=30s', timeout=40)
+        kube('delete', item['kind'].lower(), 'rivetin', '--ignore-not-found', '--wait=true', '--timeout=30s', timeout=40)
 
 def rollback(backup):
     before = json.loads((backup / 'resources.json').read_text())
@@ -679,7 +452,7 @@ def rollback(backup):
                 item['metadata'].pop(field, None)
             cleaned.append(item)
         kube('apply', '-f', '-', data=json.dumps(dict(apiVersion='v1', kind='List', items=cleaned)).encode())
-        kube('rollout', 'status', 'deployment/pluginkit', '--timeout=90s', timeout=100)
+        kube('rollout', 'status', 'deployment/rivetin', '--timeout=90s', timeout=100)
     else:
         remove_owned()
     # Always remain disabled after rollback, retaining all settings and recovery backups.
@@ -711,7 +484,7 @@ def reset_config(req, found):
         fail('INSTALLER_OWNERSHIP_REQUIRED')
     if found['installed'] or resources():
         fail('UNINSTALL_FRAMEWORK_BEFORE_RESET')
-    pods = json.loads(kube('get', 'pods', '-l', 'app=pluginkit', '-o', 'json'))
+    pods = json.loads(kube('get', 'pods', '-l', 'app=rivetin', '-o', 'json'))
     if pods.get('items'):
         fail('PLUGIN_PODS_STILL_PRESENT')
     data = BASE / 'data'
@@ -754,12 +527,12 @@ def reset_config(req, found):
                         bytes=info.st_size, sha256=digest.hexdigest()))
                 finally:
                     os.close(fd)
-        atomic(backup / 'manifest.json', dict(format='pluginkit-cleared-data-v1', operation=op,
+        atomic(backup / 'manifest.json', dict(format='rivetin-cleared-data-v1', operation=op,
             source='data', archive='cleared-data', files=sorted(inventory, key=lambda item: item['path'])))
         atomic(backup / 'state.json', dict(mode='reset-config', phase='prepared', operation=op))
         sync_directory(backup)
         # Recheck after preparation so a concurrent manual reinstall fails closed.
-        if resources() or json.loads(kube('get', 'pods', '-l', 'app=pluginkit', '-o', 'json')).get('items'):
+        if resources() or json.loads(kube('get', 'pods', '-l', 'app=rivetin', '-o', 'json')).get('items'):
             fail('UNINSTALL_FRAMEWORK_BEFORE_RESET')
         os.rename(str(data), str(archived))
         sync_directory(BASE)
@@ -778,7 +551,7 @@ def handle(req):
     action = req.get('action')
     if action == 'probe':
         return probe()
-    if action not in ['prepare', 'apply', 'commit', 'rollback', 'backup', 'remove', 'disable', 'migrate', 'reset-config']:
+    if action not in ['prepare', 'apply', 'commit', 'rollback', 'backup', 'remove', 'disable', 'reset-config']:
         fail('UNKNOWN_ACTION')
     safe_base(emergency=action == 'disable')
     if action == 'disable':
@@ -790,8 +563,6 @@ def handle(req):
     found = gate()  # Deployment writes enforce the tested build independently.
     if action == 'reset-config':
         return reset_config(req, found)
-    if action == 'migrate':
-        return migrate(req, found)
     if action == 'prepare':
         return prepare(req, found)
     backup = transaction(req.get('operation'))
@@ -810,10 +581,9 @@ def handle(req):
         return dict(removed=True, dataRetained=True)
     if action == 'rollback':
         state = json.loads((backup / 'state.json').read_text())
-        if state['mode'] == 'migrate':
-            rollback_migration(backup)
-        else:
-            rollback(backup)
+        if state['mode'] not in ['install', 'update', 'uninstall']:
+            fail('INVALID_INSTALLER_PHASE')
+        rollback(backup)
         finish(backup, 'rolled-back')
         return dict(phase='rolled-back', auditRecorded=record_audit('framework.rollback'))
     state = json.loads((backup / 'state.json').read_text())

@@ -73,19 +73,22 @@ func deployment(p Profile, origin, checksum string) ([]byte, error) {
 		return nil, errors.New("INVALID_ORIGIN")
 	}
 	meta := func() map[string]any {
-		return map[string]any{"name": "pluginkit", "namespace": p.Namespace, "annotations": map[string]string{"pluginkit/managed-by": "pluginkit-cli-v1"}}
+		return map[string]any{"name": installationName, "namespace": p.Namespace, "annotations": map[string]string{ownershipAnnotation: installationOwner}}
 	}
-	code := "/var/cache/appcache/pluginkit/releases/" + checksum
-	container := map[string]any{"name": "pluginkit", "image": p.Image, "imagePullPolicy": "IfNotPresent", "workingDir": "/opt/pluginkit", "command": []string{"node", "server/main.js"},
-		"env":   []map[string]string{{"name": "PLUGINKIT_DATA", "value": "/var/lib/pluginkit"}, {"name": "PLUGINKIT_TOWER_URL", "value": "http://cloudtower-cloudtower.cloudtower-system.svc.cluster.local"}, {"name": "PLUGINKIT_ORIGINS", "value": origin}},
+	code := installationRoot + "/releases/" + checksum
+	container := map[string]any{"name": "rivetin", "image": p.Image, "imagePullPolicy": "IfNotPresent", "workingDir": "/opt/rivetin", "command": []string{"node", "server/main.js"},
+		"env":   []map[string]string{{"name": "RIVETIN_DATA", "value": "/var/lib/rivetin"}, {"name": "RIVETIN_TOWER_URL", "value": "http://cloudtower-cloudtower.cloudtower-system.svc.cluster.local"}, {"name": "RIVETIN_ORIGINS", "value": origin}},
 		"ports": []map[string]int{{"containerPort": 8787}}, "resources": map[string]any{"requests": map[string]string{"cpu": "20m", "memory": "48Mi"}, "limits": map[string]string{"cpu": "500m", "memory": "256Mi"}},
 		"securityContext": map[string]any{"runAsUser": 1000, "runAsGroup": 1000, "allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true, "capabilities": map[string]any{"drop": []string{"ALL"}}},
 		"readinessProbe":  map[string]any{"httpGet": map[string]any{"path": "/healthz", "port": 8787}}, "livenessProbe": map[string]any{"httpGet": map[string]any{"path": "/healthz", "port": 8787}, "initialDelaySeconds": 10},
-		"volumeMounts": []map[string]any{{"name": "code", "mountPath": "/opt/pluginkit", "readOnly": true}, {"name": "data", "mountPath": "/var/lib/pluginkit"}}}
+		"volumeMounts": []map[string]any{{"name": "code", "mountPath": "/opt/rivetin", "readOnly": true}, {"name": "data", "mountPath": "/var/lib/rivetin"}}}
+	ingressPath := func(prefix string) map[string]any {
+		return map[string]any{"path": prefix, "pathType": "Prefix", "backend": map[string]any{"service": map[string]any{"name": installationName, "port": map[string]int{"number": 8787}}}}
+	}
 	items := []map[string]any{
-		{"apiVersion": "apps/v1", "kind": "Deployment", "metadata": meta(), "spec": map[string]any{"replicas": 1, "strategy": map[string]string{"type": "Recreate"}, "selector": map[string]any{"matchLabels": map[string]string{"app": "pluginkit"}}, "template": map[string]any{"metadata": map[string]any{"labels": map[string]string{"app": "pluginkit"}, "annotations": map[string]string{"pluginkit/code-sha256": checksum}}, "spec": map[string]any{"automountServiceAccountToken": false, "enableServiceLinks": false, "containers": []any{container}, "volumes": []map[string]any{{"name": "code", "hostPath": map[string]string{"path": code, "type": "Directory"}}, {"name": "data", "hostPath": map[string]string{"path": "/var/cache/appcache/pluginkit/data", "type": "Directory"}}}}}}},
-		{"apiVersion": "v1", "kind": "Service", "metadata": meta(), "spec": map[string]any{"selector": map[string]string{"app": "pluginkit"}, "ports": []map[string]int{{"port": 8787, "targetPort": 8787}}}},
-		{"apiVersion": "networking.k8s.io/v1", "kind": "Ingress", "metadata": meta(), "spec": map[string]any{"rules": []any{map[string]any{"http": map[string]any{"paths": []any{map[string]any{"path": "/api/pluginkit/", "pathType": "Prefix", "backend": map[string]any{"service": map[string]any{"name": "pluginkit", "port": map[string]int{"number": 8787}}}}}}}}, "tls": []map[string]string{{"secretName": "cloudtower-tls"}}}},
+		{"apiVersion": "apps/v1", "kind": "Deployment", "metadata": meta(), "spec": map[string]any{"replicas": 1, "strategy": map[string]string{"type": "Recreate"}, "selector": map[string]any{"matchLabels": map[string]string{"app": "rivetin"}}, "template": map[string]any{"metadata": map[string]any{"labels": map[string]string{"app": "rivetin"}, "annotations": map[string]string{"rivetin/code-sha256": checksum}}, "spec": map[string]any{"automountServiceAccountToken": false, "enableServiceLinks": false, "containers": []any{container}, "volumes": []map[string]any{{"name": "code", "hostPath": map[string]string{"path": code, "type": "Directory"}}, {"name": "data", "hostPath": map[string]string{"path": "/var/cache/appcache/rivetin/data", "type": "Directory"}}}}}}},
+		{"apiVersion": "v1", "kind": "Service", "metadata": meta(), "spec": map[string]any{"selector": map[string]string{"app": "rivetin"}, "ports": []map[string]int{{"port": 8787, "targetPort": 8787}}}},
+		{"apiVersion": "networking.k8s.io/v1", "kind": "Ingress", "metadata": meta(), "spec": map[string]any{"rules": []any{map[string]any{"http": map[string]any{"paths": []any{ingressPath(ingressPrefix)}}}}, "tls": []map[string]string{{"secretName": "cloudtower-tls"}}}},
 	}
 	annotations := items[2]["metadata"].(map[string]any)["annotations"].(map[string]string)
 	annotations["kubernetes.io/ingress.class"] = "nginx"
@@ -96,12 +99,14 @@ func deployment(p Profile, origin, checksum string) ([]byte, error) {
 }
 
 type Engine struct {
-	Remote        Remote
-	Tower         *Tower
-	Progress      func(string)
-	ReadbackWait  readbackWait
-	PluginID      string
-	PluginPackage []byte
+	Remote         Remote
+	Tower          *Tower
+	Progress       func(string)
+	ReadbackWait   readbackWait
+	PluginID       string
+	PluginPackage  []byte
+	ChannelProfile []byte
+	ChannelHostID  string
 }
 
 const verificationBudget = 5 * time.Minute
@@ -141,7 +146,7 @@ func verifyRuntimeReadback(ctx context.Context, api *Tower, expectedVersion stri
 		if err := readCtx.Err(); err != nil {
 			return err
 		}
-		data, status, err := api.request(readCtx, "GET", "/api/pluginkit/v1/runtime", "", nil)
+		data, status, err := api.frameworkRequest(readCtx, "GET", "/runtime", "", nil)
 		fields := []string{fmt.Sprintf("BACKEND_READBACK attempt=%d httpStatus=%d", attempt, status)}
 		var state struct {
 			Initialized *bool  `json:"initialized"`
@@ -275,13 +280,16 @@ func (e Engine) Run(ctx context.Context, mode, user, password, operation string)
 	if strings.HasPrefix(mode, "plugin.") {
 		return RunPluginAction(ctx, e.Tower, strings.TrimPrefix(mode, "plugin."), e.PluginID, e.PluginPackage, e.Progress)
 	}
+	if strings.HasPrefix(mode, "channel.") {
+		return RunChannelAction(ctx, e.Tower, strings.TrimPrefix(mode, "channel."), e.ChannelHostID, e.ChannelProfile, e.Progress)
+	}
 	if mode == "enable" {
-		if _, status, err := e.Tower.request(ctx, "POST", "/api/pluginkit/v1/enable", "", nil); err != nil {
+		if _, status, err := e.Tower.frameworkRequest(ctx, "POST", "/enable", "", nil); err != nil {
 			return err
 		} else if status != 200 {
 			return errors.New("FRAMEWORK_ENABLE_FAILED")
 		}
-		data, status, err := e.Tower.request(ctx, "GET", "/api/pluginkit/v1/runtime", "", nil)
+		data, status, err := e.Tower.frameworkRequest(ctx, "GET", "/runtime", "", nil)
 		if err != nil {
 			return err
 		}
@@ -304,9 +312,8 @@ func (e Engine) Run(ctx context.Context, mode, user, password, operation string)
 		}
 		var recoveryMode string
 		_ = json.Unmarshal(backup["mode"], &recoveryMode)
-		if recoveryMode == "migrate" {
-			_, err = request(ctx, e.Remote, "rollback", operation, nil)
-			return err
+		if recoveryMode != "install" && recoveryMode != "update" && recoveryMode != "uninstall" {
+			return errors.New("BACKUP_INVALID")
 		}
 		var encoded string
 		if json.Unmarshal(backup["islandBackup"], &encoded) != nil {
@@ -326,37 +333,6 @@ func (e Engine) Run(ctx context.Context, mode, user, password, operation string)
 		}
 		_, err = request(ctx, e.Remote, "rollback", operation, nil)
 		return err
-	}
-	if mode == "migrate" {
-		if found.Pending != "" {
-			return errors.New("INSTALLER_RECOVERY_REQUIRED")
-		}
-		if !found.Installed {
-			return errors.New("FRAMEWORK_NOT_INSTALLED")
-		}
-		if found.Managed {
-			e.say("MIGRATED deployment is already CLI-managed")
-			return nil
-		}
-		old, err := a.Backup(ctx, e.Tower)
-		if err != nil {
-			return err
-		}
-		if len(old) == 0 {
-			return errors.New("MIGRATION_ISLAND_INVALID")
-		}
-		operation = operationID()
-		e.say("OPERATION " + operation)
-		_, err = request(ctx, e.Remote, "migrate", operation, map[string]any{"islandBackup": base64.StdEncoding.EncodeToString(old), "origin": e.Tower.base})
-		if err != nil {
-			return fmt.Errorf("%w; recovery operation %s", err, operation)
-		}
-		latest, _, err := probeRemote(ctx, e.Remote)
-		if err != nil || !latest.Managed {
-			return fmt.Errorf("MIGRATION_READBACK_FAILED; recovery operation %s", operation)
-		}
-		e.say("MIGRATED configuration and runtime state preserved")
-		return nil
 	}
 	if mode != "install" && mode != "update" && mode != "uninstall" {
 		return errors.New("UNKNOWN_COMMAND")

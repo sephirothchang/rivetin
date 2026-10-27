@@ -1,6 +1,8 @@
-# smartx-extensions
+# Rivetin
 
 SmartX 功能增强插件与扩展集合。各插件作为独立子项目维护，统一存放在本仓库中。
+
+项目品牌为 **Rivetin**，官网为 https://rivetin.dev；[GitHub 仓库](https://github.com/sephirothchang/rivetin)。项目统一命名与配置路径见[命名规范](docs/rivetin-naming.md)。
 
 ## 仓库结构
 
@@ -11,18 +13,24 @@ smartx-extensions/
 ├── docs/                     # 共享开发规范与配置 API
 ├── cli/                      # 三平台自包含 CLI、版本适配与安装恢复
 ├── catalog/                  # GitHub 子插件版本及发布包清单
-├── framework/                # PluginKit 框架、管理服务、CLI 与部署
+├── framework/                # Rivetin 框架、管理服务、CLI 与部署
 └── plugins/
     ├── README.md
-    └── pluginkit-ipmi-redirection/
+    ├── rivetin-ipmi-redirection/
+    ├── rivetin-ssh-channel/
+    ├── rivetin-disk-smart-info/
+    └── rivetin-context-menu/
 ```
 
 ## 插件目录
 
 | 插件 | 功能 | 状态 |
 |---|---|---|
-| [PluginKit](framework/README.md) | 插件中心、生命周期、独立配置、紧急禁用、操作日志 | 0.1；故障隔离 TODO |
-| [pluginkit-ipmi-redirection](plugins/pluginkit-ipmi-redirection/README.md) | 主机 IPMI 跳转、BMC 协议配置 | 0.1；真实 BMC 自动登录未完成 |
+| [Rivetin](framework/README.md) | 插件中心、生命周期、独立配置、紧急禁用、操作日志 | 0.1；故障隔离 TODO |
+| [rivetin-ipmi-redirection](plugins/rivetin-ipmi-redirection/README.md) | 主机 IPMI 跳转、BMC 协议配置 | 0.1；真实 BMC 自动登录未完成 |
+| [rivetin-ssh-channel](plugins/rivetin-ssh-channel/README.md) | 全局及例外凭据、只读命令审计、独立授权和调度 | 0.1.1；连接设置界面已实机验证，真实主机采集待验收 |
+| [rivetin-disk-smart-info](plugins/rivetin-disk-smart-info/README.md) | 物理盘 SMART 页面、采集数据与每日历史 | 0.1.1；共享接口和页面已受控验证，真实采样待验收 |
+| [rivetin-context-menu](plugins/rivetin-context-menu/README.md) | 按资源提供分组菜单与受控操作表单 | 0.2.6；菜单与表单的实机只读验收通过，实际资源写入待验收 |
 
 ## 本地开发
 
@@ -35,12 +43,12 @@ npm run setup
 npm test
 npm run build
 npm run package
-npm run demo -- pluginkit-ipmi-redirection
+npm run demo -- rivetin-ipmi-redirection
 ```
 
-只处理指定插件时，可在命令末尾传入插件 ID，例如 `npm run build -- pluginkit-ipmi-redirection`，也可以进入子目录使用插件自己的命令。
+只处理指定插件时，可在命令末尾传入插件 ID，例如 `npm run build -- rivetin-ipmi-redirection`，也可以进入子目录使用插件自己的命令。
 
-共享配置使用 PluginKit 统一 API，详见 [配置与保存规范](docs/pluginkit-configuration.md)。框架使用独立后端，由 Tower 验证登录身份及管理员角色。安装、应急恢复及版本边界见 [PluginKit](framework/README.md)。
+共享配置使用 Rivetin 统一 API，详见 [配置与保存规范](docs/rivetin-configuration.md)。框架使用独立后端，由 Tower 验证登录身份及管理员角色。安装、应急恢复及版本边界见 [Rivetin](framework/README.md)。
 
 便携式 CLI 使用独立 Go 模块和显式嵌入资源，源码构建及平台验证边界见 [CLI 文档](cli/README.md) 和 [安装器验证范围](docs/portable-cli-validation.md)。公开文档与示例的检查及整改见 [公开内容检查](docs/public-content-review.md)。
 

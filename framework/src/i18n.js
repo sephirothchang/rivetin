@@ -12,6 +12,11 @@ export function watchTowerLocale(win, onChange, supplied) {
   return () => { observer.disconnect(); win.removeEventListener('storage', read); win.clearInterval(timer); };
 }
 const en = {
+  '插件市场': 'Plugin marketplace',
+  '未声明已验证的兼容版本': 'No verified compatible versions declared', '与当前 CloudTower 版本不兼容': 'Incompatible with the current CloudTower version', '已验证版本': 'Verified versions',
+  'PLUGIN_INCOMPATIBLE': 'This plugin does not support the current CloudTower or framework version.', 'TOWER_BUILD_UNKNOWN': 'The CloudTower version could not be verified; installation and activation were blocked.', 'PLUGIN_COMPATIBILITY_UNDECLARED': 'The plugin has no machine-readable verified version declaration.',
+  'UPDATE_METADATA_MISMATCH': 'The downloaded package metadata does not match the published catalog.',
+  '正在检测更新源…': 'Checking update source…', '无法连接到更新源': 'Cannot connect to the update source',
   '检查更新': 'Check for updates', '有新版本': 'New version', '已是最新版本': 'Up to date', '选择升级方式': 'Choose upgrade method', '自动联网升级': 'Upgrade online', '手动上传升级': 'Upload upgrade package',
   'UPDATE_SOURCE_ACCESS_REQUIRED': 'The update repository is private or access is restricted. Configure server-side GitHub access or upload a package manually.',
   'UPDATE_SOURCE_UNAVAILABLE': 'The update source is unavailable. Please retry or upload a package manually.', 'UPDATE_PACKAGE_UNPUBLISHED': 'The update package has not been published.', 'UPDATE_NOT_AVAILABLE': 'No newer version is available.', 'UPDATE_CHECKSUM_FAILED': 'The downloaded package failed integrity verification.',
@@ -59,7 +64,9 @@ const en = {
   '通用 BMC · 仅跳转': 'Generic BMC · redirection only',
 };
 const errorChinese = {
-  INVALID_PACKAGE: '插件包格式无效，请选择有效的 PluginKit 插件包。',
+  SSH_PERMISSION_REQUIRED: '插件未声明 SSH 通道使用权限，已拒绝注册。', SSH_OPERATION_REJECTED: '该操作不在框架允许的只读采集目录中，已拒绝注册。', SSH_REGISTRATION_INVALID: 'SSH 注册声明无效，不接受任意命令、脚本或参数。', SSH_TARGET_LIMIT: '展开后的采集目标超过限制，请缩小范围后重新审核。',
+  PLUGIN_INCOMPATIBLE: '该插件不兼容当前 CloudTower 或框架版本，已停止操作。', TOWER_BUILD_UNKNOWN: '无法确认 CloudTower 版本，已阻止安装和启用。', PLUGIN_COMPATIBILITY_UNDECLARED: '该插件尚未声明可校验的已验证版本，已停止操作。', UPDATE_METADATA_MISMATCH: '下载包的元数据与已发布清单不一致，已拒绝使用。',
+  INVALID_PACKAGE: '插件包格式无效，请选择有效的 Rivetin 插件包。',
   PLUGIN_ID_MISMATCH: '安装包所属插件与当前插件不一致。',
   UPDATE_SOURCE_ACCESS_REQUIRED: '更新仓库为私有仓库或访问受限。请配置服务端仓库访问凭据，或使用手动上传升级。',
   UPDATE_SOURCE_UNAVAILABLE: '暂时无法连接更新源，请稍后重试或手动上传升级。',
@@ -68,6 +75,7 @@ const errorChinese = {
   UPDATE_CATALOG_INVALID: '更新清单格式无效，请联系项目维护者。', UPDATE_REDIRECT_REJECTED: '更新源返回了不受信任的下载地址。', UPDATE_DOWNLOAD_TOO_LARGE: '升级包超过大小限制。',
 };
 const actions = {
+  'market.install': ['从插件市场安装', 'Install from marketplace'], 'ssh.approve': ['批准 SSH 采集权限', 'Approve SSH collection access'], 'ssh.revoke': ['撤销 SSH 采集权限', 'Revoke SSH collection access'], 'ssh.run': ['执行 SSH 采集', 'Run SSH collection'], 'ssh.schedule': ['处理 SSH 采集计划', 'Process SSH collection schedule'], 'ssh.host.save': ['保存 SSH 主机连接', 'Save SSH host connection'], 'ssh.host.remove': ['移除 SSH 主机连接', 'Remove SSH host connection'],
   'framework.migrate': ['迁移框架管理权', 'Migrate framework management'],
   'framework.update': ['更新框架', 'Update framework'], 'framework.uninstall': ['卸载框架', 'Uninstall framework'], 'framework.rollback': ['回滚框架', 'Roll back framework'],
   'framework.install': ['安装框架', 'Install framework'], 'framework.enable': ['恢复插件运行', 'Resume plugins'], 'framework.disable': ['紧急禁用全部插件', 'Disable all plugins'],

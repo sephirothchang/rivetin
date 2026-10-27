@@ -1,4 +1,4 @@
-PluginKit portable CLI — third-party notices
+Rivetin portable CLI — third-party notices
 
 Generated from the selected Go toolchain and the exact modules in go.mod.
 Toolchain: go1.27.3

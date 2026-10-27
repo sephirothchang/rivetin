@@ -1,5 +1,6 @@
 import { createPreferenceStore } from './personal.js';
-import { towerAuthHeaders } from './client.js';
+import { createClient } from './client.js';
+import { assertId } from '../shared/identity.js';
 
 
 function envelope(value, validateFunctionalSettings) {
@@ -74,23 +75,18 @@ export function createConfigurationStore(win, backend, definition) {
   };
 }
 
-export function createHttpConfigurationBackend(win, definition, endpoint = '/api/pluginkit/v1/config') {
-  const { id: PLUGIN_ID, defaults: sanitizeFunctionalSettings, validate: validateFunctionalSettings } = definition;
+export function createHttpConfigurationBackend(win, definition, endpoint = '/api/rivetin/v1/config') {
+  const { defaults: sanitizeFunctionalSettings, validate: validateFunctionalSettings } = definition, PLUGIN_ID = assertId(definition.id);
   const target = new URL(endpoint, win.location.origin);
   if (target.origin !== win.location.origin) throw new Error('CONFIGURATION_ORIGIN_MISMATCH');
+  if (target.pathname !== '/api/rivetin/v1/config' || target.search) throw new Error('INVALID_CONFIGURATION_ENDPOINT');
+  const api = createClient(win);
   async function request(method, settings) {
-    const abort = new AbortController(), timer = setTimeout(() => abort.abort(), 8000);
-    try {
-      const response = await win.fetch(target.href, { method, credentials: 'same-origin', redirect: 'error', cache: 'no-store',
-        headers: { ...towerAuthHeaders(win), ...(settings ? { 'Content-Type': 'application/json' } : {}) },
-        ...(settings ? { body: JSON.stringify({ pluginId: PLUGIN_ID, settings }) } : {}), signal: abort.signal });
-      if (!response.ok) throw new Error('CONFIGURATION_REQUEST_FAILED');
-      const document = await response.json();
-      if (document?.version !== 1 || !document.plugins || Array.isArray(document.plugins)) throw new Error('INVALID_CONFIG_RESPONSE');
-      if (document.errors?.[PLUGIN_ID]) throw new Error('CONFIGURATION_UNAVAILABLE');
-      return envelope(Object.hasOwn(document.plugins, PLUGIN_ID) ? document.plugins[PLUGIN_ID] :
-        { revision: 0, updatedAt: null, settings: sanitizeFunctionalSettings() }, validateFunctionalSettings);
-    } finally { clearTimeout(timer); }
+    const document = await api('/config', method, settings ? { pluginId: PLUGIN_ID, settings } : undefined);
+    if (document?.version !== 1 || !document.plugins || Array.isArray(document.plugins)) throw new Error('INVALID_CONFIG_RESPONSE');
+    if (document.errors?.[PLUGIN_ID]) throw new Error('CONFIGURATION_UNAVAILABLE');
+    return envelope(Object.hasOwn(document.plugins, PLUGIN_ID) ? document.plugins[PLUGIN_ID] :
+      { revision: 0, updatedAt: null, settings: sanitizeFunctionalSettings() }, validateFunctionalSettings);
   }
   return { load: () => request('GET'), save: settings => request('PUT', settings) };
 }

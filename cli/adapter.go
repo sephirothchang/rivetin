@@ -90,7 +90,7 @@ func parseOwnedIslands(data []byte) ([]ownedIsland, error) {
 		if json.Unmarshal(raw, &header) != nil || header.Name == "" {
 			return nil, errors.New("ISLAND_REGISTRY_INVALID")
 		}
-		if header.Name != "pluginkit" {
+		if header.Name != "rivetin" {
 			continue
 		}
 		var entry struct {
@@ -177,7 +177,7 @@ func (t tower49) Login(ctx context.Context, api *Tower, user, password string) e
 	if len(id) > 128 || id == "" {
 		return errors.New("TOWER_IDENTITY_INVALID")
 	}
-	body, _ = json.Marshal(map[string]any{"query": "query PluginKitIdentity($id: ID!) { user(where: { id: $id }) { id username role } }", "variables": map[string]string{"id": id}})
+	body, _ = json.Marshal(map[string]any{"query": "query RivetinIdentity($id: ID!) { user(where: { id: $id }) { id username role } }", "variables": map[string]string{"id": id}})
 	data, status, err = api.request(ctx, "POST", "/api", "application/json", body)
 	if err != nil {
 		return err
@@ -205,7 +205,7 @@ func (t tower49) Backup(ctx context.Context, api *Tower) ([]byte, error) {
 	if island == nil {
 		return nil, nil
 	}
-	path := "/api/island-registry/sea-maps/download/pluginkit"
+	path := "/api/island-registry/sea-maps/download/rivetin"
 	if island.Version != "" {
 		path += "/" + url.PathEscape(island.Version)
 	}
@@ -235,7 +235,7 @@ func (t tower49) Register(ctx context.Context, api *Tower, data []byte) error {
 	}
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
-	f, err := w.CreateFormFile("file", "pluginkit-island.tar.gz")
+	f, err := w.CreateFormFile("file", "rivetin-island.tar.gz")
 	if err != nil {
 		return err
 	}
@@ -344,9 +344,9 @@ func (t tower49) Verify(ctx context.Context, api *Tower, entry []byte) error {
 		return errors.New("ISLAND_REGION_INVALID")
 	}
 	for _, entry := range registry {
-		if entry.Name == "pluginkit" && entry.Version == island.Version {
+		if entry.Name == "rivetin" && entry.Version == island.Version {
 			for _, mount := range entry.Data {
-				if mount.Region == "PERMANENT_CLUSTER_MANAGER_MODAL" && mount.Island == "./PluginKit" {
+				if mount.Region == "PERMANENT_CLUSTER_MANAGER_MODAL" && mount.Island == "./Rivetin" {
 					return nil
 				}
 			}

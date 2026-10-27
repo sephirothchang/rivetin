@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rivetin
+  namespace: cloudtower-system
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: rivetin
+  template:
+    metadata:
+      labels:
+        app: rivetin
+      annotations:
+        rivetin/code-sha256: ${CODE_DIGEST}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      containers:
+        - name: rivetin
+          image: ${TOWER_IMAGE}
+          imagePullPolicy: IfNotPresent
+          workingDir: /opt/rivetin
+          command: [node, server/main.js]
+          env:
+            - name: RIVETIN_DATA
+              value: /var/lib/rivetin
+            - name: RIVETIN_TOWER_URL
+              value: http://cloudtower-cloudtower.cloudtower-system.svc.cluster.local
+            - name: RIVETIN_ORIGINS
+              value: ${TOWER_ORIGINS}
+          ports:
+            - containerPort: 8787
+          resources:
+            requests:
+              cpu: 20m
+              memory: 48Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8787
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8787
+            initialDelaySeconds: 10
+          volumeMounts:
+            - name: code
+              mountPath: /opt/rivetin
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/rivetin
+      volumes:
+        - name: code
+          hostPath:
+            path: ${CODE_PATH}
+            type: Directory
+        - name: data
+          hostPath:
+            path: ${DATA_PATH}
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rivetin
+  namespace: cloudtower-system
+spec:
+  selector:
+    app: rivetin
+  ports:
+    - port: 8787
+      targetPort: 8787
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rivetin
+  namespace: cloudtower-system
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/proxy-body-size: 16m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '15'
+    nginx.ingress.kubernetes.io/force-ssl-redirect: 'true'
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /api/rivetin/
+            pathType: Prefix
+            backend:
+              service:
+                name: rivetin
+                port:
+                  number: 8787
+  tls:
+    - secretName: cloudtower-tls

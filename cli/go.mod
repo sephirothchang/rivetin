@@ -1,4 +1,4 @@
-module github.com/sephirothchang/smartx-extensions/cli
+module github.com/sephirothchang/rivetin/cli
 
 go 1.27.0
 

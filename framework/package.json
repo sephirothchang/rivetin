@@ -1,16 +1,26 @@
 {
-  "name": "pluginkit",
+  "name": "rivetin",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "license": "MIT",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "build": "node scripts/notices.mjs && webpack --config webpack.config.cjs --stats=errors-warnings",
+    "build": "node scripts/notices.mjs && webpack --config webpack.ssh.cjs --stats=errors-warnings && webpack --config webpack.config.cjs --stats=errors-warnings",
     "package": "node scripts/package.mjs",
     "cli": "node cli.mjs"
   },
-  "dependencies": { "react": "16.14.0", "react-dom": "16.14.0" },
-  "devDependencies": { "jsdom": "26.1.0", "webpack": "5.112.2", "webpack-cli": "6.0.1" },
-  "engines": { "node": ">=20" }
+  "dependencies": {
+    "react": "16.14.0",
+    "react-dom": "16.14.0",
+    "ssh2": "1.17.0"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0",
+    "webpack": "5.112.2",
+    "webpack-cli": "6.0.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
 }

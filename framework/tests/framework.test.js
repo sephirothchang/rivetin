@@ -14,14 +14,14 @@ import { createTowerAuditSink } from '../server/audit.js';
 import { listenPort } from '../server/options.js';
 
 test('listen port ignores Kubernetes service-link variables and rejects invalid explicit values', () => {
-  assert.equal(listenPort({ PLUGINKIT_PORT: 'tcp://192.0.2.10:8787' }), 8787);
-  assert.equal(listenPort({ PLUGINKIT_LISTEN_PORT: '8788' }), 8788);
-  for (const value of ['0', '65536', 'NaN', 'tcp://example.invalid:8787', '-1', '8787x']) assert.throws(() => listenPort({ PLUGINKIT_LISTEN_PORT: value }));
+  assert.equal(listenPort({ RIVETIN_PORT: 'tcp://192.0.2.10:8787' }), 8787);
+  assert.equal(listenPort({ RIVETIN_LISTEN_PORT: '8788' }), 8788);
+  for (const value of ['0', '65536', 'NaN', 'tcp://example.invalid:8787', '-1', '8787x']) assert.throws(() => listenPort({ RIVETIN_LISTEN_PORT: value }));
 });
 test('permanent Tower region uses an unversioned registry key; release version remains informational', async () => {
   const manifest = JSON.parse(await readFile(new URL('../sea-map.json', import.meta.url), 'utf8'));
-  assert.equal(manifest.name, 'pluginkit'); assert.equal(manifest.metadata.version, undefined);
-  assert.equal(manifest.metadata.info.version, '0.1.0'); assert.equal(manifest.data[0].island, './PluginKit');
+  assert.equal(manifest.name, 'rivetin'); assert.equal(manifest.metadata.version, undefined);
+  assert.equal(manifest.metadata.info.version, '0.1.0'); assert.equal(manifest.data[0].island, './Rivetin');
   assert.equal(manifest.data[0].region, 'PERMANENT_CLUSTER_MANAGER_MODAL');
 });
 
@@ -43,7 +43,7 @@ test('CLI bootstrap is persistent, disabled by default and idempotent', async t 
   assert.equal((await service.runtime()).enabled, false);
 });
 test('lifecycle install/enable/update/rollback/reset/uninstall retain independent settings and backups', async t => {
-  const { service, directory, install } = await fixture(t); const id = 'pluginkit-example';
+  const { service, directory, install } = await fixture(t); const id = 'rivetin-example';
   await install(); assert.equal((await service.plugins())[0].enabled, false);
   await service.enable(actor); await service.change('enable', id, null, actor);
   assert.equal((await service.plugins())[0].active, true);
@@ -59,34 +59,27 @@ test('lifecycle install/enable/update/rollback/reset/uninstall retain independen
   assert.ok((await service.logs()).items.some(event => event.action === 'plugin.uninstall'));
 });
 test('last save wins across independent services and different plugin files cannot overwrite each other', async t => {
-  const { service, directory, install } = await fixture(t); await install(); await install('pluginkit-second');
+  const { service, directory, install } = await fixture(t); await install(); await install('rivetin-second');
   const other = createService(directory);
-  await Promise.all([service.saveConfig('pluginkit-example', { enabled: false }, actor), other.saveConfig('pluginkit-second', { enabled: false }, actor)]);
-  await other.saveConfig('pluginkit-example', { enabled: true }, actor);
-  const data = await service.loadConfig(); assert.equal(data.plugins['pluginkit-example'].settings.enabled, true); assert.equal(data.plugins['pluginkit-second'].settings.enabled, false);
-  assert.equal(data.plugins['pluginkit-example'].revision, 2);
-  await assert.rejects(service.saveConfig('pluginkit-example', { password: 'EXAMPLE_REJECTED' }, actor));
+  await Promise.all([service.saveConfig('rivetin-example', { enabled: false }, actor), other.saveConfig('rivetin-second', { enabled: false }, actor)]);
+  await other.saveConfig('rivetin-example', { enabled: true }, actor);
+  const data = await service.loadConfig(); assert.equal(data.plugins['rivetin-example'].settings.enabled, true); assert.equal(data.plugins['rivetin-second'].settings.enabled, false);
+  assert.equal(data.plugins['rivetin-example'].revision, 2);
+  await assert.rejects(service.saveConfig('rivetin-example', { password: 'EXAMPLE_REJECTED' }, actor));
 });
 test('one corrupt plugin config does not block another plugin or emergency disable, even if lifecycle lock is held', async t => {
-  const { service, directory, install } = await fixture(t); await install(); await install('pluginkit-second'); await service.enable(actor);
-  await writeFile(path.join(directory, 'plugins/pluginkit-example/config.json'), 'EXAMPLE_CORRUPTION');
-  const data = await service.loadConfig(); assert.ok(data.errors['pluginkit-example']); assert.ok(data.plugins['pluginkit-second']);
-  await service.saveConfig('pluginkit-second', { enabled: false }, actor);
+  const { service, directory, install } = await fixture(t); await install(); await install('rivetin-second'); await service.enable(actor);
+  await writeFile(path.join(directory, 'plugins/rivetin-example/config.json'), 'EXAMPLE_CORRUPTION');
+  const data = await service.loadConfig(); assert.ok(data.errors['rivetin-example']); assert.ok(data.plugins['rivetin-second']);
+  await service.saveConfig('rivetin-second', { enabled: false }, actor);
   await writeFile(path.join(directory, '.write.lock'), 'EXAMPLE_HELD_LOCK');
   assert.equal((await service.disable(actor)).enabled, false); assert.equal((await service.runtime()).enabled, false);
-  assert.equal(await readFile(path.join(directory, 'plugins/pluginkit-example/config.json'), 'utf8'), 'EXAMPLE_CORRUPTION');
-});
-test('legacy migration keeps backup and refuses to overwrite existing settings', async t => {
-  const { service, directory, install } = await fixture(t); await install(); const file = path.join(directory, 'legacy.json');
-  await writeFile(file, JSON.stringify({ plugins: { 'pluginkit-example': { revision: 8, updatedAt: 'EXAMPLE_TIME', settings: { enabled: false } } } }));
-  await service.migrateLegacy(file, actor); assert.equal((await service.loadConfig()).plugins['pluginkit-example'].revision, 8);
-  assert.ok((await readFile(path.join(directory, 'backups/legacy-configuration.json'), 'utf8')).includes('EXAMPLE_TIME'));
-  await assert.rejects(service.migrateLegacy(file, actor), /CONFIGURATION_ALREADY_EXISTS/);
+  assert.equal(await readFile(path.join(directory, 'plugins/rivetin-example/config.json'), 'utf8'), 'EXAMPLE_CORRUPTION');
 });
 test('update refuses incompatible config schema and preserves active pointer', async t => {
   const { service, install } = await fixture(t); await install();
-  const uploaded = await service.upload(bundle('pluginkit-example', '0.2.0', pkg => { pkg.manifest.configuration.version = 2; return pkg; }), actor);
-  await assert.rejects(service.change('update', 'pluginkit-example', uploaded.packageId, actor));
+  const uploaded = await service.upload(bundle('rivetin-example', '0.2.0', pkg => { pkg.manifest.configuration.version = 2; return pkg; }), actor);
+  await assert.rejects(service.change('update', 'rivetin-example', uploaded.packageId, actor));
   assert.equal((await service.plugins())[0].version, '0.1.0');
 });
 for (const [name, change] of [
@@ -108,7 +101,7 @@ test('HTTP API authenticates all reads, requires admin+origin for mutations, and
   const api = createApi(service, { origins: ['https://tower.example.invalid'], authenticate: async req => req.headers['x-example-identity'] ? { ...actor, admin: req.headers['x-example-identity'] === 'admin' } : null });
   const server = http.createServer(api); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   t.after(() => { server.closeAllConnections(); server.close(); });
-  const base = `http://127.0.0.1:${server.address().port}/api/pluginkit/v1`;
+  const base = `http://127.0.0.1:${server.address().port}/api/rivetin/v1`;
   assert.equal((await fetch(base + '/config')).status, 401);
   assert.equal((await fetch(base + '/logs', { headers: { 'x-example-identity': 'reader' } })).status, 403);
   assert.equal((await fetch(base + '/enable', { method: 'POST', headers: { 'x-example-identity': 'reader', Origin: 'https://tower.example.invalid' } })).status, 403);
@@ -120,13 +113,13 @@ test('HTTP API authenticates all reads, requires admin+origin for mutations, and
   assert.equal((await fetch(base + '/config', { method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ pluginId: '../escape', settings: {} }) })).status, 400);
 });
 test('local audit is paginated and contains metadata only; Tower sink emits bilingual official payload', async t => {
-  const { service, install } = await fixture(t); await install(); await service.saveConfig('pluginkit-example', { enabled: false }, actor);
+  const { service, install } = await fixture(t); await install(); await service.saveConfig('rivetin-example', { enabled: false }, actor);
   const first = await service.logs({ limit: 2 }); assert.equal(first.items.length, 2); assert.ok(first.next);
   const second = await service.logs({ limit: 2, before: first.next }); assert.ok(!second.items.some(event => first.items.some(other => event.id === other.id)));
   assert.ok(!JSON.stringify(await service.logs()).includes('settings'));
   let sent;
   const sink = createTowerAuditSink({ request: async (endpoint, body) => { sent = { endpoint, body }; return [{ data: { id: 'EXAMPLE_LOG_ID' }, task_id: null }]; } });
   await sink({ ...first.items[0], actor: { ...actor, source: 'tower' } });
-  assert.equal(sent.endpoint, '/v2/api/create-user-audit-log'); assert.ok(sent.body[0].message['zh-CN']); assert.ok(sent.body[0].message['en-US']); assert.equal(sent.body[0].resource_type, 'pluginkit');
+  assert.equal(sent.endpoint, '/v2/api/create-user-audit-log'); assert.ok(sent.body[0].message['zh-CN']); assert.ok(sent.body[0].message['en-US']); assert.equal(sent.body[0].resource_type, 'rivetin');
   await assert.rejects(createTowerAuditSink({ request: async () => [{ data: { id: 'EXAMPLE_LOG_ID' }, task_id: 'EXAMPLE_PENDING' }] })({ ...first.items[0], actor }));
 });

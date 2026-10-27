@@ -5,11 +5,17 @@ import { createTowerConnection } from './tower.js';
 import { createTowerAuditSink } from './audit.js';
 import { listenPort } from './options.js';
 import { createUpdateSource } from './updates.js';
-const data = process.env.PLUGINKIT_DATA, towerUrl = process.env.PLUGINKIT_TOWER_URL;
-const origins = (process.env.PLUGINKIT_ORIGINS || '').split(',').filter(Boolean);
+import { createSshTransport } from './ssh-transport.js';
+import { createTowerVersionProvider } from './tower-version.js';
+import { createTowerDiskReader } from './tower-disks.js';
+
+const data = process.env.RIVETIN_DATA, towerUrl = process.env.RIVETIN_TOWER_URL;
+const origins = (process.env.RIVETIN_ORIGINS || '').split(',').filter(Boolean);
+const updateToken = process.env.RIVETIN_GITHUB_TOKEN || '', port = process.env.RIVETIN_LISTEN_PORT;
 if (!data || !towerUrl || !origins.length) throw new Error('EXPLICIT_DEPLOYMENT_CONFIGURATION_REQUIRED');
 const tower = createTowerConnection({ baseUrl: towerUrl });
-const service = createService(data, { towerSink: createTowerAuditSink({ request: tower.request }), updateSource: createUpdateSource({ token: process.env.PLUGINKIT_GITHUB_TOKEN || '' }) });
+const service = createService(data, { towerSink: createTowerAuditSink({ request: tower.request }), updateSource: createUpdateSource({ token: updateToken }), sshRun: createSshTransport().run, towerVersionProvider: createTowerVersionProvider({ request: tower.request }), readDisk: createTowerDiskReader({ request: tower.request }), towerRequest: tower.request });
+service.sshChannel.start();
 const handler = createApi(service, { authenticate: tower.authenticate, origins });
 const server = http.createServer(async (req, res) => {
   try {
@@ -18,6 +24,12 @@ const server = http.createServer(async (req, res) => {
   } catch { if (!res.headersSent) res.writeHead(503); res.end(); }
 });
 server.requestTimeout = 15000; server.headersTimeout = 10000;
-server.listen(listenPort(process.env), '0.0.0.0', () => console.log('PluginKit service started'));
-function stop() { server.close(() => process.exit(0)); setTimeout(() => process.exit(1), 5000).unref(); }
+server.listen(listenPort({ RIVETIN_LISTEN_PORT: port }), '0.0.0.0', () => console.log('Rivetin service started'));
+let stopping = false;
+async function stop() {
+  if (stopping) return; stopping = true;
+  const timer = setTimeout(() => process.exit(1), 5000); timer.unref();
+  try { await Promise.all([service.sshChannel.stop(), new Promise(resolve => server.close(resolve))]); clearTimeout(timer); process.exit(0); }
+  catch { process.exit(1); }
+}
 process.on('SIGTERM', stop); process.on('SIGINT', stop);

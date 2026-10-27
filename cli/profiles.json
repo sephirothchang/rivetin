@@ -7,6 +7,6 @@
     "pod": "cloudtower-cloudtower-0",
     "container": "server",
     "adapter": "tower49",
-    "validation": "Windows amd64 CLI validated on this exact build: legacy migration, clean install/uninstall/reset, framework update, child CLI and Web upgrades, and SSH emergency disable with Web resume. Other client targets are cross-compiled only."
+    "validation": "The exact Tower image and component layout are allowlisted. Rivetin-only artifacts completed a controlled live framework upgrade, state readback, child-plugin updates and read-only UI acceptance on this build. Fresh installation, uninstall, other client platforms and actual resource mutations were not revalidated in this round; see docs/0.1-validation.md for scope."
   }
 ]

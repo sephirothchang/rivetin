@@ -8,7 +8,7 @@ export function createTowerConnection({ baseUrl, fetchImpl = fetch }) {
     if (!response.ok) {
       let reason = ''; try { reason = (await response.json()).message || ''; } catch { /* No server diagnostic body is exposed. */ }
       if (path === '/v2/api/create-user-audit-log' && /only allow by system user/i.test(reason)) throw new Error('TOWER_AUDIT_SYSTEM_USER_REQUIRED');
-      throw new Error('TOWER_REQUEST_FAILED');
+      throw Object.assign(new Error('TOWER_REQUEST_FAILED'), { status: response.status });
     }
     return response.json();
   }
@@ -22,21 +22,21 @@ export function createTowerConnection({ baseUrl, fetchImpl = fetch }) {
         const token = auth.Authorization.replace(/^Bearer /i, ''), raw = Buffer.from(token.split('.')[1], 'base64url').toString();
         try { claimed = JSON.parse(raw); } catch { claimed = raw; }
         if (typeof claimed !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(claimed)) return null;
-        query = 'query PluginKitIdentity($id: ID!) { user(where: { id: $id }) { id username role } }'; variables = { id: claimed };
+        query = 'query RivetinIdentity($id: ID!) { user(where: { id: $id }) { id username role } }'; variables = { id: claimed };
       } catch { return null; }
     } else if (auth.Cookie) {
       const cookie = auth.Cookie.split(';').map(value => value.trim()).find(value => value.startsWith('connect.sid='));
       if (!cookie) return null;
       let session; try { session = decodeURIComponent(cookie.slice('connect.sid='.length)); } catch { return null; }
       const match = /^s:([A-Za-z0-9_-]{1,128})\.[A-Za-z0-9_+/=-]+$/.exec(session); if (!match) return null;
-      query = 'query PluginKitSessionIdentity($id: ID!) { userSession(where: { id: $id }) { authorized user { id username role } } }'; variables = { id: match[1] };
+      query = 'query RivetinSessionIdentity($id: ID!) { userSession(where: { id: $id }) { authorized user { id username role } } }'; variables = { id: match[1] };
     } else return null;
     try {
       const result = await request('/api', { query, variables }, { auth });
       if (result.errors?.length) return null;
       const user = claimed ? result.data?.user : result.data?.userSession?.authorized ? result.data.userSession.user : null;
       if (!user?.id || (claimed && user.id !== claimed) || typeof user.username !== 'string') return null;
-      return { id: user.id, name: user.username, source: 'tower', admin: ['ROOT', 'ADMIN'].includes(user.role), auth };
+      return { id: user.id, name: user.username, source: 'tower', role: user.role, admin: ['ROOT', 'ADMIN'].includes(user.role), auth };
     } catch { return null; }
   }
   return { request, authenticate };

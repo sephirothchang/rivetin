@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { i18next } from '@tower/i18n';
 import { createFrameworkHub } from './hub.js';
 const Hub = createFrameworkHub();
-export default function PluginKitIsland(props) {
+export default function RivetinIsland(props) {
   const [locale, setLocale] = useState(i18next.resolvedLanguage || i18next.language);
   useEffect(() => {
     const change = value => setLocale(value);

@@ -94,7 +94,7 @@ request = json.load(sys.stdin)
 module = types.ModuleType('embedded_remote_contract')
 exec(compile(base64.b64decode(request['script']), '<embedded-remote.py>', 'exec'), module.__dict__)
 # Validation represents the Linux Tower path semantics on every development OS.
-module.BASE = pathlib.PurePosixPath('/var/cache/appcache/pluginkit')
+module.BASE = pathlib.PurePosixPath('/var/cache/appcache/rivetin')
 manifest = json.loads(base64.b64decode(request['manifest']))
 module.validate_manifest(manifest, request['checksum'])
 invalid = json.loads(json.dumps(manifest))

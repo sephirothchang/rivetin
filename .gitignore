@@ -11,6 +11,8 @@
 AGENTS.md
 cli/payload/
 cli/.cache/
+framework/server/vendor/
+framework/server/builtins/
 **/__pycache__/
 .env
 .env.*

@@ -1,6 +1,6 @@
 let sequence = 0;
 export function createMenuIcon(doc) {
-  const ns = 'http://www.w3.org/2000/svg', gradientId = `pluginkit-menu-gradient-${++sequence}`;
+  const ns = 'http://www.w3.org/2000/svg', gradientId = `rivetin-menu-gradient-${++sequence}`;
   function svg(name, attributes) {
     const node = doc.createElementNS(ns, name);
     for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, value);

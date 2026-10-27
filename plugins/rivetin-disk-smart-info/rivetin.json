@@ -1,0 +1,87 @@
+{
+  "manifestVersion": 1,
+  "id": "rivetin-disk-smart-info",
+  "version": "0.1.1",
+  "name": {
+    "zh-CN": "磁盘健康展示",
+    "en-US": "Disk SMART information"
+  },
+  "description": {
+    "zh-CN": "CloudTower 4.9.0 受控验收候选：物理盘 SMART 与每日历史、本地化和劣化风险；真实主机采集尚未验收。",
+    "en-US": "CloudTower 4.9.0 controlled acceptance candidate: localized disk SMART, daily history and deterioration. Live host collection remains unverified."
+  },
+  "author": "Rivetin contributors",
+  "license": "MIT",
+  "repository": "https://github.com/sephirothchang/rivetin",
+  "homepage": "https://github.com/sephirothchang/rivetin/tree/main/plugins/rivetin-disk-smart-info",
+  "compatibility": {
+    "frameworkApi": 1,
+    "tower": "CloudTower 4.9.0 controlled acceptance: API/DOM read checks and local tests; live host SMART unverified.",
+    "towerBuilds": [
+      "4.9.0"
+    ]
+  },
+  "frontend": {
+    "format": "rivetin-global-v1",
+    "entry": "web/plugin.js"
+  },
+  "permissions": [
+    "inventory.read",
+    "ssh.channel.use",
+    "disk.smart.read"
+  ],
+  "locales": [
+    "zh-CN",
+    "en-US"
+  ],
+  "configuration": {
+    "version": 1,
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "integer",
+          "enum": [
+            1
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "version",
+        "enabled"
+      ]
+    },
+    "defaults": {
+      "version": 1,
+      "enabled": true
+    }
+  },
+  "lifecycle": {
+    "reset": "defaults",
+    "uninstall": "retain-config"
+  },
+  "releaseNotes": {
+    "zh-CN": "0.1.1：按集群／主机真实只读 DOM 核验适配 4.9.0 侧栏；正式共享接口本地联调通过。仅供受控验收，非生产保证；SSH 默认关闭、未自动授权，真实主机 SMART 采集未实测。",
+    "en-US": "0.1.1: Adapt the 4.9.0 sidebar from read-only cluster/host DOM checks; shared API local integration passed. Controlled acceptance only, without production assurance. SSH stays off without explicit approval; live host SMART collection is untested."
+  },
+  "ssh": {
+    "version": 1,
+    "commands": [
+      {
+        "id": "daily-smart",
+        "operation": "disk.smart.read",
+        "purpose": {
+          "zh-CN": "每日采集已配置磁盘的 SMART 数据",
+          "en-US": "Collect SMART for configured disks daily"
+        },
+        "hostScope": "configured",
+        "deviceScope": "configured",
+        "intervalSeconds": 86400
+      }
+    ]
+  }
+}

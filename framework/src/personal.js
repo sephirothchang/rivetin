@@ -1,5 +1,4 @@
-export const KEY = 'pluginkit.personal.v1';
-const OLD_KEY = 'c89.tower.plugins.personal.v2';
+export const KEY = 'rivetin.personal.v1';
 export function createPreferenceStore(win) {
   let state = { showFloatingButton: true }, persistent = true;
   const listeners = new Set(), emit = () => { for (const listener of listeners) listener({ ...state }); };
@@ -8,7 +7,7 @@ export function createPreferenceStore(win) {
     const floatingPosition = point && ['x', 'y'].every(key => Number.isFinite(point[key]) && point[key] >= 0 && point[key] <= 100000) ? { x: Math.round(point.x), y: Math.round(point.y) } : null;
     return { showFloatingButton: parsed.showFloatingButton !== false, floatingPosition };
   }
-  try { state = read(win.localStorage.getItem(KEY) || win.localStorage.getItem(OLD_KEY)); } catch { persistent = false; }
+  try { state = read(win.localStorage.getItem(KEY)); } catch { persistent = false; }
   function onStorage(event) {
     if (event.key !== KEY && event.key !== null) return;
     try { state = read(event.newValue); emit(); } catch { /* Keep the last valid preference. */ }

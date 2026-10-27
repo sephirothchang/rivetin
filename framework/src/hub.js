@@ -8,6 +8,12 @@ import { translator, towerLocale, watchTowerLocale } from './i18n.js';
 import { installMenuEntry } from './menu-bridge.js';
 import { createAbout } from './about.js';
 import { createFloatingButton } from './floating.js';
+import { createSshSettings } from './ssh-settings.js';
+import { createMarketplace } from './marketplace.js';
+import { installUpgradeNotice } from './upgrade-notice.js';
+import { validId } from '../shared/identity.js';
+import { createDataProviders } from './data-providers.js';
+import { createSshConnectionsStore } from './ssh-connection-settings.js';
 
 const extraCss = `
 .pk-badge-suspended{color:#946000;background:#fff8e6;border-color:#f0d28d}
@@ -18,23 +24,28 @@ const extraCss = `
 `;
 export function createFrameworkHub(options = {}) {
   const React = options.React || defaultReact, ReactDOM = options.ReactDOM || defaultReactDOM;
-  const { useEffect, useRef, useState } = React, h = React.createElement, Management = createManagement(React), About = createAbout(React), FloatingButton = createFloatingButton(React);
-  return function PluginKitHub({ history, apolloClient, locale: suppliedLocale } = {}) {
+  const { useEffect, useRef, useState } = React, h = React.createElement, Management = createManagement(React), About = createAbout(React), FloatingButton = createFloatingButton(React), SshSettings = createSshSettings(React), Marketplace = createMarketplace(React);
+  return function RivetinHub({ history, apolloClient, locale: suppliedLocale } = {}) {
     const [locale, setLocale] = useState(towerLocale(window, suppliedLocale));
     const t = translator(locale), localeRef = useRef(locale); localeRef.current = locale;
     const [personal] = useState(() => createPreferenceStore(window)), [prefs, setPrefs] = useState(personal.get);
     const [open, setOpen] = useState(false), [tab, setTab] = useState(options.initialTab || 'center');
     const [records, setRecords] = useState([]), [packages, setPackages] = useState([]), [runtime, setRuntime] = useState({ enabled: false });
+    const upgradeNotice = useRef(null), currentState = useRef(null); currentState.current = { enabled: runtime.enabled, plugins: records };
     const [logs, setLogs] = useState({ items: [], next: null }), [busy, setBusy] = useState(false), [error, setError] = useState('');
     const [confirmation, setConfirmation] = useState(null), [unsaved, setUnsaved] = useState(false), [menuUnsupported, setMenuUnsupported] = useState(false);
     const [loaded, setLoaded] = useState({}), [, render] = useState(0);
     const [updates, setUpdates] = useState({}), [updateChecked, setUpdateChecked] = useState(false);
+    const [updateSourceStatus, setUpdateSourceStatus] = useState({ checking: true, reachable: false }), [updateProbeEpoch, setUpdateProbeEpoch] = useState(0);
+    const updateProbeRequest = useRef(null);
     const alive = useRef(true), sessions = useRef(new Map()), loading = useRef(false), generation = useRef(0);
     const dialog = useRef(null), confirmDialog = useRef(null), lastFocus = useRef(null), openRef = useRef(false);
     const [api] = useState(() => options.client || createClient(window));
-    const dirty = () => [...sessions.current.values()].some(session => session.store.status().dirty);
+    const [connectionStore] = useState(() => createSshConnectionsStore({ client: api, crypto: window.crypto }));
+    const stores = () => [connectionStore, ...[...sessions.current.values()].map(session => session.store)];
+    const dirty = () => stores().some(store => store.status().dirty);
     function finish() { setOpen(false); setUnsaved(false); lastFocus.current?.focus?.(); }
-    function close() { if (busy || [...sessions.current.values()].some(session => session.store.status().saving)) return; if (dirty()) setUnsaved(true); else finish(); }
+    function close() { if (busy || stores().some(store => store.status().saving)) return; if (dirty()) setUnsaved(true); else finish(); }
     async function show() { lastFocus.current = document.activeElement; setOpen(true); setError(''); await refresh(); for (const session of sessions.current.values()) session.store.load(); }
     function stopSession(session) { session.stop?.(); session.stop = null; }
     async function refreshLogs(append = false) {
@@ -50,6 +61,7 @@ export function createFrameworkHub(options = {}) {
         // Stop immediately after runtime read, before package/config parsing.
         if (!state.enabled) for (const session of sessions.current.values()) stopSession(session);
         const listing = await api('/plugins');
+        if (!Array.isArray(listing.items) || listing.items.some(record => !validId(record.id)) || new Set(listing.items.map(record => record.id)).size !== listing.items.length) throw new Error('INVALID_PLUGIN_LIST');
         if (!alive.current || currentGeneration !== generation.current) return;
         setRecords(listing.items); setPackages(listing.packages);
         const active = new Set();
@@ -61,12 +73,14 @@ export function createFrameworkHub(options = {}) {
           }
           if (!session) {
             try {
-              window.PluginKitSDK = { React };
-              const factory = options.definitions?.[record.id] || await loadPlugin(window, record);
+              window.RivetinSDK = { React };
+              const factory = options.definitions?.[record.id] || await loadPlugin(window, record, api);
               if (!alive.current || generation.current !== currentGeneration) return;
-              const definition = factory({ React, win: window, history, apolloClient, options, getLocale: () => localeRef.current });
+              const providers = createDataProviders(api, record.id);
+              const scopedOptions = { ...options, diskSmartInfo: { ...options.diskSmartInfo, provider: providers.diskSmart }, resourceActions: requestedId => { if (requestedId !== record.id) throw new Error('PLUGIN_ID_MISMATCH'); return providers.resourceActions; } };
+              const definition = factory({ React, win: window, history, apolloClient, options: scopedOptions, getLocale: () => localeRef.current });
               if (definition.id !== record.id || !definition.store || typeof definition.Settings !== 'function' || typeof definition.activate !== 'function') throw new Error('PLUGIN_DEFINITION_INVALID');
-              session = { ...definition, version: record.packageId };
+              session = { ...definition, id: record.id, version: record.packageId };
               session.unsubscribe = session.store.subscribe(() => { if (alive.current) render(value => value + 1); });
               sessions.current.set(record.id, session); await session.store.load();
             } catch { if (alive.current) setError(`${record.id}: PLUGIN_LOAD_FAILED`); continue; }
@@ -82,7 +96,35 @@ export function createFrameworkHub(options = {}) {
       } finally { loading.current = false; }
     }
     useEffect(() => { openRef.current = open; }, [open]);
+    useEffect(() => {
+      const unsubscribe = connectionStore.subscribe(() => { if (alive.current) render(value => value + 1); });
+      return () => { unsubscribe(); connectionStore.dispose(); };
+    }, []);
+    useEffect(() => { if (open && tab === 'rivetin-ssh-channel') connectionStore.load(); }, [open, tab]);
+    useEffect(() => {
+      if (!open || tab !== 'center') return;
+      let current = true;
+      async function probe() {
+        if (!current || !alive.current) return;
+        setUpdateSourceStatus(previous => ({ ...previous, checking: true }));
+        if (!updateProbeRequest.current) updateProbeRequest.current = Promise.resolve().then(() => api('/updates/status')).finally(() => { updateProbeRequest.current = null; });
+        try {
+          const status = await updateProbeRequest.current;
+          if (current && alive.current) setUpdateSourceStatus({ checking: false, reachable: status?.reachable === true });
+        } catch {
+          if (current && alive.current) setUpdateSourceStatus({ checking: false, reachable: false });
+        }
+      }
+      probe(); const timer = window.setInterval(probe, 30000);
+      return () => { current = false; window.clearInterval(timer); };
+    }, [open, tab, updateProbeEpoch]);
     useEffect(() => watchTowerLocale(window, setLocale, suppliedLocale), [suppliedLocale]);
+    useEffect(() => {
+      const notice = installUpgradeNotice({ win: window, getState: () => currentState.current, getLocale: () => localeRef.current, onOpen: show });
+      upgradeNotice.current = notice;
+      return () => { upgradeNotice.current = null; notice(); };
+    }, []);
+    useEffect(() => { upgradeNotice.current?.update?.(); }, [runtime, records, locale]);
     useEffect(() => {
       alive.current = true;
       const unsubscribe = personal.subscribe(setPrefs);
@@ -111,7 +153,7 @@ export function createFrameworkHub(options = {}) {
       return () => { document.body.style.overflow = previous; document.removeEventListener('keydown', keys); };
     }, [open, confirmation, unsaved, busy]);
     async function perform(action, item, packageId) {
-      if (dirty()) { setError('请先保存或丢弃配置修改。'); return; }
+      if (action !== 'framework.disable' && dirty()) { setError('请先保存或丢弃配置修改。'); return; }
       setConfirmation({ action, item, packageId });
     }
     async function checkUpdates() {
@@ -122,6 +164,7 @@ export function createFrameworkHub(options = {}) {
     }
     async function onlineUpgrade(item) {
       setBusy(true); setError('');
+      setConfirmation(previous => previous?.action === 'upgrade' ? { ...previous, error: '' } : previous);
       try {
         const result = await api('/updates', 'POST', { action: 'check' });
         setUpdates(Object.fromEntries(result.items.map(entry => [entry.id, entry]))); setUpdateChecked(true);
@@ -130,7 +173,9 @@ export function createFrameworkHub(options = {}) {
         if (!candidate.downloadable) throw new Error('UPDATE_PACKAGE_UNPUBLISHED');
         const uploaded = await api('/updates', 'POST', { action: 'download', pluginId: item.id, version: candidate.version });
         setConfirmation({ action: 'update', item, packageId: uploaded.packageId });
-      } catch (failure) { setError(failure.message); } finally { setBusy(false); }
+      } catch (failure) {
+        if (alive.current) setConfirmation(previous => previous?.action === 'upgrade' && previous.item.id === item.id ? { ...previous, error: failure.message } : previous);
+      } finally { if (alive.current) setBusy(false); }
     }
     async function execute() {
       if (!confirmation) return; setBusy(true); setError('');
@@ -151,7 +196,7 @@ export function createFrameworkHub(options = {}) {
         const bytes = await file.text();
         if (expectedId) {
           let value; try { value = JSON.parse(bytes); } catch { throw new Error('INVALID_PACKAGE'); }
-          if (value?.manifest?.id !== expectedId) throw new Error('PLUGIN_ID_MISMATCH');
+          if (!validId(value?.manifest?.id) || value.manifest.id !== expectedId) throw new Error('PLUGIN_ID_MISMATCH');
         }
         const uploaded = await api('/packages', 'POST', bytes); await refresh();
         if (expectedId) setConfirmation({ action: 'update', item: { id: expectedId }, packageId: uploaded.packageId });
@@ -161,7 +206,7 @@ export function createFrameworkHub(options = {}) {
     async function save(exit = false) {
       setBusy(true);
       try {
-        for (const session of sessions.current.values()) if (session.store.status().dirty && !await session.store.save()) return;
+        for (const store of stores()) if (store.status().dirty && !await store.save()) return;
         if (exit) finish(); else render(value => value + 1);
       } finally { setBusy(false); }
     }
@@ -177,7 +222,7 @@ export function createFrameworkHub(options = {}) {
         h('section', { className: 'c89-panel', role: 'dialog', 'aria-modal': true, 'aria-hidden': modal || undefined, 'aria-labelledby': 'pk-title', ref: dialog },
           h('header', null, h('h2', { id: 'pk-title' }, t('插件中心')), h('button', { className: 'c89-close', onClick: close, 'aria-label': t('关闭插件配置') }, '×')),
           h('div', { className: 'c89-panel-body' },
-            h('nav', { className: 'c89-nav' }, ...[['global', '全局偏好'], ['center', '插件管理'], ['logs', '操作日志']].map(([key, label]) => h('button', { role: 'tab', key, 'aria-selected': tab === key, onClick: () => setTab(key) }, t(label))),
+            h('nav', { className: 'c89-nav' }, ...[['global', '全局偏好'], ['center', '插件管理'], ['market', '插件市场'], ['logs', '操作日志']].map(([key, label]) => h('button', { role: 'tab', key, 'data-pk-tab': key, 'aria-selected': tab === key, onClick: () => setTab(key) }, t(label))),
               h('div', { className: 'pk-nav-group' }, t('插件配置')),
               ...records.filter(record => record.installed).map(record => h('button', { role: 'tab', key: record.id, 'aria-selected': tab === record.id, onClick: () => setTab(record.id) }, record.manifest?.name?.[locale] || record.id)),
               h('button', { className: 'pk-about-tab', role: 'tab', 'aria-selected': tab === 'about', onClick: () => setTab('about') }, t('关于'))),
@@ -186,8 +231,10 @@ export function createFrameworkHub(options = {}) {
                 h('div', { className: 'c89-preference-intro' }, h('p', null, t('个人偏好设置仅在当前浏览器生效。'))),
                 h('div', { className: 'c89-setting' }, h('div', { className: 'c89-setting-row' }, h('label', { htmlFor: 'pk-floating' }, t('显示右下角插件按钮')),
                   h('input', { id: 'pk-floating', type: 'checkbox', checked: prefs.showFloatingButton, onChange: event => personal.update({ showFloatingButton: event.target.checked }) })), h('small', null, t('关闭后，仍可通过主菜单 → 插件配置打开本面板。')))) :
-              tab === 'about' ? h(About, { locale }) : tab === 'center' || tab === 'logs' ? h(Management, { tab, records, packages, runtime, logs, onAction: perform, onUpload: upload,
-                onRefresh: () => refresh(), onMore: () => refreshLogs(true).catch(() => setError('请求失败，请刷新后重试。')), onCheck: checkUpdates, updates, updateChecked, busy, t, locale }) :
+              tab === 'about' ? h(About, { locale }) : tab === 'market' ? h(Marketplace, { client: api, locale, onInstalled: () => refresh(), onError: message => setError(message) }) : tab === 'rivetin-ssh-channel' ? h(React.Fragment, null,
+                session && h('fieldset', { className: 'c89-functional', disabled: !session.store.status().loaded || busy || !runtime.enabled || !records.some(record => record.id === tab && record.active) }, h(session.Settings, { preferences: session.store.getDraft(), store: session.store, t, locale })),
+                h(SshSettings, { client: api, locale, connectionStore, onError: message => setError(message) })) : tab === 'center' || tab === 'logs' ? h(Management, { tab, records, packages, runtime, logs, onAction: perform, onUpload: upload,
+                onRefresh: () => { refresh(); setUpdateProbeEpoch(value => value + 1); }, onMore: () => refreshLogs(true).catch(() => setError('请求失败，请刷新后重试。')), onCheck: checkUpdates, onMarket: () => setTab('market'), updates, updateChecked, updateSourceStatus, busy, t, locale }) :
               session ? h('fieldset', { className: 'c89-functional', disabled: !session.store.status().loaded || busy || !runtime.enabled || !records.some(record => record.id === tab && record.active) },
                 h(session.Settings, { preferences: session.store.getDraft(), store: session.store, t, locale })) : h('p', null, t('已禁用')),
               session?.store.status().error && h('p', { role: 'alert', className: 'pk-plugin-error' }, t(session.store.status().error))),
@@ -202,13 +249,14 @@ export function createFrameworkHub(options = {}) {
       open && modal && h('div', { className: 'c89-confirm-backdrop' }, h('section', { role: 'alertdialog', 'aria-modal': true, 'aria-labelledby': 'pk-confirm-title', className: 'c89-confirm', ref: confirmDialog },
         h('h3', { id: 'pk-confirm-title' }, t(unsaved ? '存在未保存的更改' : confirmation.action === 'upgrade' ? '选择升级方式' : '确认操作')),
         h('p', { className: 'pk-confirm-description' }, confirmation?.action === 'upgrade' ? confirmation.item.id : t(unsaved ? '是否保存当前修改后退出？' : descriptions[confirmation.action] || confirmation.action, confirmation?.action), confirmation?.item?.id && confirmation.action !== 'upgrade' ? ` (${confirmation.item.id})` : ''),
+        confirmation?.error && h('p', { className: 'pk-upgrade-error', role: 'alert' }, t(confirmation.error)),
         error && h('p', { role: 'alert' }, t(error)),
-        unsaved && [...sessions.current.values()].map(entry => entry.store.status().error && h('p', { key: entry.id, role: 'alert' }, t(entry.store.status().error))),
+        unsaved && stores().map((store, index) => store.status().error && h('p', { key: index, role: 'alert' }, t(store.status().error))),
         h('div', { className: 'c89-confirm-actions' }, h('button', { className: 'c89-cancel-exit', disabled: busy, onClick: () => { setConfirmation(null); setUnsaved(false); } }, t('取消')),
           confirmation?.action === 'upgrade' ? h(React.Fragment, null,
             h('button', { className: 'c89-save-exit', disabled: busy, onClick: () => onlineUpgrade(confirmation.item) }, t(busy ? '处理中…' : '自动联网升级')),
             h('label', { className: `pk-manual-upgrade ${busy ? 'pk-disabled' : ''}` }, t('手动上传升级'), h('input', { type: 'file', accept: '.json,application/json', disabled: busy, 'aria-label': t('手动上传升级'), onChange: async event => { const file = event.target.files[0]; event.target.value = ''; if (file) await upload(file, confirmation.item.id); } }))) : unsaved ? h(React.Fragment, null,
-            h('button', { className: 'c89-discard-exit', disabled: busy, onClick: () => { for (const entry of sessions.current.values()) entry.store.discard(); finish(); } }, t('丢弃并退出')),
+            h('button', { className: 'c89-discard-exit', disabled: busy, onClick: () => { for (const store of stores()) store.discard(); finish(); } }, t('丢弃并退出')),
             h('button', { className: 'c89-save-exit', disabled: busy, onClick: () => save(true) }, t('保存并退出'))) :
             h('button', { className: confirmation.action.includes('disable') || confirmation.action === 'uninstall' ? 'c89-discard-exit' : 'c89-save-exit', disabled: busy, onClick: execute }, t(busy ? '处理中…' : '确认')))))), document.body);
   };

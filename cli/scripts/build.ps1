@@ -30,14 +30,14 @@ try {
             $env:GOOS = $targetOS
             $env:GOARCH = $targetArch
             $suffix = if ($targetOS -eq 'windows') { '.exe' } else { '' }
-            $artifact = "release/pluginkit-$targetOS-$targetArch$suffix"
+            $artifact = "release/rivetin-$targetOS-$targetArch$suffix"
             & $Go build -trimpath -buildvcs=false -ldflags '-s -w -buildid=' -o $artifact .
             if ($LASTEXITCODE -ne 0) { throw "Build failed: $targetOS/$targetArch" }
         }
     }
     Copy-Item -LiteralPath '../LICENSE' -Destination 'release/LICENSE'
     Copy-Item -LiteralPath 'payload/NOTICES.txt' -Destination 'release/THIRD_PARTY_NOTICES.txt'
-    Get-ChildItem release/pluginkit-* | Sort-Object Name | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } | Set-Content -Encoding utf8NoBOM release/SHA256SUMS
+    Get-ChildItem release/rivetin-* | Sort-Object Name | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } | Set-Content -Encoding utf8NoBOM release/SHA256SUMS
 } finally {
     $env:GOOS = $previousOS
     $env:GOARCH = $previousArch

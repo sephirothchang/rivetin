@@ -40,3 +40,16 @@ test('menu host receives outside-click dismissal before the plugin center opens'
   const stop = installMenuEntry({ win: dom.window, onOpen: () => { assert.equal(visible, false); opened = true; } });
   dom.window.document.querySelector('[data-c89-menu-entry]').click(); assert.equal(opened, true); stop(); dom.window.close();
 });
+
+test('Rivetin preferences use only their own key without migrating other browser values', () => {
+  const dom = new JSDOM('', { url: 'https://tower.example.invalid' });
+  dom.window.localStorage.setItem('pluginkit.personal.v1', JSON.stringify({ showFloatingButton: false, floatingPosition: { x: 40, y: 50 } }));
+  const store = createPreferenceStore(dom.window);
+  try {
+    assert.equal(store.get().showFloatingButton, true); assert.equal(store.get().floatingPosition, null);
+    store.update({ showFloatingButton: false });
+    assert.equal(JSON.parse(dom.window.localStorage.getItem(KEY)).showFloatingButton, false);
+    dom.window.dispatchEvent(new dom.window.StorageEvent('storage', { key: 'pluginkit.personal.v1', newValue: JSON.stringify({ showFloatingButton: true }) }));
+    assert.equal(store.get().showFloatingButton, false);
+  } finally { store.dispose(); dom.window.close(); }
+});

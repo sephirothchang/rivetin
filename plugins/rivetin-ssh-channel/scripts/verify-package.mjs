@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { validatePackage } from '../../../framework/server/manifest.js';
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const require = createRequire(path.join(root, '../../framework/package.json'));
+const { JSDOM } = require('jsdom'), React = require('react');
+const id = 'rivetin-ssh-channel', metadata = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
+const raw = await readFile(path.join(root, 'release', `${id}-${metadata.version}.rivetin.json`)), pkg = validatePackage(raw);
+assert.equal(pkg.manifest.id, id); assert.equal(pkg.manifest.configuration.defaults.enabled, false);
+assert.deepEqual(pkg.files.map(item => item.path).sort(), ['LICENSE', 'web/plugin.js']);
+const dom = new JSDOM('<html><body></body></html>', { url: 'https://tower.example.invalid', runScripts: 'outside-only' });
+let requests = 0;
+dom.window.RivetinSDK = { React };
+dom.window.fetch = () => { requests++; throw new Error('UNEXPECTED_NETWORK_REQUEST'); };
+try {
+  dom.window.eval(pkg.files.find(item => item.path === 'web/plugin.js').content.toString());
+  const factory = dom.window.RivetinPlugins[id].default;
+  assert.equal(typeof factory, 'function');
+  const backend = { load: async () => ({ revision: 0, updatedAt: null, settings: { version: 1, enabled: false } }), save: async settings => ({ revision: 1, updatedAt: null, settings }) };
+  const plugin = factory({ React, win: dom.window, options: { configurationBackend: () => backend } });
+  assert.equal(plugin.id, id); assert.equal(plugin.store.get().enabled, false);
+  await plugin.store.load(); assert.equal(plugin.store.status().loaded, true);
+  const stop = plugin.activate(); assert.equal(typeof stop, 'function'); assert.equal(requests, 0);
+  plugin.store.update({ enabled: true }); assert.equal(plugin.store.status().dirty, true);
+  assert.equal(await plugin.store.save(), true); assert.equal(requests, 0);
+  stop(); plugin.store.dispose();
+  console.log(JSON.stringify({ pluginId: id, version: pkg.manifest.version, sha256: pkg.digest, bytes: raw.length, files: pkg.files.length, disabledByDefault: true, productionFactoryVerified: true, networkRequests: requests }));
+} finally { dom.window.close(); }

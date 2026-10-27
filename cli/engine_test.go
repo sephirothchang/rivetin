@@ -37,15 +37,16 @@ func (r *fakeRemote) Call(_ context.Context, req map[string]any) (map[string]jso
 	if action == "apply" {
 		r.desired, _ = base64.StdEncoding.DecodeString(req["manifest"].(string))
 	}
-	if action == "migrate" {
-		r.probe.Managed = true
-	}
 	var value any = map[string]any{"phase": action}
 	if action == "probe" {
 		value = r.probe
 	}
 	if action == "backup" {
-		value = map[string]string{"islandBackup": r.backup, "mode": r.recoveryMode}
+		mode := r.recoveryMode
+		if mode == "" {
+			mode = "update"
+		}
+		value = map[string]string{"islandBackup": r.backup, "mode": mode}
 	}
 	raw, _ := json.Marshal(value)
 	var result map[string]json.RawMessage
@@ -94,7 +95,7 @@ func towerServer(t *testing.T, f *towerFixture) *Tower {
 				present = f.old != nil
 			}
 			if present {
-				_, _ = w.Write([]byte(`{"seaMaps":[{"name":"pluginkit","data":[{"region":"PERMANENT_CLUSTER_MANAGER_MODAL","island":"./PluginKit"}]}]}`))
+				_, _ = w.Write([]byte(`{"seaMaps":[{"name":"rivetin","data":[{"region":"PERMANENT_CLUSTER_MANAGER_MODAL","island":"./Rivetin"}]}]}`))
 			} else {
 				_, _ = w.Write([]byte(`{"seaMaps":[]}`))
 			}
@@ -153,7 +154,7 @@ func towerServer(t *testing.T, f *towerFixture) *Tower {
 			if f.noMount {
 				_, _ = w.Write([]byte(`{"seaMaps":[]}`))
 			} else {
-				_, _ = w.Write([]byte(`{"seaMaps":[{"name":"pluginkit","data":[{"region":"PERMANENT_CLUSTER_MANAGER_MODAL","island":"./PluginKit"}]}]}`))
+				_, _ = w.Write([]byte(`{"seaMaps":[{"name":"rivetin","data":[{"region":"PERMANENT_CLUSTER_MANAGER_MODAL","island":"./Rivetin"}]}]}`))
 			}
 			return
 		}
@@ -281,7 +282,7 @@ func TestUpdateBacksUpAndRestoresIsland(t *testing.T) {
 	r, f, api := fixture(t)
 	r.probe.Installed = true
 	r.probe.Managed = true
-	f.old = fixtureIslandArchive(t, `{"name":"pluginkit","metadata":{"info":{"version":"0.1.0"}}}`)
+	f.old = fixtureIslandArchive(t, `{"name":"rivetin","metadata":{"info":{"version":"0.1.0"}}}`)
 	f.wrongEntry = true
 	err := (Engine{Remote: r, Tower: api}).Run(context.Background(), "update", "", "", "")
 	if err == nil || r.calls[len(r.calls)-1] != "rollback" {
@@ -301,7 +302,7 @@ func TestUninstallAndRecovery(t *testing.T) {
 	r, f, api := fixture(t)
 	r.probe.Installed = true
 	r.probe.Managed = true
-	f.old = fixtureIslandArchive(t, `{"name":"pluginkit","metadata":{"info":{"version":"0.1.0"}}}`)
+	f.old = fixtureIslandArchive(t, `{"name":"rivetin","metadata":{"info":{"version":"0.1.0"}}}`)
 	if err := (Engine{Remote: r, Tower: api}).Run(context.Background(), "uninstall", "", "", ""); err != nil {
 		t.Fatal(err)
 	}

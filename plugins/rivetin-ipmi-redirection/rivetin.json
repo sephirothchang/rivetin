@@ -1,0 +1,205 @@
+{
+  "manifestVersion": 1,
+  "id": "rivetin-ipmi-redirection",
+  "version": "0.1.2",
+  "name": {
+    "zh-CN": "IPMI 跳转",
+    "en-US": "IPMI Redirection"
+  },
+  "description": {
+    "zh-CN": "主机 IPMI 地址跳转与 BMC 厂商协议配置。",
+    "en-US": "Host IPMI links and BMC vendor protocol settings."
+  },
+  "author": "Rivetin contributors",
+  "license": "MIT",
+  "repository": "https://github.com/sephirothchang/rivetin",
+  "compatibility": {
+    "frameworkApi": 1,
+    "tower": "CloudTower 4.9.0; Rivetin framework API 1.",
+    "towerBuilds": [
+      "4.9.0"
+    ]
+  },
+  "frontend": {
+    "format": "rivetin-global-v1",
+    "entry": "web/plugin.js"
+  },
+  "permissions": [
+    "inventory.read",
+    "host.ipmi.enhance",
+    "bmc.session.launch"
+  ],
+  "locales": [
+    "zh-CN",
+    "en-US"
+  ],
+  "configuration": {
+    "version": 1,
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "integer",
+          "enum": [
+            1
+          ]
+        },
+        "ipmiEnabled": {
+          "type": "boolean"
+        },
+        "openInNewTab": {
+          "type": "boolean"
+        },
+        "loginMode": {
+          "type": "string",
+          "maxLength": 20,
+          "enum": [
+            "direct",
+            "megarac"
+          ]
+        },
+        "defaultVendor": {
+          "type": "string",
+          "maxLength": 80,
+          "enum": [
+            "generic",
+            "ami-megarac",
+            "dell-idrac",
+            "lenovo-xclarity",
+            "hpe-ilo",
+            "h3c-hdm",
+            "huawei-ibmc",
+            "xfusion-ibmc",
+            "inspur-bmc",
+            "supermicro-bmc",
+            "gigabyte-bmc",
+            "powerleader-bmc",
+            "sugon-cc-bmc",
+            "unisyue-bmc",
+            "zte-bmc",
+            "digitalchina-bmc",
+            "huakun-bmc",
+            "baixin-bmc",
+            "sugon-bmc",
+            "wuzhou-bmc",
+            "kunlun-bmc",
+            "isoftstone-bmc",
+            "hikvision-bmc",
+            "yangtze-bmc",
+            "hyperfusion-bmc",
+            "huanghe-bmc",
+            "anqing-bmc",
+            "greatwall-bmc",
+            "nettrix-bmc",
+            "xiangjiang-bmc",
+            "zhisuo-bmc"
+          ]
+        },
+        "bmcExceptions": {
+          "type": "array",
+          "maxItems": 2000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 160
+              },
+              "scope": {
+                "type": "string",
+                "maxLength": 10,
+                "enum": [
+                  "cluster",
+                  "host"
+                ]
+              },
+              "targetId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "vendor": {
+                "type": "string",
+                "maxLength": 80,
+                "enum": [
+                  "generic",
+                  "ami-megarac",
+                  "dell-idrac",
+                  "lenovo-xclarity",
+                  "hpe-ilo",
+                  "h3c-hdm",
+                  "huawei-ibmc",
+                  "xfusion-ibmc",
+                  "inspur-bmc",
+                  "supermicro-bmc",
+                  "gigabyte-bmc",
+                  "powerleader-bmc",
+                  "sugon-cc-bmc",
+                  "unisyue-bmc",
+                  "zte-bmc",
+                  "digitalchina-bmc",
+                  "huakun-bmc",
+                  "baixin-bmc",
+                  "sugon-bmc",
+                  "wuzhou-bmc",
+                  "kunlun-bmc",
+                  "isoftstone-bmc",
+                  "hikvision-bmc",
+                  "yangtze-bmc",
+                  "hyperfusion-bmc",
+                  "huanghe-bmc",
+                  "anqing-bmc",
+                  "greatwall-bmc",
+                  "nettrix-bmc",
+                  "xiangjiang-bmc",
+                  "zhisuo-bmc"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "scope",
+              "targetId",
+              "vendor"
+            ]
+          }
+        },
+        "seededClusterIds": {
+          "type": "array",
+          "maxItems": 2000,
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
+        }
+      },
+      "required": [
+        "version",
+        "ipmiEnabled",
+        "openInNewTab",
+        "loginMode",
+        "defaultVendor",
+        "bmcExceptions",
+        "seededClusterIds"
+      ]
+    },
+    "defaults": {
+      "version": 1,
+      "ipmiEnabled": true,
+      "openInNewTab": true,
+      "loginMode": "direct",
+      "defaultVendor": "generic",
+      "bmcExceptions": [],
+      "seededClusterIds": []
+    }
+  },
+  "lifecycle": {
+    "reset": "defaults",
+    "uninstall": "retain-config"
+  },
+  "releaseNotes": {
+    "zh-CN": "Rivetin 首个功能插件；真实 BMC 自动登录尚待验证。",
+    "en-US": "First Rivetin plugin; real BMC browser auto-login remains unverified."
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "manifestVersion": 1,
+  "id": "rivetin-context-menu",
+  "version": "0.2.6",
+  "name": {
+    "zh-CN": "资源右键菜单",
+    "en-US": "Resource context menus"
+  },
+  "description": {
+    "zh-CN": "按对象提供分组右键操作；真实操作适配开发中，未完成实机验收。",
+    "en-US": "Grouped object context menus. Live action integration is under development and has not passed acceptance."
+  },
+  "author": "Rivetin contributors",
+  "license": "MIT",
+  "repository": "https://github.com/sephirothchang/rivetin",
+  "homepage": "https://github.com/sephirothchang/rivetin/tree/main/plugins/rivetin-context-menu",
+  "compatibility": {
+    "frameworkApi": 1,
+    "tower": "CloudTower 4.9.0 controlled candidate; read-only API/DOM verified, native UI acceptance pending.",
+    "towerBuilds": [
+      "4.9.0"
+    ]
+  },
+  "frontend": {
+    "format": "rivetin-global-v1",
+    "entry": "web/plugin.js"
+  },
+  "permissions": [
+    "ui.context-menu",
+    "resource.actions"
+  ],
+  "locales": [
+    "zh-CN",
+    "en-US"
+  ],
+  "configuration": {
+    "version": 1,
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "integer",
+          "enum": [
+            1
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "nativeActions": {
+          "type": "boolean"
+        },
+        "resourceTypes": {
+          "type": "array",
+          "maxItems": 7,
+          "items": {
+            "type": "string",
+            "maxLength": 20,
+            "enum": [
+              "organization",
+              "datacenter",
+              "cluster",
+              "host",
+              "vm",
+              "vmVolume",
+              "disk"
+            ]
+          }
+        }
+      },
+      "required": [
+        "version",
+        "enabled",
+        "nativeActions",
+        "resourceTypes"
+      ]
+    },
+    "defaults": {
+      "version": 1,
+      "enabled": true,
+      "nativeActions": true,
+      "resourceTypes": [
+        "organization",
+        "datacenter",
+        "cluster",
+        "host",
+        "vm",
+        "vmVolume",
+        "disk"
+      ]
+    }
+  },
+  "lifecycle": {
+    "reset": "defaults",
+    "uninstall": "retain-config"
+  },
+  "releaseNotes": {
+    "zh-CN": "修复已有磁盘/网卡折叠控件被激活隔离误挡的问题；仅放行重新校验身份的只读展开/收起，保留业务编辑隔离。限定 4.9.0 受控复验，未执行真实虚拟机变更。",
+    "en-US": "Fix activation quarantine blocking pre-existing disk/NIC expansion. Revalidate pure expand/collapse actions without relaxing business editor isolation. Controlled 4.9.0 recheck pending; no live VM changes were tested."
+  }
+}

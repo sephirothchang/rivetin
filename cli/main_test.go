@@ -42,7 +42,7 @@ func mainFixtureDirectory(t *testing.T) string {
 
 func TestPluginCommandNormalizationAndHelp(t *testing.T) {
 	for _, action := range []string{"install", "update", "enable", "disable", "uninstall", "list"} {
-		args, err := normalizePluginCommand([]string{"plugin", action, "--plugin-id", "pluginkit-example"})
+		args, err := normalizePluginCommand([]string{"plugin", action, "--plugin-id", "rivetin-example"})
 		if err != nil || len(args) != 3 || args[0] != "plugin."+action || args[1] != "--plugin-id" {
 			t.Fatal(action, err, args)
 		}
@@ -95,7 +95,7 @@ func TestPluginPackageInputIsBoundedAndErrorsDoNotExposePaths(t *testing.T) {
 
 func TestNewCommandsValidateParametersBeforeCredentialsOrConnections(t *testing.T) {
 	base := []string{"--ssh", "ssh.example.invalid:22", "--ssh-user", "EXAMPLE_USER", "--ssh-hostkey", "SHA256:EXAMPLE_PIN", "--tower", "https://tower.example.invalid", "--user", "EXAMPLE_ADMIN", "--credentials-stdin"}
-	for _, mode := range [][]string{{"enable"}, {"plugin", "list"}, {"plugin", "enable", "--plugin-id", "pluginkit-example"}} {
+	for _, mode := range [][]string{{"enable"}, {"plugin", "list"}, {"plugin", "enable", "--plugin-id", "rivetin-example"}} {
 		args := append(append([]string{}, mode...), base...)
 		if err := run(args, &bytes.Buffer{}); err == nil || err.Error() != "SSH_AND_HTTPS_HOST_MUST_MATCH" {
 			t.Fatal("new command skipped API target validation", args, err)
@@ -152,15 +152,15 @@ type mainActionTransport struct {
 func (m *mainActionTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	status, body := 200, ""
 	switch req.URL.Path {
-	case "/api/pluginkit/v1/enable":
+	case "/api/rivetin/v1/enable":
 		m.enabled = true
 		if m.enableStatus != 0 {
 			status = m.enableStatus
 		}
 		body = `{"enabled":true}`
-	case "/api/pluginkit/v1/runtime":
+	case "/api/rivetin/v1/runtime":
 		body = m.runtime
-	case "/api/pluginkit/v1/plugins":
+	case "/api/rivetin/v1/plugins":
 		m.pluginListed = true
 		body = `{"items":[]}`
 	default:
@@ -260,19 +260,18 @@ func TestCredentialsStdinBoundsReadsAndSanitizesReaderErrors(t *testing.T) {
 	}
 }
 
-func TestMigrationAndCredentialInputAppearInLocalizedHelp(t *testing.T) {
+func TestCredentialInputAppearsInLocalizedHelpAndMigrationIsRejected(t *testing.T) {
 	for _, lang := range []string{"zh-CN", "en-US"} {
 		var out bytes.Buffer
-		if err := run([]string{"migrate", "--help", "--lang", lang}, &out); err != nil {
+		if err := run([]string{"help", "--lang", lang}, &out); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(out.String(), "migrate") || !strings.Contains(out.String(), "--credentials-stdin") {
-			t.Fatal("help omits migration or stdin credentials")
+		if strings.Contains(out.String(), "|migrate|") || !strings.Contains(out.String(), "--credentials-stdin") {
+			t.Fatal("invalid help")
 		}
 	}
-	err := run([]string{"migrate", "--credentials-stdin", "--ssh", "ssh.example.invalid:22", "--ssh-user", "EXAMPLE_USER", "--ssh-hostkey", "SHA256:EXAMPLE_PIN", "--tower", "https://tower.example.invalid", "--user", "EXAMPLE_ADMIN"}, &bytes.Buffer{})
-	if err == nil || err.Error() != "SSH_AND_HTTPS_HOST_MUST_MATCH" {
-		t.Fatal("migration skipped same-host validation")
+	if err := run([]string{"migrate"}, &bytes.Buffer{}); err == nil || err.Error() != "UNKNOWN_COMMAND" {
+		t.Fatal(err)
 	}
 }
 

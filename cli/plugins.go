@@ -13,14 +13,15 @@ import (
 	"strings"
 )
 
-const pluginAPIPrefix = "/api/pluginkit/v1"
 const maxPluginPackage = 16 << 20
 
-var pluginIDPattern = regexp.MustCompile(`^pluginkit-[a-z0-9]+(?:-[a-z0-9]+)*$`)
+var pluginIDPattern = regexp.MustCompile(`^rivetin-[a-z0-9]+(?:-[a-z0-9]+)*$`)
 var pluginVersionPattern = regexp.MustCompile(`^(0|[1-9][0-9]{0,7})\.(0|[1-9][0-9]{0,7})\.(0|[1-9][0-9]{0,7})$`)
 var pluginDigestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var pluginFilePattern = regexp.MustCompile(`^(?:web/[A-Za-z0-9_./-]+\.(?:js|css|json)|LICENSE)$`)
 var pluginServerErrors = map[string]bool{
+	"PLUGIN_INCOMPATIBLE": true, "TOWER_BUILD_UNKNOWN": true, "PLUGIN_COMPATIBILITY_UNDECLARED": true,
+	"SSH_PERMISSION_REQUIRED": true, "SSH_REGISTRATION_INVALID": true, "SSH_OPERATION_REJECTED": true, "SSH_SCHEDULE_INVALID": true, "SSH_TARGET_LIMIT": true,
 	"AUTHENTICATION_REQUIRED": true, "ADMIN_OR_ORIGIN_REQUIRED": true, "ADMIN_REQUIRED": true,
 	"FRAMEWORK_NOT_INITIALIZED": true, "PLUGIN_NOT_INSTALLED": true, "INVALID_TRANSITION": true,
 	"VERSION_ALREADY_INSTALLED": true, "UPDATE_VERSION_MUST_INCREASE": true, "MIGRATION_REQUIRED": true,
@@ -36,7 +37,8 @@ type pluginPackageManifest struct {
 	ID       string `json:"id"`
 	Version  string `json:"version"`
 	Frontend struct {
-		Entry string `json:"entry"`
+		Entry  string `json:"entry"`
+		Format string `json:"format"`
 	} `json:"frontend"`
 }
 
@@ -60,10 +62,13 @@ func validatePluginInput(input []byte, expectedID string) (pluginPackageManifest
 	}
 	decoder := json.NewDecoder(bytes.NewReader(input))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&bundle) != nil || decoder.Decode(new(any)) != io.EOF || bundle.Format != "pluginkit-package-v1" || json.Unmarshal(bundle.Manifest, &manifest) != nil {
+	if decoder.Decode(&bundle) != nil || decoder.Decode(new(any)) != io.EOF || bundle.Format != "rivetin-package-v1" || json.Unmarshal(bundle.Manifest, &manifest) != nil {
 		return manifest, errors.New("INVALID_PACKAGE")
 	}
 	if !validPluginID(manifest.ID) || !pluginVersionPattern.MatchString(manifest.Version) {
+		return manifest, errors.New("INVALID_MANIFEST")
+	}
+	if manifest.Frontend.Format != "rivetin-global-v1" {
 		return manifest, errors.New("INVALID_MANIFEST")
 	}
 	if expectedID != "" && expectedID != manifest.ID {
@@ -116,7 +121,7 @@ func pluginRequest(ctx context.Context, api *Tower, route, method string, body [
 	if body != nil {
 		contentType = "application/json"
 	}
-	data, status, err := api.request(ctx, method, pluginAPIPrefix+route, contentType, body)
+	data, status, err := api.frameworkRequest(ctx, method, route, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +149,8 @@ func pluginStates(ctx context.Context, api *Tower) ([]pluginCLIState, error) {
 		return nil, errors.New("PLUGIN_READBACK_INVALID")
 	}
 	seen := make(map[string]bool)
-	for _, item := range *response.Items {
+	for index := range *response.Items {
+		item := &(*response.Items)[index]
 		if !validPluginID(item.ID) || seen[item.ID] || item.Installed == nil || item.Enabled == nil {
 			return nil, errors.New("PLUGIN_READBACK_INVALID")
 		}
@@ -153,7 +159,7 @@ func pluginStates(ctx context.Context, api *Tower) ([]pluginCLIState, error) {
 	return *response.Items, nil
 }
 
-// RunPluginAction manages authenticated PluginKit packages without executing their contents.
+// RunPluginAction manages authenticated Rivetin packages without executing their contents.
 func RunPluginAction(ctx context.Context, api *Tower, action, pluginID string, packageBytes []byte, progress func(string)) error {
 	if api == nil || api.token == "" {
 		return errors.New("TOWER_AUTHENTICATION_REQUIRED")

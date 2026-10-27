@@ -2,17 +2,20 @@ import { readdir, readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { validId } from '../framework/shared/identity.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const task = process.argv[2], selected = process.argv[3], npm = process.env.npm_execpath;
 if (!npm || !['ci', 'test', 'build', 'package', 'demo'].includes(task)) throw new Error('Run this command through npm.');
 const plugins = [];
-if (!selected || selected === 'pluginkit') {
+if (selected && selected !== 'rivetin' && !validId(selected)) throw new Error('Invalid plugin ID');
+if (!selected || selected === 'rivetin') {
   const directory = path.join(root, 'framework'), pkg = JSON.parse(await readFile(path.join(directory, 'package.json'), 'utf8'));
-  if (task === 'ci' || pkg.scripts?.[task]) plugins.push({ id: 'pluginkit', directory });
+  if (task === 'ci' || pkg.scripts?.[task]) plugins.push({ id: 'rivetin', directory });
 }
 for (const entry of await readdir(path.join(root, 'plugins'), { withFileTypes: true })) {
-  if (!entry.isDirectory() || !/^pluginkit-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(entry.name) || (selected && selected !== entry.name)) continue;
+  if (selected === 'rivetin') continue;
+  if (!entry.isDirectory() || !validId(entry.name) || (selected && selected !== entry.name)) continue;
   const directory = path.join(root, 'plugins', entry.name);
   let pkg;
   try { pkg = JSON.parse(await readFile(path.join(directory, 'package.json'), 'utf8')); }

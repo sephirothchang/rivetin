@@ -23,10 +23,19 @@ import (
 const recoveryTimeout = 4 * time.Minute
 
 var diagnosticMessages = map[string][2]string{
+	"PLUGIN_INCOMPATIBLE":                           {"该插件不支持当前 CloudTower 或框架版本，操作已停止。", "The plugin does not support the current CloudTower or framework version; the operation stopped."},
+	"TOWER_BUILD_UNKNOWN":                           {"无法确认 CloudTower 版本，已阻止安装和启用插件。", "The CloudTower version is unknown; plugin installation and activation were blocked."},
+	"PLUGIN_COMPATIBILITY_UNDECLARED":               {"安装包未声明可校验的已验证版本，请使用维护者提供的新版本。", "The package has no machine-readable verified version declaration. Use an updated package from its maintainer."},
+	"SSH_PROFILE_INVALID":                           {"主机连接文件无效；请检查受限 JSON 格式、大小与文件类型。内容不会输出。", "The host profile file is invalid. Check the bounded JSON format and file type; its contents are never printed."},
+	"SSH_PROFILE_REQUIRED":                          {"请使用 --host-profile-file 指定服务端 SSH 主机配置文件，不要把密码放入命令行。", "Provide --host-profile-file; do not put credentials on the command line."},
+	"SSH_CHANNEL_REQUEST_REJECTED":                  {"SSH 通道管理请求被拒绝，请检查管理员权限和主机配置格式。", "The SSH channel management request was rejected. Check administrator access and the host profile format."},
+	"SSH_CHANNEL_REQUEST_FAILED":                    {"无法连接 SSH 通道管理接口，请检查框架状态后重试。", "The SSH channel management API could not be reached. Check framework health before retrying."},
+	"SSH_CHANNEL_READBACK_INVALID":                  {"尚未确认 SSH 主机配置保存成功，请核对通道页面后再重试。", "The host profile update could not be confirmed. Inspect the channel page before retrying."},
+	"SSH_CHANNEL_ACTION_INVALID":                    {"SSH 通道命令仅支持 status、import-host、remove-host；不支持任意命令执行。", "Channel commands support status, import-host and remove-host; arbitrary execution is not supported."},
 	"ISLAND_REGISTRY_UNAVAILABLE":                   {"无法读取 Tower Island 注册表。请核对 Tower 服务状态后重试，尚未将其视为未安装。", "The Tower Island registry could not be read. Check Tower before retrying; this is not treated as an absent installation."},
 	"ISLAND_REGISTRY_INVALID":                       {"Island 注册表响应不符合已验证格式，已停止操作。请核对 Tower 构建及适配器。", "The Island registry response does not match the validated format. The operation stopped; verify the Tower build and adapter."},
-	"ISLAND_MULTIPLE_INSTANCES":                     {"检测到多个 PluginKit Island 注册，已停止操作。请先完整备份并受控核对历史残留，不要重复注册。", "Multiple PluginKit Island registrations were found. Back up and reconcile historical entries before continuing; do not register another copy."},
-	"ISLAND_REMOVE_READBACK_FAILED":                 {"尚未确认 PluginKit Island 已移除。请核对注册表及恢复记录，不要继续清空配置。", "PluginKit Island removal could not be confirmed. Inspect the registry and recovery record before clearing configuration."},
+	"ISLAND_MULTIPLE_INSTANCES":                     {"检测到多个 Rivetin Island 注册，已停止操作。请先完整备份并受控核对历史残留，不要重复注册。", "Multiple Rivetin Island registrations were found. Back up and reconcile historical entries before continuing; do not register another copy."},
+	"ISLAND_REMOVE_READBACK_FAILED":                 {"尚未确认 Rivetin Island 已移除。请核对注册表及恢复记录，不要继续清空配置。", "Rivetin Island removal could not be confirmed. Inspect the registry and recovery record before clearing configuration."},
 	"ISLAND_ARCHIVE_INVALID":                        {"Island 归档或海图格式无效，注册已拒绝。请使用经过核验的原始制品或备份。", "The Island archive or sea map is invalid. Registration was rejected; use a verified original artifact or backup."},
 	"ISLAND_NAME_CHANGE_REQUIRES_MIGRATION":         {"现有与目标 Island 的实际注册名不同，已拒绝覆盖。请先备份并受控迁移旧注册，避免产生重复入口。", "The existing and target Island registry names differ. Back up and migrate the old registration explicitly to avoid duplicate entries."},
 	"ISLAND_REGISTER_OUTCOME_UNKNOWN":               {"Island 注册请求结果尚未确认，恢复记录已保留。请先通过 status 核对 pending，再使用对应编号受控恢复。", "The Island registration outcome is unconfirmed and its recovery record was retained. Inspect pending with status, then recover using the operation ID."},
@@ -57,7 +66,7 @@ var diagnosticMessages = map[string][2]string{
 	"INSTALLER_OPERATION_MISMATCH":                  {"恢复编号与当前待处理记录不一致。请先运行 status 核对，勿清除锁文件绕过检查。", "The recovery ID does not match the pending operation. Run status to verify it; do not remove lock files to bypass the check."},
 	"RECOVERY_OPERATION_ID_REQUIRED":                {"recover 需要通过 --operation 指定有效的恢复记录编号。", "The recover command requires a valid recovery record ID supplied with --operation."},
 	"ALREADY_INSTALLED_USE_UPDATE":                  {"框架已由安装器安装。需要更新时请使用 update。", "The framework is already installed by this installer. Use update to update it."},
-	"FRAMEWORK_NOT_INSTALLED":                       {"未找到符合当前操作要求的 PluginKit 安装或数据布局。", "A PluginKit installation or data layout required for this operation was not found."},
+	"FRAMEWORK_NOT_INSTALLED":                       {"未找到符合当前操作要求的 Rivetin 安装或数据布局。", "A Rivetin installation or data layout required for this operation was not found."},
 	"FRAMEWORK_MIGRATION_REQUIRED":                  {"现有框架数据版本需要迁移，本版本安装器不执行该迁移。请先备份并使用受支持的迁移流程。", "The existing framework data version requires a migration that this installer does not perform. Back up the data and use a supported migration workflow."},
 	"REMOTE_BOOTSTRAP_UNAVAILABLE":                  {"无法启动 Tower 端引导器。请检查 SSH 账户的免密 sudo、Python 3 可用性及执行权限。", "The Tower-side bootstrap could not be started. Check passwordless sudo, Python 3 availability and execution permissions for the SSH account."},
 	"KUBERNETES_COMMAND_FAILED":                     {"Tower 端 Kubernetes 操作失败。请检查相关组件状态，并结合恢复记录确认是否需要回滚。", "A Tower-side Kubernetes operation failed. Check component health and the recovery record to determine whether rollback is required."},
@@ -86,14 +95,14 @@ var diagnosticMessages = map[string][2]string{
 	"SECRET_INPUT_FAILED":                           {"无法从终端安全读取密码。请检查终端状态后重新运行。", "The password could not be read securely from the terminal. Check the terminal and run the command again."},
 	"INVALID_PLUGIN_ACTION":                         {"子插件操作无效。请使用 plugin install、update、enable、disable、uninstall 或 list。", "The plugin action is invalid. Use plugin install, update, enable, disable, uninstall or list."},
 	"PLUGIN_ID_REQUIRED":                            {"该子插件操作需要通过 --plugin-id 指定插件标识。", "This plugin action requires a plugin identifier supplied with --plugin-id."},
-	"INVALID_PLUGIN_ID":                             {"插件标识无效。请使用不超过 100 字符的小写 pluginkit- 功能标识。", "The plugin identifier is invalid. Use a lowercase pluginkit- identifier of at most 100 characters."},
-	"PLUGIN_PACKAGE_REQUIRED":                       {"安装或升级子插件需要通过 --package 指定 PluginKit 插件包。", "Installing or updating a plugin requires a PluginKit package supplied with --package."},
+	"INVALID_PLUGIN_ID":                             {"插件标识无效。请使用不超过 100 字符的小写 rivetin- 功能标识。", "The plugin identifier is invalid. Use a lowercase rivetin- identifier of at most 100 characters."},
+	"PLUGIN_PACKAGE_REQUIRED":                       {"安装或升级子插件需要通过 --package 指定 Rivetin 插件包。", "Installing or updating a plugin requires a Rivetin package supplied with --package."},
 	"PLUGIN_PACKAGE_UNAVAILABLE":                    {"无法读取插件包。请选择可读取的常规文件。", "The plugin package could not be read. Select a readable regular file."},
 	"PLUGIN_PACKAGE_TOO_LARGE":                      {"插件包超过 16 MiB 上限，已停止读取。", "The plugin package exceeds the 16 MiB limit and was not read."},
 	"FRAMEWORK_ENABLE_FAILED":                       {"恢复框架运行的请求失败。请检查插件服务状态和管理员权限。", "The framework enable request failed. Check the plugin service and administrator permissions."},
 	"FRAMEWORK_ENABLE_READBACK_FAILED":              {"尚未确认框架已恢复运行。请检查插件中心状态后再操作。", "Framework enablement could not be confirmed. Inspect Plugin Center before proceeding."},
 	"UNINSTALL_FRAMEWORK_BEFORE_RESET":              {"框架尚未完全卸载，配置退归档已拒绝。请先完成框架卸载并核对资源状态。", "The framework is not fully uninstalled. Configuration archival was rejected. Finish uninstalling the framework and verify its resources first."},
-	"PLUGIN_PODS_STILL_PRESENT":                     {"仍存在 PluginKit Pod，配置退归档已拒绝。请等待框架卸载完成并核对残留资源。", "PluginKit Pods are still present. Configuration archival was rejected. Wait for framework uninstallation and inspect remaining resources."},
+	"PLUGIN_PODS_STILL_PRESENT":                     {"仍存在 Rivetin Pod，配置退归档已拒绝。请等待框架卸载完成并核对残留资源。", "Rivetin Pods are still present. Configuration archival was rejected. Wait for framework uninstallation and inspect remaining resources."},
 	"RESET_CONFIG_OUTCOME_UNKNOWN":                  {"配置退归档结果尚未确认。请根据已显示的操作编号，只读核对 backups/<编号>/cleared-data、manifest.json 和 state.json，再受控人工处理；不要使用通用 recover 命令。", "Configuration archival has an unconfirmed outcome. Use the displayed operation ID to inspect backups/<ID>/cleared-data, manifest.json and state.json read-only, then perform controlled manual recovery; do not use the generic recover command."},
 	"CREDENTIAL_INPUT_INVALID":                      {"标准输入凭据无效。请提供不超过 16 KiB 的单个 JSON 对象，仅包含 sshPassword 和可选的 towerPassword；需要 Tower 登录的命令必须同时提供两项。", "The credential input is invalid. Provide one JSON object of at most 16 KiB containing only sshPassword and optional towerPassword; commands requiring Tower login need both."},
 	"CREDENTIAL_INPUT_REQUIRES_PIPE":                {"--credentials-stdin 仅接受管道或重定向的标准输入。交互输入密码时请省略该参数，使用默认的不回显提示。", "--credentials-stdin requires piped or redirected input. Omit this option for the default non-echoing terminal prompts."},
@@ -187,10 +196,11 @@ func requestedLanguage(args []string) (string, error) {
 
 func printHelp(out io.Writer, lang string) {
 	if lang == "en-US" {
-		fmt.Fprintln(out, `PluginKit portable CLI 0.1.0
-Usage: pluginkit <install|migrate|update|uninstall|enable|disable|reset-config|detect|status|plan|recover> [options]
-       pluginkit plugin <install|update|enable|disable|uninstall|list> [options]
-       pluginkit version | licenses | help
+		fmt.Fprintln(out, `Rivetin portable CLI 0.1.0
+Usage: rivetin <install|update|uninstall|enable|disable|reset-config|detect|status|plan|recover> [options]
+       rivetin plugin <install|update|enable|disable|uninstall|list> [options]
+       rivetin channel <status|import-host|remove-host> [options]
+       rivetin version | licenses | help
 
 --ssh HOST:PORT          Tower VM SSH endpoint
 --ssh-user USER          SSH account with passwordless sudo
@@ -202,8 +212,10 @@ Usage: pluginkit <install|migrate|update|uninstall|enable|disable|reset-config|d
 --operation ID           Recovery record ID, for recover only
 --lang zh-CN|en-US       Output language; default zh-CN
 --credentials-stdin      Read credentials from a bounded JSON object on standard input
---package FILE           PluginKit package for plugin install/update, at most 16 MiB
+--package FILE           Rivetin package for plugin install/update, at most 16 MiB
 --plugin-id ID           Plugin identifier; optional for install/update and list
+--host-profile-file FILE Sensitive host JSON for channel import-host; never printed
+--host-id ID             Host identity for channel remove-host
 
 No client runtime, external SSH, PATH or registry changes are required.
 Unknown Tower builds are rejected before deployment writes. Emergency disable needs
@@ -212,10 +224,11 @@ Uninstall retains data, code releases and backups. Updates leave plugins disable
 reset-config archives settings only after the framework is fully uninstalled.`)
 		return
 	}
-	fmt.Fprintln(out, `PluginKit 便携式 CLI 0.1.0
-用法：pluginkit <install|migrate|update|uninstall|enable|disable|reset-config|detect|status|plan|recover> [参数]
-      pluginkit plugin <install|update|enable|disable|uninstall|list> [参数]
-      pluginkit version | licenses | help
+	fmt.Fprintln(out, `Rivetin 便携式 CLI 0.1.0
+用法：rivetin <install|update|uninstall|enable|disable|reset-config|detect|status|plan|recover> [参数]
+      rivetin plugin <install|update|enable|disable|uninstall|list> [参数]
+      rivetin channel <status|import-host|remove-host> [参数]
+      rivetin version | licenses | help
 
 --ssh 主机:端口           Tower 虚拟机的 SSH 地址
 --ssh-user 用户名         已配置免密 sudo 的 SSH 账户
@@ -229,6 +242,8 @@ reset-config archives settings only after the framework is fully uninstalled.`)
 --credentials-stdin      从标准输入读取有大小限制的 JSON 凭据对象
 --package 文件           子插件安装／升级包，最大 16 MiB
 --plugin-id 标识          插件标识；安装／升级和列表操作可省略
+--host-profile-file 文件  channel import-host 使用的敏感主机 JSON 文件，不回显内容
+--host-id 标识            channel remove-host 使用的主机标识
 
 无需客户端额外运行时或外部 SSH，不修改 PATH、注册表及系统配置。
 未验证的 Tower 构建在部署写入前拒绝。紧急禁用仅需 SSH，不依赖 Tower Web/API
@@ -254,9 +269,19 @@ func secret(label string) (string, error) {
 const credentialInputLimit = 16 * 1024
 const pluginPackageLimit = 16 * 1024 * 1024
 
-var pluginIdentifier = regexp.MustCompile(`^pluginkit-[a-z0-9]+(?:-[a-z0-9]+)*$`)
+var pluginIdentifier = pluginIDPattern
+var channelHostID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
 
 func normalizePluginCommand(args []string) ([]string, error) {
+	if len(args) > 0 && args[0] == "channel" {
+		if len(args) > 1 && (args[1] == "--help" || args[1] == "-h") {
+			return args, nil
+		}
+		if len(args) < 2 || !strings.Contains("|status|import-host|remove-host|", "|"+args[1]+"|") {
+			return nil, errors.New("SSH_CHANNEL_ACTION_INVALID")
+		}
+		return append([]string{"channel." + args[1]}, args[2:]...), nil
+	}
 	if len(args) == 0 || args[0] != "plugin" {
 		return args, nil
 	}
@@ -379,7 +404,7 @@ func run(args []string, out io.Writer) error {
 	}
 	mode := args[0]
 	if mode == "version" {
-		fmt.Fprintln(out, "pluginkit 0.1.0")
+		fmt.Fprintln(out, "rivetin 0.1.0")
 		return nil
 	}
 	if mode == "licenses" {
@@ -390,10 +415,10 @@ func run(args []string, out io.Writer) error {
 		_, err = out.Write(raw)
 		return err
 	}
-	if !strings.Contains("|install|migrate|update|uninstall|enable|disable|reset-config|detect|status|plan|recover|plugin.install|plugin.update|plugin.enable|plugin.disable|plugin.uninstall|plugin.list|", "|"+mode+"|") {
+	if !strings.Contains("|install|update|uninstall|enable|disable|reset-config|detect|status|plan|recover|plugin.install|plugin.update|plugin.enable|plugin.disable|plugin.uninstall|plugin.list|channel.status|channel.import-host|channel.remove-host|", "|"+mode+"|") {
 		return errors.New("UNKNOWN_COMMAND")
 	}
-	flags := flag.NewFlagSet("pluginkit", flag.ContinueOnError)
+	flags := flag.NewFlagSet("rivetin", flag.ContinueOnError)
 	// flag errors may contain caller-provided values; diagnostics are emitted separately.
 	flags.SetOutput(io.Discard)
 	host := flags.String("ssh", "", "SSH endpoint")
@@ -406,8 +431,10 @@ func run(args []string, out io.Writer) error {
 	operation := flags.String("operation", "", "Recovery ID")
 	lang := flags.String("lang", language, "Language")
 	credentialsStdin := flags.Bool("credentials-stdin", false, "Read credentials from standard input")
-	packageFile := flags.String("package", "", "PluginKit package file")
+	packageFile := flags.String("package", "", "Rivetin package file")
 	pluginID := flags.String("plugin-id", "", "Plugin identifier")
+	hostProfileFile := flags.String("host-profile-file", "", "Sensitive SSH host profile JSON file")
+	hostID := flags.String("host-id", "", "SSH channel host identifier")
 	if err := flags.Parse(args[1:]); err != nil {
 		return errors.New("INVALID_ARGUMENTS")
 	}
@@ -450,7 +477,27 @@ func run(args []string, out io.Writer) error {
 	}
 	var api *Tower
 	var err error
-	if mode == "install" || mode == "migrate" || mode == "update" || mode == "uninstall" || mode == "recover" || mode == "enable" || strings.HasPrefix(mode, "plugin.") {
+	var channelProfile []byte
+	if mode == "channel.import-host" {
+		if *hostProfileFile == "" || *hostID != "" {
+			return errors.New("SSH_PROFILE_REQUIRED")
+		}
+		channelProfile, err = readHostProfile(*hostProfileFile)
+		if err != nil {
+			return err
+		}
+		defer clear(channelProfile)
+	} else if *hostProfileFile != "" {
+		return errors.New("INVALID_ARGUMENTS")
+	}
+	if mode == "channel.remove-host" {
+		if !channelHostID.MatchString(*hostID) {
+			return errors.New("SSH_HOST_INVALID")
+		}
+	} else if *hostID != "" {
+		return errors.New("INVALID_ARGUMENTS")
+	}
+	if mode == "install" || mode == "update" || mode == "uninstall" || mode == "recover" || mode == "enable" || strings.HasPrefix(mode, "plugin.") || strings.HasPrefix(mode, "channel.") {
 		api, err = newTowerWithPin(*origin, *ca, *tlsPin)
 		if err != nil {
 			return err
@@ -512,7 +559,7 @@ func run(args []string, out io.Writer) error {
 			}
 		}
 	}
-	engine := Engine{Remote: remote, Tower: api, PluginID: *pluginID, PluginPackage: pluginPackage, Progress: func(line string) {
+	engine := Engine{Remote: remote, Tower: api, PluginID: *pluginID, PluginPackage: pluginPackage, ChannelProfile: channelProfile, ChannelHostID: *hostID, Progress: func(line string) {
 		if *lang == "zh-CN" {
 			line = strings.ReplaceAll(line, "BACKEND_READBACK ", "后端验证：")
 			line = strings.ReplaceAll(line, "PROFILE ", "适配版本：")
@@ -535,7 +582,7 @@ func main() {
 	args := os.Args[1:]
 	if err := run(args, os.Stdout); err != nil {
 		lang, _ := requestedLanguage(args)
-		fmt.Fprintln(os.Stderr, "PluginKit:", explainError(err, lang))
+		fmt.Fprintln(os.Stderr, "Rivetin:", explainError(err, lang))
 		os.Exit(1)
 	}
 }

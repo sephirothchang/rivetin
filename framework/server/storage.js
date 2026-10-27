@@ -1,9 +1,9 @@
-import { mkdir, readFile, open, rename, unlink, stat } from 'node:fs/promises';
+import { mkdir, readFile, open, rename, unlink, stat, lstat } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { idPattern, validId, assertId } from '../shared/identity.js';
 
-export const idPattern = /^pluginkit-[a-z0-9]+(?:-[a-z0-9]+)*$/;
-export const validId = id => typeof id === 'string' && id.length <= 100 && idPattern.test(id);
+export { idPattern, validId, assertId };
 export async function json(file, fallback) {
   try { return JSON.parse(await readFile(file, 'utf8')); }
   catch (error) { if (error.code === 'ENOENT' && fallback !== undefined) return structuredClone(fallback); throw new Error('DATA_UNAVAILABLE'); }
@@ -14,7 +14,15 @@ export async function atomic(file, value) {
   try {
     const handle = await open(temporary, 'wx', 0o600);
     try { await handle.writeFile(JSON.stringify(value, null, 2) + '\n'); await handle.sync(); } finally { await handle.close(); }
-    await rename(temporary, file);
+    const deadline = Date.now() + 1500;
+    for (;;) {
+      try { await rename(temporary, file); break; }
+      catch (error) {
+        if (process.platform !== 'win32' || !['EPERM', 'EBUSY'].includes(error.code) || Date.now() >= deadline) throw error;
+        // Preserve the destination while Windows releases transient reader handles.
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+    }
   } finally { await unlink(temporary).catch(() => {}); }
 }
 export async function exists(file) {
@@ -36,7 +44,13 @@ export function storage(directory) {
       while (!handle) {
         try { handle = await open(file, 'wx', 0o600); }
         catch (error) {
-          if (error.code !== 'EEXIST') throw error;
+          // Windows may report a live exclusive lock as EPERM during another process's open/unlink.
+          let competing = error.code === 'EEXIST';
+          if (!competing && process.platform === 'win32' && error.code === 'EPERM') {
+            const info = await lstat(file).catch(() => null);
+            competing = Boolean(info?.isFile() && !info.isSymbolicLink());
+          }
+          if (!competing) throw error;
           if (Date.now() >= deadline) throw new Error('STORE_BUSY');
           await new Promise(resolve => setTimeout(resolve, 20));
         }

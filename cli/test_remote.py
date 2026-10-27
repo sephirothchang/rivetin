@@ -14,14 +14,14 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent
-spec = importlib.util.spec_from_file_location('pluginkit_remote', str(ROOT / 'remote.py'))
+spec = importlib.util.spec_from_file_location('rivetin_remote', str(ROOT / 'remote.py'))
 remote = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(remote)
 
 def archive(entries=None):
     output = io.BytesIO()
     entries = entries or [('server/main.js', b'// EXAMPLE_SERVICE'), ('cli.mjs', b'// EXAMPLE_CLI'),
-                          ('package.json', b'{"name":"pluginkit","version":"0.1.0"}'), ('LICENSE', b'MIT fixture')]
+                          ('package.json', b'{"name":"rivetin","version":"0.1.0"}'), ('LICENSE', b'MIT fixture')]
     with tarfile.open(fileobj=output, mode='w') as tar:
         for name, content in entries:
             if isinstance(content, tarfile.TarInfo):
@@ -34,38 +34,38 @@ def archive(entries=None):
 
 def manifest(checksum):
     def metadata(kind):
-        annotations = {'pluginkit/managed-by': remote.OWNER}
+        annotations = {'rivetin/managed-by': remote.OWNER}
         if kind == 'Ingress':
             annotations.update({'kubernetes.io/ingress.class': 'nginx',
                 'nginx.ingress.kubernetes.io/proxy-body-size': '16m',
                 'nginx.ingress.kubernetes.io/proxy-read-timeout': '15',
                 'nginx.ingress.kubernetes.io/force-ssl-redirect': 'true'})
-        return {'name': 'pluginkit', 'namespace': remote.NS, 'annotations': annotations}
-    container = {'name': 'pluginkit', 'image': remote.IMAGE, 'imagePullPolicy': 'IfNotPresent',
-        'workingDir': '/opt/pluginkit', 'command': ['node', 'server/main.js'],
-        'env': [{'name': 'PLUGINKIT_DATA', 'value': '/var/lib/pluginkit'},
-                {'name': 'PLUGINKIT_TOWER_URL', 'value': 'http://cloudtower-cloudtower.cloudtower-system.svc.cluster.local'},
-                {'name': 'PLUGINKIT_ORIGINS', 'value': 'https://tower.example.invalid'}],
+        return {'name': 'rivetin', 'namespace': remote.NS, 'annotations': annotations}
+    container = {'name': 'rivetin', 'image': remote.IMAGE, 'imagePullPolicy': 'IfNotPresent',
+        'workingDir': '/opt/rivetin', 'command': ['node', 'server/main.js'],
+        'env': [{'name': 'RIVETIN_DATA', 'value': '/var/lib/rivetin'},
+                {'name': 'RIVETIN_TOWER_URL', 'value': 'http://cloudtower-cloudtower.cloudtower-system.svc.cluster.local'},
+                {'name': 'RIVETIN_ORIGINS', 'value': 'https://tower.example.invalid'}],
         'ports': [{'containerPort': 8787}],
         'resources': {'requests': {'cpu': '20m', 'memory': '48Mi'}, 'limits': {'cpu': '500m', 'memory': '256Mi'}},
         'securityContext': {'runAsUser': 1000, 'runAsGroup': 1000, 'allowPrivilegeEscalation': False,
                             'readOnlyRootFilesystem': True, 'capabilities': {'drop': ['ALL']}},
         'readinessProbe': {'httpGet': {'path': '/healthz', 'port': 8787}},
         'livenessProbe': {'httpGet': {'path': '/healthz', 'port': 8787}, 'initialDelaySeconds': 10},
-        'volumeMounts': [{'name': 'code', 'mountPath': '/opt/pluginkit', 'readOnly': True},
-                         {'name': 'data', 'mountPath': '/var/lib/pluginkit'}]}
+        'volumeMounts': [{'name': 'code', 'mountPath': '/opt/rivetin', 'readOnly': True},
+                         {'name': 'data', 'mountPath': '/var/lib/rivetin'}]}
     pod = {'automountServiceAccountToken': False, 'enableServiceLinks': False, 'containers': [container],
         'volumes': [{'name': 'code', 'hostPath': {'path': str(remote.BASE / 'releases' / checksum), 'type': 'Directory'}},
                     {'name': 'data', 'hostPath': {'path': str(remote.BASE / 'data'), 'type': 'Directory'}}]}
     return {'apiVersion': 'v1', 'kind': 'List', 'items': [
         {'apiVersion': 'apps/v1', 'kind': 'Deployment', 'metadata': metadata('Deployment'),
-         'spec': {'replicas': 1, 'strategy': {'type': 'Recreate'}, 'selector': {'matchLabels': {'app': 'pluginkit'}},
-                  'template': {'metadata': {'labels': {'app': 'pluginkit'}, 'annotations': {'pluginkit/code-sha256': checksum}}, 'spec': pod}}},
+         'spec': {'replicas': 1, 'strategy': {'type': 'Recreate'}, 'selector': {'matchLabels': {'app': 'rivetin'}},
+                  'template': {'metadata': {'labels': {'app': 'rivetin'}, 'annotations': {'rivetin/code-sha256': checksum}}, 'spec': pod}}},
         {'apiVersion': 'v1', 'kind': 'Service', 'metadata': metadata('Service'),
-         'spec': {'selector': {'app': 'pluginkit'}, 'ports': [{'port': 8787, 'targetPort': 8787}]}},
+         'spec': {'selector': {'app': 'rivetin'}, 'ports': [{'port': 8787, 'targetPort': 8787}]}},
         {'apiVersion': 'networking.k8s.io/v1', 'kind': 'Ingress', 'metadata': metadata('Ingress'),
-         'spec': {'rules': [{'http': {'paths': [{'path': '/api/pluginkit/', 'pathType': 'Prefix',
-            'backend': {'service': {'name': 'pluginkit', 'port': {'number': 8787}}}}]}}],
+         'spec': {'rules': [{'http': {'paths': [{'path': '/api/rivetin/', 'pathType': 'Prefix',
+            'backend': {'service': {'name': 'rivetin', 'port': {'number': 8787}}}}]}}],
             'tls': [{'secretName': 'cloudtower-tls'}]}}]}
 
 class KubernetesFixture:
@@ -100,7 +100,7 @@ class KubernetesFixture:
             if self.fail_rollout:
                 raise RuntimeError('KUBERNETES_COMMAND_FAILED')
             return b''
-        if args[:2] == ('exec', 'deployment/pluginkit'):
+        if args[:2] == ('exec', 'deployment/rivetin'):
             settings = remote.BASE / 'data' / 'framework' / 'settings.json'
             if not settings.exists():
                 settings.write_text('{"apiVersion":1,"version":"0.1.0"}')
@@ -109,7 +109,7 @@ class KubernetesFixture:
 
     @property
     def writes(self):
-        return [args for args, _ in self.calls if args[0] in ['apply', 'delete', 'rollout'] or args[:2] == ('exec', 'deployment/pluginkit')]
+        return [args for args, _ in self.calls if args[0] in ['apply', 'delete', 'rollout'] or args[:2] == ('exec', 'deployment/rivetin')]
 
 class RemoteTests(unittest.TestCase):
     def setUp(self):
@@ -149,10 +149,45 @@ class RemoteTests(unittest.TestCase):
         self.begin()
         self.apply()
         self.finish()
-        config = self.base / 'data' / 'plugins' / 'pluginkit-example' / 'config.json'
+        config = self.base / 'data' / 'plugins' / 'rivetin-example' / 'config.json'
         config.parent.mkdir(parents=True)
         config.write_text('{"EXAMPLE_SETTING":"preserve bytes"}')
         return config
+
+    def test_obsolete_ownership_and_manifest_are_not_adopted(self):
+        wanted = manifest('a' * 64)
+        for item in wanted['items']:
+            item['metadata']['name'] = 'pluginkit'
+            item['metadata']['annotations']['pluginkit/managed-by'] = 'pluginkit-cli-v1'
+            del item['metadata']['annotations']['rivetin/managed-by']
+        self.assertFalse(remote.owned(wanted['items']))
+        with self.assertRaisesRegex(RuntimeError, 'MANIFEST_INVALID'):
+            remote.validate_manifest(wanted, 'a' * 64)
+        with self.assertRaisesRegex(RuntimeError, 'UNKNOWN_ACTION'):
+            remote.handle({'action': 'migrate', 'operation': self.op})
+        self.assertFalse(self.base.exists())
+        self.assertFalse(self.kube.writes)
+
+    def test_obsolete_env_and_ingress_paths_are_rejected(self):
+        for change in ['env', 'ingress']:
+            wanted = manifest('a' * 64)
+            if change == 'env':
+                for item in wanted['items'][0]['spec']['template']['spec']['containers'][0]['env']:
+                    item['name'] = item['name'].replace('RIVETIN_', 'PLUGINKIT_')
+            else:
+                wanted['items'][2]['spec']['rules'][0]['http']['paths'][0]['path'] = '/api/pluginkit/'
+            with self.assertRaisesRegex(RuntimeError, 'MANIFEST_INVALID'):
+                remote.validate_manifest(wanted, 'a' * 64)
+
+    def test_service_archive_accepts_shared_runtime_and_new_builtin_only(self):
+        for forbidden in ['server/builtins/pluginkit-ssh-channel.json', 'shared/unknown.js']:
+            with self.assertRaisesRegex(RuntimeError, 'SERVICE_ARCHIVE_INVALID'):
+                remote.extract_release(archive([('server/main.js', b'// EXAMPLE'), (forbidden, b'{}')]), self.directory / 'rejected')
+        target = self.directory / 'new-service'
+        target.mkdir()
+        content = remote.extract_release(archive([('server/main.js', b'// EXAMPLE'), ('shared/identity.js', b'// EXAMPLE'),
+            ('server/builtins/rivetin-ssh-channel.json', b'{}'), ('server/vendor/ssh2.cjs', b'// EXAMPLE')]), target)
+        self.assertEqual(len(content), 4)
 
     def test_probe_is_read_only(self):
         result = remote.handle({'action': 'probe'})
@@ -397,14 +432,14 @@ class RemoteTests(unittest.TestCase):
         rollouts = [(args, options) for args, options in self.kube.calls if args[0] == 'rollout']
         self.assertEqual(len(rollouts), 1)
         args, options = rollouts[0]
-        self.assertEqual(args, ('rollout', 'status', 'deployment/pluginkit', '--timeout=270s'))
+        self.assertEqual(args, ('rollout', 'status', 'deployment/rivetin', '--timeout=270s'))
         self.assertEqual(options['timeout'], 280)
         self.assertEqual(remote.APPLY_ROLLOUT_SECONDS, 270)
         self.assertEqual(remote.APPLY_ROLLOUT_PROCESS_SECONDS, 280)
         self.assertGreaterEqual(300 - remote.APPLY_ROLLOUT_SECONDS, 30)
         self.assertGreater(remote.APPLY_ROLLOUT_PROCESS_SECONDS, remote.APPLY_ROLLOUT_SECONDS)
         actions = [args for args, _ in self.kube.calls]
-        init = ('exec', 'deployment/pluginkit', '--', 'node', 'cli.mjs', 'init', '--data', '/var/lib/pluginkit')
+        init = ('exec', 'deployment/rivetin', '--', 'node', 'cli.mjs', 'init', '--data', '/var/lib/rivetin')
         self.assertGreater(actions.index(init), actions.index(args))
 
     def test_rollback_rollout_retains_independent_ninety_second_limit(self):
@@ -412,7 +447,7 @@ class RemoteTests(unittest.TestCase):
         self.begin('update', operation='b' * 32)
         remote.handle({'action': 'rollback', 'operation': 'b' * 32})
         rollouts = [(args, options) for args, options in self.kube.calls if args[0] == 'rollout']
-        self.assertEqual(rollouts[-1][0], ('rollout', 'status', 'deployment/pluginkit', '--timeout=90s'))
+        self.assertEqual(rollouts[-1][0], ('rollout', 'status', 'deployment/rivetin', '--timeout=90s'))
         self.assertEqual(rollouts[-1][1]['timeout'], 100)
 
     def uninstalled_with_data(self):
@@ -579,7 +614,7 @@ class RemoteTests(unittest.TestCase):
             'framework.uninstall.started', 'framework.uninstall'])
         for event in events:
             self.assertEqual(set(event), {'id', 'time', 'actor', 'action', 'pluginId', 'result', 'code'})
-            self.assertEqual(event['actor'], {'id': 'pluginkit-cli', 'name': 'PluginKit CLI', 'source': 'cli'})
+            self.assertEqual(event['actor'], {'id': 'rivetin-cli', 'name': 'Rivetin CLI', 'source': 'cli'})
             self.assertIsNone(event['pluginId'])
             self.assertIsNone(event['code'])
 

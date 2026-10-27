@@ -1,0 +1,67 @@
+{
+  "manifestVersion": 1,
+  "id": "rivetin-ssh-channel",
+  "version": "0.1.1",
+  "name": {
+    "zh-CN": "SSH 通道",
+    "en-US": "SSH channel"
+  },
+  "description": {
+    "zh-CN": "统一管理子插件的受控 SSH 采集、命令审计与执行授权，默认停用。",
+    "en-US": "Shared controlled SSH collection, command review and execution approvals; disabled by default."
+  },
+  "author": "Sephiroth Chang & Rivetin contributors",
+  "license": "MIT",
+  "repository": "https://github.com/sephirothchang/rivetin",
+  "homepage": "https://github.com/sephirothchang/rivetin/tree/main/plugins/rivetin-ssh-channel",
+  "compatibility": {
+    "frameworkApi": 1,
+    "tower": "Requires the Rivetin SSH channel broker; live collection compatibility must be verified for each host build.",
+    "towerBuilds": [
+      "4.9.0"
+    ]
+  },
+  "frontend": {
+    "format": "rivetin-global-v1",
+    "entry": "web/plugin.js"
+  },
+  "permissions": [],
+  "locales": [
+    "zh-CN",
+    "en-US"
+  ],
+  "configuration": {
+    "version": 1,
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "integer",
+          "enum": [
+            1
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "version",
+        "enabled"
+      ]
+    },
+    "defaults": {
+      "version": 1,
+      "enabled": false
+    }
+  },
+  "lifecycle": {
+    "reset": "defaults",
+    "uninstall": "retain-config"
+  },
+  "releaseNotes": {
+    "zh-CN": "连接凭据改由独立草稿或便携 CLI 管理；支持主机、集群、全局优先级，保持默认关闭和逐插件人工审核。",
+    "en-US": "Credentials use a separate connection draft or portable CLI with host, cluster and global precedence. The channel remains off by default with per-plugin review."
+  }
+}

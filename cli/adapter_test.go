@@ -65,7 +65,7 @@ func (r *islandRegisterTransport) RoundTrip(req *http.Request) (*http.Response, 
 func TestIslandRegisterPreservesVersionedArchiveAndUnknownOutcome(t *testing.T) {
 	for _, fail := range []bool{false, true} {
 		t.Run(map[bool]string{false: "preserve", true: "unknown"}[fail], func(t *testing.T) {
-			archive := fixtureIslandArchive(t, `{"name":"pluginkit","metadata":{"version":"0.1.0"}}`)
+			archive := fixtureIslandArchive(t, `{"name":"rivetin","metadata":{"version":"0.1.0"}}`)
 			tr := &islandRegisterTransport{t: t, archive: archive, fail: fail}
 			api := &Tower{base: "https://tower.example.invalid", http: &http.Client{Transport: tr}, token: "EXAMPLE_AUTH"}
 			err := (tower49{}).Register(context.Background(), api, archive)
@@ -84,13 +84,13 @@ func TestIslandRegisterPreservesVersionedArchiveAndUnknownOutcome(t *testing.T) 
 }
 func TestIslandRegisterRejectsActualNameChangeBeforePost(t *testing.T) {
 	api, _ := islandAPI(t, islandReply{"GET", allIslands, 200, versionedIsland})
-	err := (tower49{}).Register(context.Background(), api, fixtureIslandArchive(t, `{"name":"pluginkit","metadata":{"info":{"version":"0.1.0"}}}`))
+	err := (tower49{}).Register(context.Background(), api, fixtureIslandArchive(t, `{"name":"rivetin","metadata":{"info":{"version":"0.1.0"}}}`))
 	if err == nil || err.Error() != "ISLAND_NAME_CHANGE_REQUIRES_MIGRATION" {
 		t.Fatal(err)
 	}
 }
 func TestIslandRegisterRejectsInvalidArchiveBeforeRequests(t *testing.T) {
-	for _, data := range [][]byte{{31, 139}, fixtureIslandArchive(t, `{"name":"other-island"}`), fixtureIslandArchive(t, `{"name":"pluginkit","metadata":{"version":"../unsafe"}}`)} {
+	for _, data := range [][]byte{{31, 139}, fixtureIslandArchive(t, `{"name":"other-island"}`), fixtureIslandArchive(t, `{"name":"rivetin","metadata":{"version":"../unsafe"}}`)} {
 		api, _ := islandAPI(t)
 		if err := (tower49{}).Register(context.Background(), api, data); err == nil || err.Error() != "ISLAND_ARCHIVE_INVALID" {
 			t.Fatal(err)
@@ -133,14 +133,14 @@ func islandAPI(t *testing.T, replies ...islandReply) (*Tower, *islandTransport) 
 }
 
 const allIslands = "/api/island-registry/sea-maps?refreshCache=true"
-const versionedIsland = `{"seaMaps":[{"name":"pluginkit","metadata":{"version":"0.1.0"},"data":[{"region":"PERMANENT_CLUSTER_MANAGER_MODAL","island":"./PluginKit"}]}]}`
-const plainIsland = `{"seaMaps":[{"name":"pluginkit","metadata":{"info":{"version":"0.1.0"}},"data":[{"region":"PERMANENT_CLUSTER_MANAGER_MODAL","island":"./PluginKit"}]}]}`
+const versionedIsland = `{"seaMaps":[{"name":"rivetin","metadata":{"version":"0.1.0"},"data":[{"region":"PERMANENT_CLUSTER_MANAGER_MODAL","island":"./Rivetin"}]}]}`
+const plainIsland = `{"seaMaps":[{"name":"rivetin","metadata":{"info":{"version":"0.1.0"}},"data":[{"region":"PERMANENT_CLUSTER_MANAGER_MODAL","island":"./Rivetin"}]}]}`
 
 func TestIslandBackupUsesNativeVersionPathAndPreservesBytes(t *testing.T) {
 	for _, tc := range []struct{ name, registry, suffix string }{{"versioned", versionedIsland, "/0.1.0"}, {"info-version", plainIsland, ""}} {
 		t.Run(tc.name, func(t *testing.T) {
 			archive := []byte{31, 139, 0, 1, 2, 3}
-			api, _ := islandAPI(t, islandReply{"GET", allIslands, 200, tc.registry}, islandReply{"GET", "/api/island-registry/sea-maps/download/pluginkit" + tc.suffix, 200, string(archive)})
+			api, _ := islandAPI(t, islandReply{"GET", allIslands, 200, tc.registry}, islandReply{"GET", "/api/island-registry/sea-maps/download/rivetin" + tc.suffix, 200, string(archive)})
 			got, err := (tower49{}).Backup(context.Background(), api)
 			if err != nil || !bytes.Equal(got, archive) {
 				t.Fatal("backup bytes changed", err)
@@ -154,14 +154,14 @@ func TestIslandAbsentRequiresSuccessfulValidRegistry(t *testing.T) {
 		status           int
 	}{
 		{"empty", `{"seaMaps":[]}`, "", 200},
-		{"siblings", `{"seaMaps":[{"name":"pluginkit-example"},{"name":"hostIsland"}]}`, "", 200},
+		{"siblings", `{"seaMaps":[{"name":"rivetin-example"},{"name":"hostIsland"}]}`, "", 200},
 		{"server-error", `{}`, "ISLAND_REGISTRY_UNAVAILABLE", 500},
 		{"missing", `{}`, "ISLAND_REGISTRY_INVALID", 200},
 		{"null", `{"seaMaps":null}`, "ISLAND_REGISTRY_INVALID", 200},
 		{"invalid", `{"seaMaps":[null]}`, "ISLAND_REGISTRY_INVALID", 200},
-		{"multiple", `{"seaMaps":[{"name":"pluginkit"},{"name":"pluginkit","metadata":{"version":"0.1.0"}}]}`, "ISLAND_MULTIPLE_INSTANCES", 200},
-		{"unsafe-version", `{"seaMaps":[{"name":"pluginkit","metadata":{"version":"../other"}}]}`, "ISLAND_REGISTRY_INVALID", 200},
-		{"non-string-version", `{"seaMaps":[{"name":"pluginkit","metadata":{"version":1}}]}`, "ISLAND_REGISTRY_INVALID", 200},
+		{"multiple", `{"seaMaps":[{"name":"rivetin"},{"name":"rivetin","metadata":{"version":"0.1.0"}}]}`, "ISLAND_MULTIPLE_INSTANCES", 200},
+		{"unsafe-version", `{"seaMaps":[{"name":"rivetin","metadata":{"version":"../other"}}]}`, "ISLAND_REGISTRY_INVALID", 200},
+		{"non-string-version", `{"seaMaps":[{"name":"rivetin","metadata":{"version":1}}]}`, "ISLAND_REGISTRY_INVALID", 200},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			api, _ := islandAPI(t, islandReply{"GET", allIslands, tc.status, tc.body})
@@ -179,7 +179,7 @@ func TestIslandAbsentRequiresSuccessfulValidRegistry(t *testing.T) {
 func TestIslandListedDownloadFailureIsNotAbsence(t *testing.T) {
 	for _, status := range []int{404, 500} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
-			api, _ := islandAPI(t, islandReply{"GET", allIslands, 200, versionedIsland}, islandReply{"GET", "/api/island-registry/sea-maps/download/pluginkit/0.1.0", status, ""})
+			api, _ := islandAPI(t, islandReply{"GET", allIslands, 200, versionedIsland}, islandReply{"GET", "/api/island-registry/sea-maps/download/rivetin/0.1.0", status, ""})
 			if _, err := (tower49{}).Backup(context.Background(), api); err == nil || err.Error() != "ISLAND_BACKUP_FAILED" {
 				t.Fatal(err)
 			}
@@ -197,7 +197,7 @@ func TestIslandRemoveActualNameAndFreshReadback(t *testing.T) {
 		{"success-still-present", versionedIsland, "ISLAND_REMOVE_READBACK_FAILED", 204},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			api, _ := islandAPI(t, islandReply{"GET", allIslands, 200, versionedIsland}, islandReply{"DELETE", "/api/island-registry/sea-maps/pluginkit-0.1.0", tc.status, ""}, islandReply{"GET", allIslands, 200, tc.readback})
+			api, _ := islandAPI(t, islandReply{"GET", allIslands, 200, versionedIsland}, islandReply{"DELETE", "/api/island-registry/sea-maps/rivetin-0.1.0", tc.status, ""}, islandReply{"GET", allIslands, 200, tc.readback})
 			err := (tower49{}).Remove(context.Background(), api)
 			if tc.code == "" {
 				if err != nil {
@@ -212,7 +212,7 @@ func TestIslandRemoveActualNameAndFreshReadback(t *testing.T) {
 func TestIslandVerifyActualStaticPathAndStrictRegion(t *testing.T) {
 	for _, tc := range []struct{ name, region, code string }{{"matching", versionedIsland, ""}, {"other-version", plainIsland, "ISLAND_MOUNT_MISSING"}, {"missing", `{"seaMaps":[]}`, "ISLAND_MOUNT_MISSING"}, {"invalid", `{}`, "ISLAND_REGION_INVALID"}} {
 		t.Run(tc.name, func(t *testing.T) {
-			api, _ := islandAPI(t, islandReply{"GET", allIslands, 200, versionedIsland}, islandReply{"GET", "/api/island-registry/sea-maps/pluginkit-0.1.0/build/remoteEntry.js", 200, "EXPECTED_ENTRY"}, islandReply{"GET", "/api/island-registry/sea-maps/PERMANENT_CLUSTER_MANAGER_MODAL?refreshCache=true", 200, tc.region})
+			api, _ := islandAPI(t, islandReply{"GET", allIslands, 200, versionedIsland}, islandReply{"GET", "/api/island-registry/sea-maps/rivetin-0.1.0/build/remoteEntry.js", 200, "EXPECTED_ENTRY"}, islandReply{"GET", "/api/island-registry/sea-maps/PERMANENT_CLUSTER_MANAGER_MODAL?refreshCache=true", 200, tc.region})
 			err := (tower49{}).Verify(context.Background(), api, []byte("EXPECTED_ENTRY"))
 			if tc.code == "" {
 				if err != nil {

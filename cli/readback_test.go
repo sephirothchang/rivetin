@@ -23,7 +23,7 @@ type readbackTransport struct {
 }
 
 func (r *readbackTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if req.Method != "GET" || req.URL.Path != "/api/pluginkit/v1/runtime" {
+	if req.Method != "GET" || req.URL.Path != "/api/rivetin/v1/runtime" {
 		return nil, errors.New("UNEXPECTED_TEST_REQUEST")
 	}
 	index := r.calls
@@ -170,7 +170,7 @@ func TestIslandRegistrationAndReadbackShareVerificationDeadline(t *testing.T) {
 }
 
 func (r runtimeReadbackOverlay) RoundTrip(req *http.Request) (*http.Response, error) {
-	if req.URL.Path == "/api/pluginkit/v1/runtime" {
+	if req.URL.Path == "/api/rivetin/v1/runtime" {
 		return r.runtime.RoundTrip(req)
 	}
 	return r.delegate.RoundTrip(req)

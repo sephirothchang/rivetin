@@ -2,6 +2,7 @@ import { open } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { atomic, json } from './storage.js';
+import { assertId, validId } from '../shared/identity.js';
 
 export function auditStore(root, towerSink) {
   const file = path.join(root, 'audit.jsonl');
@@ -9,12 +10,14 @@ export function auditStore(root, towerSink) {
   return {
     status: () => towerStatus,
     async append({ actor, action, pluginId = null, result = 'success', code = null }) {
+      if (pluginId !== null) assertId(pluginId);
       const event = { id: randomUUID(), time: new Date().toISOString(), actor: { id: actor.id, name: actor.name, source: actor.source }, action, pluginId, result, code };
       const handle = await open(file, 'a', 0o600);
       try { await handle.writeFile(JSON.stringify(event) + '\n'); await handle.sync(); } finally { await handle.close(); }
       return event;
     },
     async recent({ pluginId, limit = 50, before } = {}) {
+      if (pluginId) assertId(pluginId);
       const count = Math.max(1, Math.min(100, Number(limit) || 50));
       let handle;
       try {
@@ -26,7 +29,9 @@ export function auditStore(root, towerSink) {
         const index = before ? filtered.findIndex(event => event.id === before) + 1 : 0;
         if (before && index === 0) return { items: [], next: null };
         const items = filtered.slice(index, index + count);
-        for (const item of items) item.towerDelivery = await json(path.join(root, 'audit-delivery', `${item.id}.json`), { state: 'local-only' });
+        for (const item of items) {
+          item.towerDelivery = await json(path.join(root, 'audit-delivery', `${item.id}.json`), { state: 'local-only' });
+        }
         return { items, next: filtered.length > index + count ? items.at(-1).id : null };
       } catch (error) { if (error.code === 'ENOENT') return { items: [], next: null }; throw error; }
       finally { await handle?.close(); }
@@ -53,10 +58,10 @@ export function createTowerAuditSink({ request }) {
     let timer;
     const response = await Promise.race([request('/v2/api/create-user-audit-log', [{
       user_id: event.actor.id, started_at: event.time, finished_at: event.time,
-      resource_id: event.pluginId || 'pluginkit', resource_type: 'pluginkit', action: event.action,
+      resource_id: event.pluginId || 'rivetin', resource_type: 'rivetin', action: event.action,
       status: event.result === 'success' ? 'SUCCESSED' : 'FAILED',
-      message: { 'zh-CN': `PluginKit：${event.action}，对象：${event.pluginId || 'pluginkit'}，结果：${event.result}，记录：${event.id}`,
-        'en-US': `PluginKit: ${event.action}; target: ${event.pluginId || 'pluginkit'}; result: ${event.result}; record: ${event.id}` },
+      message: { 'zh-CN': `Rivetin：${event.action}，对象：${validId(event.pluginId) ? event.pluginId : 'Rivetin'}，结果：${event.result}，记录：${event.id}`,
+        'en-US': `Rivetin: ${event.action}; target: ${validId(event.pluginId) ? event.pluginId : 'Rivetin'}; result: ${event.result}; record: ${event.id}` },
     }], actor), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('TOWER_AUDIT_TIMEOUT')), 4000); })]).finally(() => clearTimeout(timer));
     if (!Array.isArray(response) || response.length !== 1 || !response[0]?.data?.id) throw new Error('TOWER_AUDIT_NOT_CONFIRMED');
     // CloudTower may return an asynchronous task. Submission is not completion.

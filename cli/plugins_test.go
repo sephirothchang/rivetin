@@ -13,12 +13,12 @@ import (
 	"testing"
 )
 
-const fixturePluginID = "pluginkit-example"
+const fixturePluginID = "rivetin-example"
 
 func pluginFixturePackage(version string) []byte {
 	code, license := []byte("window.EXAMPLE_ONLY = true;"), []byte("MIT License - EXAMPLE fixture")
-	value := map[string]any{"format": "pluginkit-package-v1", "manifest": map[string]any{
-		"id": fixturePluginID, "version": version, "frontend": map[string]string{"entry": "web/plugin.js"},
+	value := map[string]any{"format": "rivetin-package-v1", "manifest": map[string]any{
+		"id": fixturePluginID, "version": version, "frontend": map[string]string{"entry": "web/plugin.js", "format": "rivetin-global-v1"},
 	}, "files": []pluginPackageFile{
 		{Path: "web/plugin.js", SHA256: digest(code), Data: base64.StdEncoding.EncodeToString(code)},
 		{Path: "LICENSE", SHA256: digest(license), Data: base64.StdEncoding.EncodeToString(license)},
@@ -103,7 +103,7 @@ func pluginAPIServer(t *testing.T, fixture *pluginAPIFixture) *Tower {
 			return
 		}
 		if fixture.malformed {
-			_, _ = w.Write([]byte(`{"items":[{"id":"pluginkit-example"}]}`))
+			_, _ = w.Write([]byte(`{"items":[{"id":"rivetin-example"}]}`))
 			return
 		}
 		if fixture.removeOnDelete && !fixture.installed {
@@ -235,7 +235,7 @@ func TestPluginCLIAuthenticationTargetsAndUnknownActions(t *testing.T) {
 	if err := RunPluginAction(context.Background(), nil, "list", "", nil, nil); err == nil {
 		t.Fatal("missing authentication accepted")
 	}
-	if err := RunPluginAction(context.Background(), api, "install", "pluginkit-other", pluginFixturePackage("0.1.0"), nil); err == nil || err.Error() != "PLUGIN_ID_MISMATCH" {
+	if err := RunPluginAction(context.Background(), api, "install", "rivetin-other", pluginFixturePackage("0.1.0"), nil); err == nil || err.Error() != "PLUGIN_ID_MISMATCH" {
 		t.Fatal(err)
 	}
 	if len(fixture.calls) != 0 {
@@ -261,7 +261,7 @@ func TestPluginCLIListDoesNotExposeUnexpectedVersionContent(t *testing.T) {
 	if !strings.Contains(output, "version=unknown") || strings.Contains(output, "EXAMPLE_SECRET_CONTENT") {
 		t.Fatal(output)
 	}
-	if fmt.Sprint(fixture.calls) != "[GET /api/pluginkit/v1/plugins]" {
+	if fmt.Sprint(fixture.calls) != "[GET /api/rivetin/v1/plugins]" {
 		t.Fatal(fixture.calls)
 	}
 }
