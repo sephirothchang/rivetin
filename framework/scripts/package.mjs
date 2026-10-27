@@ -1,0 +1,14 @@
+import { mkdir, copyFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const stage = path.join(root, '.packaging'), output = path.join(root, 'release');
+await mkdir(stage, { recursive: true }); await mkdir(output, { recursive: true });
+await copyFile(path.join(root, '../LICENSE'), path.join(root, 'dist/production/build/LICENSE'));
+await copyFile(path.join(root, 'THIRD_PARTY_NOTICES.txt'), path.join(root, 'dist/production/build/THIRD_PARTY_NOTICES.txt'));
+await copyFile(path.join(root, 'sea-map.json'), path.join(stage, 'sea-map.json'));
+execFileSync('tar', ['-czf', path.join(stage, 'build.tar.gz'), '-C', path.join(root, 'dist/production'), 'build']);
+execFileSync('tar', ['-czf', path.join(output, 'pluginkit-0.1.0-island.tar.gz'), '-C', stage, 'sea-map.json', 'build.tar.gz']);
+execFileSync('tar', ['-czf', path.join(output, 'pluginkit-0.1.0-service.tar.gz'), '-C', root, 'server', 'deploy', 'cli.mjs', 'package.json', '-C', path.resolve(root, '..'), 'LICENSE']);
+console.log('Local framework Island and service packages built.');

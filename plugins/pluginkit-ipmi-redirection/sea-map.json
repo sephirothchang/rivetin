@@ -1,0 +1,10 @@
+{
+  "name": "pluginkit-ipmi-redirection",
+  "versionRange": ">=4.9.0 <4.10.0",
+  "metadata": { "version": "0.1.1" },
+  "data": [{
+    "region": "PERMANENT_CLUSTER_MANAGER_MODAL",
+    "order": 100,
+    "island": "./PluginKitIpmiRedirection"
+  }]
+}

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "plugins": [
+    {
+      "id": "pluginkit-ipmi-redirection",
+      "version": "0.1.1",
+      "frameworkApi": 1,
+      "assetId": null,
+      "sha256": null
+    }
+  ]
+}

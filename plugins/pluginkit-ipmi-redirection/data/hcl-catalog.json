@@ -1,0 +1,1275 @@
+{
+  "sourcePage": "https://www.smartx.com/smtxos-compatibility/?tab=0",
+  "sourceUrl": "https://oocgate.smartx.com/api/hcl/servers?product=SMTXOS&locale=ZH_CN",
+  "snapshotDate": "2026-10-27",
+  "sha256": "486940f1208b3289f68714fd82490e50c720e6407a44afce3e74897b7a860fec",
+  "product": "SMTXOS",
+  "brandCount": 29,
+  "recordCount": 158,
+  "records": [
+    {
+      "id": "y147dkovzi6l1cbs2k872jtuy",
+      "brand": "联想",
+      "vendorId": "lenovo-xclarity",
+      "model": "ThinkSystem SR650",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "ygwhwwbxo53kgkaaun7orr98g",
+      "brand": "联想",
+      "vendorId": "lenovo-xclarity",
+      "model": "ThinkSystem SR650 V2",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "zfmy0tb51d9qrtbvh13elazgz",
+      "brand": "联想",
+      "vendorId": "lenovo-xclarity",
+      "model": "ThinkSystem SR850",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "o17vcs6cige9t05t5vg5kg2hf",
+      "brand": "Dell",
+      "vendorId": "dell-idrac",
+      "model": "PowerEdge R740xd",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "kfyxeb90alwylp5o9z45h1dgg",
+      "brand": "Dell",
+      "vendorId": "dell-idrac",
+      "model": "PowerEdge R750",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "xj8eu3v942fqt6pmglocypct0",
+      "brand": "浪潮",
+      "vendorId": "inspur-bmc",
+      "model": "英政 CS5280H",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "flpbfys0x907tyg5ejf2xcvzm",
+      "brand": "Dell",
+      "vendorId": "dell-idrac",
+      "model": "PowerEdge R730",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "mvrbisfuso23z8bjtxr727mc1",
+      "brand": "联想",
+      "vendorId": "lenovo-xclarity",
+      "model": "System X3650 M5",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "mj5murqq8rjoibv14g68biepb",
+      "brand": "SuperMicro",
+      "vendorId": "supermicro-bmc",
+      "model": "SuperServer 2028TR",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cjfw1733zuma65dtk92jfc2bs",
+      "brand": "SuperMicro",
+      "vendorId": "supermicro-bmc",
+      "model": "SuperServer 2028TP",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "re90rfqpqd6tp54d0sypf7a6v",
+      "brand": "SuperMicro",
+      "vendorId": "supermicro-bmc",
+      "model": "SuperServer 2029TP",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "w0qeyudezgp2eodx9z2jtqg0y",
+      "brand": "SuperMicro",
+      "vendorId": "supermicro-bmc",
+      "model": "SuperServer 6028TR",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "i1k0qqz8l5sftx3dh4ucyj5cm",
+      "brand": "SuperMicro",
+      "vendorId": "supermicro-bmc",
+      "model": "SuperServer 6028TP",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "rnr8t3ngcry03j631n37nmmqv",
+      "brand": "SuperMicro",
+      "vendorId": "supermicro-bmc",
+      "model": "SuperServer 6028U",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "or0kjn8t615xwubrajiq4x6g9",
+      "brand": "SuperMicro",
+      "vendorId": "supermicro-bmc",
+      "model": "CSE-826BE1C-R920LPB 机箱 + X10DRi 主板",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "b8fr63bqw55aeziqcaasgtlge",
+      "brand": "HPE",
+      "vendorId": "hpe-ilo",
+      "model": "HPE ProLiant DL360 G9",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "l8h2c73kvqzuhcoig81w23bon",
+      "brand": "HPE",
+      "vendorId": "hpe-ilo",
+      "model": "HPE ProLiant DL380 G9",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "gmtymybju5iza059d916i15gg",
+      "brand": "Huawei",
+      "vendorId": "huawei-ibmc",
+      "model": "FusionServer RH2288 V3",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "jrkfbwrp9zd11cbvqlx7nr7eu",
+      "brand": "Huawei",
+      "vendorId": "huawei-ibmc",
+      "model": "FusionServer RH2288H V3",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "pf51oo5ozr47b23con3z5f30c",
+      "brand": "浪潮",
+      "vendorId": "inspur-bmc",
+      "model": "Inspur NF5460M4",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "p5ob7mirwyhppu6g8uyequmf1",
+      "brand": "浪潮",
+      "vendorId": "inspur-bmc",
+      "model": "Inspur SA5212M4",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "zbtrurew0gsr7rtdgl4tjohcf",
+      "brand": "浪潮",
+      "vendorId": "inspur-bmc",
+      "model": "Inspur NF5280M4",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "a388ygymvuuxy4mce22klnfmr",
+      "brand": "H3C",
+      "vendorId": "h3c-hdm",
+      "model": "H3C UniServer R4900 G2",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "vnysgqxvhg6prpgcl5lu371wx",
+      "brand": "Dell",
+      "vendorId": "dell-idrac",
+      "model": "PowerEdge R640",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "oumzyrt1kv2au1wc28ytvjc3c",
+      "brand": "Dell",
+      "vendorId": "dell-idrac",
+      "model": "PowerEdge R740",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "oiolwk9titp7w9nif9e92b4yh",
+      "brand": "联想",
+      "vendorId": "lenovo-xclarity",
+      "model": "ThinkSystem SD530",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "d0locrwfsg36zukgnwq539ye2",
+      "brand": "HPE",
+      "vendorId": "hpe-ilo",
+      "model": "HPE ProLiant DL380( DL388 )Gen10",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "e8cmho27lit3lvt21mcxhxb58",
+      "brand": "Huawei",
+      "vendorId": "huawei-ibmc",
+      "model": "Huawei FusionServer 2288H V5",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "kwn3txku57uytj73jjfo2ovur",
+      "brand": "超聚变",
+      "vendorId": "xfusion-ibmc",
+      "model": "FusionServer 2288H V5",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "nhk6ole3ypz5357r29uutywm3",
+      "brand": "浪潮",
+      "vendorId": "inspur-bmc",
+      "model": "Inspur NF5280M5",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "ev6cog82716yctctje2lcb3on",
+      "brand": "浪潮",
+      "vendorId": "inspur-bmc",
+      "model": "Inspur SA5212M5",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "kv7303enca4vb7n3qf3icrejl",
+      "brand": "H3C",
+      "vendorId": "h3c-hdm",
+      "model": "H3C UniServer R4900 G3",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "smihf82ml4nodrii4daykw41p",
+      "brand": "联想",
+      "vendorId": "lenovo-xclarity",
+      "model": "ThinkServer SR660 V2",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "beie1t4j9xepry6e75k16zr80",
+      "brand": "H3C",
+      "vendorId": "h3c-hdm",
+      "model": "H3C UniServer R4900 G5",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "t7vdqouqm68x6l7fn5pm13opp",
+      "brand": "超聚变",
+      "vendorId": "xfusion-ibmc",
+      "model": "FusionServer 2288H V6",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "k8hff8l0ymbsim0re1joh3oor",
+      "brand": "浪潮",
+      "vendorId": "inspur-bmc",
+      "model": "Inspur NF5280M6",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "pivrobqq27ahwu9hd7s0o8e4c",
+      "brand": "Dell",
+      "vendorId": "dell-idrac",
+      "model": "PowerEdge C6525",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "ogo20hegvdkavk19pyuskti69",
+      "brand": "H3C",
+      "vendorId": "h3c-hdm",
+      "model": "H3C UniServer R4950 G5",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "xd1105trecc77r5d6djjfzorq",
+      "brand": "联想",
+      "vendorId": "lenovo-xclarity",
+      "model": "ThinkServer SR658H",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "xwtptudp5simw1f94b33g2gph",
+      "brand": "联想",
+      "vendorId": "lenovo-xclarity",
+      "model": "ThinkServer SR658H V2",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "tdibboc57htphzmu88ies9g2t",
+      "brand": "浪潮",
+      "vendorId": "inspur-bmc",
+      "model": "英政 CS5280H2",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "kk2mo7vglsq9mcp0q4bb42tmq",
+      "brand": "浪潮",
+      "vendorId": "inspur-bmc",
+      "model": "英政 CS5420H2",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "ryr7xvg7xizsljktca01nsfda",
+      "brand": "中科可控",
+      "vendorId": "sugon-cc-bmc",
+      "model": "R6240H0",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "y2ir9gfvplc9sp36nv2j4eugz",
+      "brand": "H3C",
+      "vendorId": "h3c-hdm",
+      "model": "H3C UniServer R4930 G5 H3",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "gn7ck70v13s0hmfvfkp6o40xd",
+      "brand": "H3C",
+      "vendorId": "h3c-hdm",
+      "model": "H3C UniServer R4930 G5",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "hwewxut3gafegqki5c160ep6x",
+      "brand": "紫光恒越",
+      "vendorId": "unisyue-bmc",
+      "model": "UNIS R3830-G5",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "v3by69jv7bi5q3etu2vdotjir",
+      "brand": "中兴",
+      "vendorId": "zte-bmc",
+      "model": "R5930-G2",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "tntpl7p3hbndm2n3cqw99jts7",
+      "brand": "Huawei",
+      "vendorId": "huawei-ibmc",
+      "model": "TaiShan 200（Model 2280）",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "dlbq6v27esm5l39msll3hubdo",
+      "brand": "神州数码",
+      "vendorId": "digitalchina-bmc",
+      "model": "KunTai R722",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "gtnjc68qpn932essn9ip3ca3b",
+      "brand": "紫光恒越",
+      "vendorId": "unisyue-bmc",
+      "model": "UNIS R3820-G3",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "dbrngzggnt974aiaeaejr4gp0",
+      "brand": "华鲲振宇",
+      "vendorId": "huakun-bmc",
+      "model": "HuaKun TG225 A1/B1",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "hluxmw6ggddxy9c41peqc4fc9",
+      "brand": "H3C",
+      "vendorId": "h3c-hdm",
+      "model": "H3C UniServer R4960 G3",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "pzgzlayg5ayyjioom919p0ifk",
+      "brand": "百信恒山",
+      "vendorId": "baixin-bmc",
+      "model": "TS02E/F-F30",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "nj1xg6r1avi9hxng7bwct36un",
+      "brand": "宝德",
+      "vendorId": "powerleader-bmc",
+      "model": "PR214F3",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "an5allhxdie4ij3zb758ibmds",
+      "brand": "宝德",
+      "vendorId": "powerleader-bmc",
+      "model": "PR212F3",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "ub6qvoy8iuzj9m71d2fpsypdo",
+      "brand": "中兴",
+      "vendorId": "zte-bmc",
+      "model": "R5300-G4X",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "c4fx7s94qcj7ugmrgu28ju7r5",
+      "brand": "中科曙光",
+      "vendorId": "sugon-bmc",
+      "model": "H520-G35A",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "q7k8r8i9fg3t4la9ltv515qhz",
+      "brand": "中科曙光",
+      "vendorId": "sugon-bmc",
+      "model": "H620-G30",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "lbu2xlo1d4smfe42mby6fao6e",
+      "brand": "宝德",
+      "vendorId": "powerleader-bmc",
+      "model": "PR210K",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "u79iupv0g95kbnf8zed9bzuim",
+      "brand": "广电五舟",
+      "vendorId": "wuzhou-bmc",
+      "model": "S627K2(S628K)",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "x6xb7aqxa12doc3rp9yubilf8",
+      "brand": "联想",
+      "vendorId": "lenovo-xclarity",
+      "model": "ThinkSystem SR650 V3",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "evg5lp86g80iqpyfejcu3yp9r",
+      "brand": "Dell",
+      "vendorId": "dell-idrac",
+      "model": "PowerEdge R760",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "wi4ht5301safom445h20k49u1",
+      "brand": "HPE",
+      "vendorId": "hpe-ilo",
+      "model": "HPE ProLiant DL380 G10+",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "vhyy4hdxifwjxhyl9m4oy3koe",
+      "brand": "联想",
+      "vendorId": "lenovo-xclarity",
+      "model": "ThinkSystem SR665 V3",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "y6clcjyrcglqwt3c7jwzsux0m",
+      "brand": "HPE",
+      "vendorId": "hpe-ilo",
+      "model": "HPE ProLiant DL380 G11",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "qj3gtjb208kpgjomiu3r1gaz7",
+      "brand": "超聚变",
+      "vendorId": "xfusion-ibmc",
+      "model": "FusionServer 2288H V7",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "ef7p8cq0dnsgotqlovlk694oa",
+      "brand": "中科可控",
+      "vendorId": "sugon-cc-bmc",
+      "model": "R6250H0",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "tms40mqxxfk5szj8dzo7s0r7q",
+      "brand": "KunLun",
+      "vendorId": "kunlun-bmc",
+      "model": "KunLun 2280",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "jpsd1cq7jz715g6mqqsb5ymig",
+      "brand": "H3C",
+      "vendorId": "h3c-hdm",
+      "model": "H3C UniServer R4950 G6",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "aele4csz2w8vgnxfild2b2jpy",
+      "brand": "H3C",
+      "vendorId": "h3c-hdm",
+      "model": "H3C UniServer R4900 G6",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "ul5cdikeqz002wed9jeanocyr",
+      "brand": "浪潮",
+      "vendorId": "inspur-bmc",
+      "model": "Inspur NF5280M7",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "vxar586779c4kxl3hn0misdhn",
+      "brand": "联想",
+      "vendorId": "lenovo-xclarity",
+      "model": "WenTian WR5220 G3",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "ys4fmlayk81tsram249a4pc5z",
+      "brand": "超聚变",
+      "vendorId": "xfusion-ibmc",
+      "model": "FusionServer 2488H V6",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "plu0hfrlx3p8exgre7igo7hxh",
+      "brand": "浪潮",
+      "vendorId": "inspur-bmc",
+      "model": "Inspur NF5468M6",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "vh0ocegelz99ri883610qb4m2",
+      "brand": "浪潮",
+      "vendorId": "inspur-bmc",
+      "model": "英政 CS5280K2",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "pfkpmgzyvpr4kiybpqtsi23ez",
+      "brand": "软通华方",
+      "vendorId": "isoftstone-bmc",
+      "model": "超强 K620",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "vx1gj6sg0dybxlzd5ga9vyqsk",
+      "brand": "广电五舟",
+      "vendorId": "wuzhou-bmc",
+      "model": "S627H5",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "qhthbpsyil1g34556w17wrbz9",
+      "brand": "海康威视",
+      "vendorId": "hikvision-bmc",
+      "model": "DS-VM22S-B/C",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "rm6mv98bm7zzbalp8b49w8t80",
+      "brand": "中科可控",
+      "vendorId": "sugon-cc-bmc",
+      "model": "R3240H0",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "lavxk54gxkf779nnsxaq54b9u",
+      "brand": "中科可控",
+      "vendorId": "sugon-cc-bmc",
+      "model": "R5240H0",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "jd61ix8tuxorn3r8t55m17qnp",
+      "brand": "长江计算",
+      "vendorId": "yangtze-bmc",
+      "model": "R220K V2",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "sp9l8jcm0dvxjnml1dh9smsuv",
+      "brand": "长江计算",
+      "vendorId": "yangtze-bmc",
+      "model": "R221K V2",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "jcvqep8gr5nal90fs1234khq5",
+      "brand": "超云数字",
+      "vendorId": "hyperfusion-bmc",
+      "model": "R3216",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "vrj1aiyfvail458k1pck15ow9",
+      "brand": "海康威视",
+      "vendorId": "hikvision-bmc",
+      "model": "DS-VR/VG220H-KB",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "tv6vnq7qvi93ooq76rn8d3loj",
+      "brand": "广电五舟",
+      "vendorId": "wuzhou-bmc",
+      "model": "S627K2（VF）",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "wg2g0j1ru57lghf4q79l7rw4d",
+      "brand": "KunLun",
+      "vendorId": "kunlun-bmc",
+      "model": "KunLun 2280 V2",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "w2m0q619azkacrvnbdeyw0gpt",
+      "brand": "中兴",
+      "vendorId": "zte-bmc",
+      "model": "R5930-G2（HG3）",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "usew55zufpvlcr0pfl56mxikl",
+      "brand": "黄河",
+      "vendorId": "huanghe-bmc",
+      "model": "Huanghe 2280 V2",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "puvc9q3148aedu047txbccrob",
+      "brand": "Dell",
+      "vendorId": "dell-idrac",
+      "model": "PowerEdge R660",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "gj9c343pjpat3uhy23hf7e633",
+      "brand": "H3C",
+      "vendorId": "h3c-hdm",
+      "model": "H3C UniServer R4930 G7",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "hn4ra6n9eychytsqd5npkadsh",
+      "brand": "联想",
+      "vendorId": "lenovo-xclarity",
+      "model": "KaiTian KR722f G2",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "qt8zh0foebxekg4codnhod4hr",
+      "brand": "浪潮",
+      "vendorId": "inspur-bmc",
+      "model": "英政 CS5280F3",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "dk1zoazn1cy2nhx3vz3dqre3c",
+      "brand": "超云数字",
+      "vendorId": "hyperfusion-bmc",
+      "model": "R2227",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "lzcs3qjsmrmopemw7lxme8gss",
+      "brand": "浪潮",
+      "vendorId": "inspur-bmc",
+      "model": "Inspur NF5280A7",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "p26pekbbhpjo8042vc5pxrl6n",
+      "brand": "联想",
+      "vendorId": "lenovo-xclarity",
+      "model": "KaiTian KR722h G3",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "gs16laccjidrptkyhs7z00eg5",
+      "brand": "安擎",
+      "vendorId": "anqing-bmc",
+      "model": "EG920H",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "zchhk9d19o3yodh204wmag7q1",
+      "brand": "Dell",
+      "vendorId": "dell-idrac",
+      "model": "PowerEdge R6615",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "fh2ydyre3hswiw1zc2ll9uwtg",
+      "brand": "超聚变",
+      "vendorId": "xfusion-ibmc",
+      "model": "FusionServer 2258 V7",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "lqd7unkv8foebe6nqcji52g3z",
+      "brand": "超云数字",
+      "vendorId": "hyperfusion-bmc",
+      "model": "R3226 / R3426",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "fkacca356w3japkj3u0dzo3sk",
+      "brand": "浪潮",
+      "vendorId": "inspur-bmc",
+      "model": "Inspur NF3280A7",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "ocmc1s18sk33c6xry86htxymk",
+      "brand": "超云数字",
+      "vendorId": "hyperfusion-bmc",
+      "model": "R3225",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "ow40einq2rojrvndmfsn49l0t",
+      "brand": "海康威视",
+      "vendorId": "hikvision-bmc",
+      "model": "DS-VM22S-D/R4",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "xx0no54nuhhws28wpix2ml4cu",
+      "brand": "安擎",
+      "vendorId": "anqing-bmc",
+      "model": "EG5221 H4",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "t6hjlykh7ic1u4vdztmfqvpxl",
+      "brand": "中科可控",
+      "vendorId": "sugon-cc-bmc",
+      "model": "R5250H0",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "fceewbtp8s4daa9xt2lq3v656",
+      "brand": "联想",
+      "vendorId": "lenovo-xclarity",
+      "model": "KaiTian KR522h G3-s",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "a5lern2121gu7ki9u0vmatbyi",
+      "brand": "浪潮",
+      "vendorId": "inspur-bmc",
+      "model": "英政 CS5260H3",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "bo1w4rf8r6iscytw8kssy6gvo",
+      "brand": "联想",
+      "vendorId": "lenovo-xclarity",
+      "model": "KaiTian KR722h G3-s",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "lgbc4l4h3e13wx35h8i18bmwq",
+      "brand": "安擎",
+      "vendorId": "anqing-bmc",
+      "model": "EG5220 H4",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "kdp72qe6xvie6jfrspy2ak2wl",
+      "brand": "浪潮",
+      "vendorId": "inspur-bmc",
+      "model": "英政 CS5260H2",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "ver8wzhl6fpntlvioajeyzpep",
+      "brand": "Dell",
+      "vendorId": "dell-idrac",
+      "model": "PowerEdge R650xs",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "yv091d4snwwua8qmxoe0cj1t6",
+      "brand": "浪潮",
+      "vendorId": "inspur-bmc",
+      "model": "英政 CS5260Z2",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "g0k9zdxoi9unefxs3zj2hhpy6",
+      "brand": "联想",
+      "vendorId": "lenovo-xclarity",
+      "model": "KaiTian KR722z G2",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "toa7hmwdd00ugrpewtwt7sqd4",
+      "brand": "联想",
+      "vendorId": "lenovo-xclarity",
+      "model": "WenTian WA5480 G3",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "vwmk8rubkts2oux1quimjchme",
+      "brand": "Dell",
+      "vendorId": "dell-idrac",
+      "model": "PowerEdge R7525",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "lllavc0uct4b1ziva3mpo4lxx",
+      "brand": "联想",
+      "vendorId": "lenovo-xclarity",
+      "model": "ThinkSystem SR650V4",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "ehrejb4mvosmu2uwd6dkx8emb",
+      "brand": "浪潮",
+      "vendorId": "inspur-bmc",
+      "model": "英政 CS5280H3 (74xx)",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "zkxpme3wxosobllrpf44q8akv",
+      "brand": "长城",
+      "vendorId": "greatwall-bmc",
+      "model": "擎天 RK5260 V5",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "z8xxjusws61tn675not51ppdv",
+      "brand": "超聚变",
+      "vendorId": "xfusion-ibmc",
+      "model": "FusionServer 2288 V8",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "ko3lc1g25oxhl8lb58wcnde9r",
+      "brand": "华鲲振宇",
+      "vendorId": "huakun-bmc",
+      "model": "HuaKun TG225 B2",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "zyfho2iie9pknc7k3ukcldaob",
+      "brand": "宁畅",
+      "vendorId": "nettrix-bmc",
+      "model": "Nettrix R620 G40",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "l47j8lwmctwcq8g184j9nh0ry",
+      "brand": "Dell",
+      "vendorId": "dell-idrac",
+      "model": "PowerEdge C6420",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "g61jmzh5riib79c2331a2k5r7",
+      "brand": "中兴",
+      "vendorId": "zte-bmc",
+      "model": "R5330-G3",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmo6mwbt20031ts0h3jnjjxgq",
+      "brand": "中兴",
+      "vendorId": "zte-bmc",
+      "model": "R5330-G3_A",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmo6nnkj7003dts0hj49ukgen",
+      "brand": "Dell",
+      "vendorId": "dell-idrac",
+      "model": "PowerEdge R770",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmo6oaq57003sts0h8qmp83xm",
+      "brand": "SuperMicro",
+      "vendorId": "supermicro-bmc",
+      "model": "SYS-122C-TN",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmo704qqj004wts0hbqr1wbjs",
+      "brand": "H3C",
+      "vendorId": "h3c-hdm",
+      "model": "H3C UniServer 3060 G5 H3",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmo7108yk005bts0hwph9obxi",
+      "brand": "中兴",
+      "vendorId": "zte-bmc",
+      "model": "R5300 G5",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmo80czg60065ts0hfndchgnu",
+      "brand": "Dell",
+      "vendorId": "dell-idrac",
+      "model": "PowerEdge R7725",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmoduaq1j007ets0h9ba5js0f",
+      "brand": "宝德",
+      "vendorId": "powerleader-bmc",
+      "model": "PR210K PRO",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmodw8php008rts0hjvtw795d",
+      "brand": "H3C",
+      "vendorId": "h3c-hdm",
+      "model": "H3C UniServer R6900 G5",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmp3x11vl002hvd0hb1ciw8v1",
+      "brand": "SuperMicro",
+      "vendorId": "supermicro-bmc",
+      "model": "SYS-222C-TN",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmpkql494001gvd0hce4d6tje",
+      "brand": "百信恒山",
+      "vendorId": "baixin-bmc",
+      "model": "TS02F-F50",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmpkri0ti0027vd0hrd0ztg0d",
+      "brand": "浪潮",
+      "vendorId": "inspur-bmc",
+      "model": "Inspur NF5280G7",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmpoxg02v006cvd0hf8jijd6b",
+      "brand": "宁畅",
+      "vendorId": "nettrix-bmc",
+      "model": "CKS 3215 C3",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmq7txyfk002zu00gcbzoclyv",
+      "brand": "浪潮",
+      "vendorId": "inspur-bmc",
+      "model": "英政 CS5280H3 (54xx)",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmqoomfu30006tw0gdqaxfn3h",
+      "brand": "联想",
+      "vendorId": "lenovo-xclarity",
+      "model": "Wentian WR5220 G5",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "qmabok3jd7tb4obnak5xv0xsg",
+      "brand": "超聚变",
+      "vendorId": "xfusion-ibmc",
+      "model": "FusionServer 5288 V6",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmr4bnuas000mtw0h4149yevm",
+      "brand": "湘江鲲鹏",
+      "vendorId": "xiangjiang-bmc",
+      "model": "RH220T",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmr4bo32e000otw0hwsb3sk4w",
+      "brand": "湘江鲲鹏",
+      "vendorId": "xiangjiang-bmc",
+      "model": "RH220T-B",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmr4bo9ai000qtw0hr2h2mw2j",
+      "brand": "湘江鲲鹏",
+      "vendorId": "xiangjiang-bmc",
+      "model": "RH220T-C",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cms49j0kg003mtz0hr67fgn31",
+      "brand": "海康威视",
+      "vendorId": "hikvision-bmc",
+      "model": "DS-VM22S-D",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cms75euk80048tz0hthyfquu3",
+      "brand": "Huawei",
+      "vendorId": "huawei-ibmc",
+      "model": "Huawei FusionCube DP2220",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cms7d0xy9004ptz0h8gvb2l65",
+      "brand": "长城",
+      "vendorId": "greatwall-bmc",
+      "model": "擎天 RF6262 V5",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmseltv4g007gtz0hwms14vto",
+      "brand": "GIGABYTE",
+      "vendorId": "gigabyte-bmc",
+      "model": "H252-Z10",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmsr3ia1b009mtz0hilbcrti8",
+      "brand": "宁畅",
+      "vendorId": "nettrix-bmc",
+      "model": "CKS 6215 C2",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmtmg4a9a0003vc0h5y7a3r5x",
+      "brand": "神州数码",
+      "vendorId": "digitalchina-bmc",
+      "model": "KunTai R522",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmtqr7oua000nvc0hgatpbmtf",
+      "brand": "联想",
+      "vendorId": "lenovo-xclarity",
+      "model": "Wentian WR3220 G2",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmuarbyt90044u30hny3za7ym",
+      "brand": "联想",
+      "vendorId": "lenovo-xclarity",
+      "model": "ThinkServer SR658H-D1",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmum53jti006au30hokwvakrm",
+      "brand": "H3C",
+      "vendorId": "h3c-hdm",
+      "model": "H3C UniServer R5340 G3",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmuz8lt0k0072u30hcrff1o64",
+      "brand": "H3C",
+      "vendorId": "h3c-hdm",
+      "model": "H3C UniServer R5600 G3",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmv0o86ba0006u10grlh9x9f1",
+      "brand": "中兴",
+      "vendorId": "zte-bmc",
+      "model": "R5340-G3",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmv0oksb1000eu10gn0ayczlb",
+      "brand": "浪潮",
+      "vendorId": "inspur-bmc",
+      "model": "英政 CS5280F3",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmv4mj9o9001cu10gk766wk52",
+      "brand": "中科可控",
+      "vendorId": "sugon-cc-bmc",
+      "model": "R6230HA",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmv27qin0000tu10gvflyqlze",
+      "brand": "中科曙光",
+      "vendorId": "sugon-bmc",
+      "model": "H520-G50",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmv7n2tbk002au10gefbivzyr",
+      "brand": "宁畅",
+      "vendorId": "nettrix-bmc",
+      "model": "CKS 6410 X2",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmvellk2h002qu10g0ivodror",
+      "brand": "长城",
+      "vendorId": "greatwall-bmc",
+      "model": "擎天 RH6260 V6",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmvg164hs0031u10gltzpukkh",
+      "brand": "超聚变",
+      "vendorId": "xfusion-ibmc",
+      "model": "FusionServer 2280 V2",
+      "aliases": [],
+      "active": true
+    },
+    {
+      "id": "cmvkmqpio005eu10g18ydet62",
+      "brand": "至索",
+      "vendorId": "zhisuo-bmc",
+      "model": "QR8228-T2",
+      "aliases": [],
+      "active": true
+    }
+  ]
+}

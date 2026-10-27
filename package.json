@@ -1,0 +1,16 @@
+{
+  "name": "smartx-extensions",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "check:public": "node scripts/check-public-content.mjs",
+    "setup": "node scripts/plugin-task.mjs ci",
+    "test": "node scripts/plugin-task.mjs test",
+    "build": "node scripts/plugin-task.mjs build",
+    "package": "node scripts/plugin-task.mjs package",
+    "demo": "node scripts/plugin-task.mjs demo"
+  },
+  "engines": { "node": ">=22" }
+}

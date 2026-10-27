@@ -1,0 +1,17 @@
+**/node_modules/
+**/dist/
+**/release/
+**/.packaging/
+**/qa/
+**/.runtime/
+.local/
+cli/payload/
+cli/.cache/
+**/__pycache__/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12

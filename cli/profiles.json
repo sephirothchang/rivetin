@@ -1,0 +1,12 @@
+[
+  {
+    "id": "tower-4.9.0-rc-20260517114030",
+    "image": "registry.smtx.io/cloudtower/tower:v4.9.0-rc-20260517114030",
+    "node": "v20.12.1",
+    "namespace": "cloudtower-system",
+    "pod": "cloudtower-cloudtower-0",
+    "container": "server",
+    "adapter": "tower49",
+    "validation": "Windows amd64 CLI validated on this exact build: legacy migration, clean install/uninstall/reset, framework update, child CLI and Web upgrades, and SSH emergency disable with Web resume. Other client targets are cross-compiled only."
+  }
+]
