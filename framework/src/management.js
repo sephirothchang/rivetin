@@ -1,5 +1,12 @@
 import { actionLabel } from './i18n.js';
 import { logDetail } from './log-detail.js';
+const versionPattern = /^(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})$/;
+function newerVersion(candidate, current) {
+  if (!versionPattern.test(candidate || '') || !versionPattern.test(current || '')) return false;
+  const a = candidate.split('.').map(Number), b = current.split('.').map(Number);
+  for (let index = 0; index < 3; index++) if (a[index] !== b[index]) return a[index] > b[index];
+  return false;
+}
 export function createManagement(React) {
   const h = React.createElement;
   return function Management({ tab, records, packages, runtime, logs, onAction, onUpload, onRefresh, onMore, onCheck, updates = {}, updateChecked, busy, t, locale }) {
@@ -39,8 +46,11 @@ export function createManagement(React) {
           h('button', { disabled: busy, onClick: () => onAction('reset', item) }, t('重置')),
           h('button', { disabled: busy || !item.previous, onClick: () => onAction('rollback', item) }, t('回滚')),
           h('button', { disabled: busy, className: 'pk-danger-text', onClick: () => onAction('uninstall', item) }, t('卸载'))))),
-      ...packages.filter(pkg => pkg.manifest && !records.some(item => item.installed && item.id === pkg.manifest.id &&
-        (item.packageId === pkg.packageId || item.version === pkg.manifest.version))).map(pkg => {
+      ...packages.filter(pkg => {
+        if (!pkg.manifest) return false;
+        const installed = records.find(item => item.installed && item.id === pkg.manifest.id);
+        return !installed || installed.packageId !== pkg.packageId && newerVersion(pkg.manifest.version, installed.version);
+      }).map(pkg => {
         const installed = records.find(item => item.id === pkg.manifest.id && item.installed);
         return h('article', { key: pkg.packageId, className: 'pk-package-card' }, h('strong', null, pkg.manifest.name[locale]), ' · ', pkg.manifest.version,
           h('div', { className: 'pk-muted' }, `${t('插件包')} SHA-256: ${pkg.packageId.slice(0, 16)}…`),

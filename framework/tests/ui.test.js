@@ -105,6 +105,51 @@ test('update UI checks versions, offers online/manual methods and requires confi
   }
 });
 
+test('package cards hide installed and older versions while newer packages and rollback remain available', async () => {
+  const dom = new JSDOM('<html lang="zh-CN"><body><div id="root"></div></body></html>', { url: 'https://tower.example.invalid', pretendToBeVisual: true });
+  globalThis.window = dom.window; globalThis.document = dom.window.document;
+  const id = 'pluginkit-example', actions = [];
+  const manifest = version => ({ id, version, name: { 'zh-CN': '测试插件', 'en-US': 'Example plugin' }, description: { 'zh-CN': '测试', 'en-US': 'Example' }, permissions: [] });
+  const packages = [
+    { packageId: 'EXAMPLE_OLD_PACKAGE', manifest: manifest('0.1.0') },
+    { packageId: 'EXAMPLE_CURRENT_PACKAGE', manifest: manifest('0.1.1') },
+    { packageId: 'EXAMPLE_REPACKED_PACKAGE', manifest: manifest('0.1.1') },
+    { packageId: 'EXAMPLE_NEXT_PACKAGE', manifest: manifest('0.1.2') },
+    { packageId: 'EXAMPLE_LATER_PACKAGE', manifest: manifest('0.1.10') },
+    { packageId: 'EXAMPLE_OTHER_PACKAGE', manifest: { ...manifest('0.1.0'), id: 'pluginkit-other', name: { 'zh-CN': '其他插件', 'en-US': 'Other plugin' } } },
+  ];
+  const before = structuredClone(packages);
+  let version = '0.1.1';
+  const client = async (route, method, body) => {
+    if (route === '/runtime') return { enabled: false, version: '0.1.0' };
+    if (route === '/plugins' && method === 'POST') { actions.push(body); return {}; }
+    if (route === '/plugins') return { packages, items: [{ id, installed: true, enabled: false, active: false, version,
+      packageId: 'EXAMPLE_CURRENT_PACKAGE', previous: { packageId: 'EXAMPLE_OLD_PACKAGE', version: '0.1.0' }, manifest: manifest(version) }] };
+    return { items: [], next: null };
+  };
+  const Hub = createFrameworkHub({ client }), root = document.getElementById('root');
+  const click = async selector => act(async () => { const element = document.querySelector(selector); assert.ok(element, selector); element.click(); await new Promise(setImmediate); });
+  const cards = () => [...document.querySelectorAll('.pk-package-card')];
+  try {
+    await act(async () => { ReactDOM.render(React.createElement(Hub), root); await new Promise(setImmediate); });
+    await click('.c89-plugin-fab');
+    assert.equal(document.querySelectorAll('.pk-plugin-card').length, 1);
+    assert.equal(cards().length, 3);
+    assert.match(cards()[0].textContent, /0.1.2/); assert.match(cards()[1].textContent, /0.1.10/);
+    assert.match(cards()[2].textContent, /其他插件/);
+    assert.deepEqual(cards().map(card => card.querySelector('button').textContent), ['更新', '更新', '安装']);
+    await click('.pk-plugin-card .pk-actions button:nth-child(4)'); await click('.c89-confirm-actions .c89-save-exit');
+    assert.deepEqual(actions, [{ action: 'rollback', pluginId: id }]);
+    assert.deepEqual(packages, before, 'Filtering must retain archived packages for rollback.');
+    version = '0.1.9'; await click('.pk-toolbar button:last-child');
+    assert.equal(cards().length, 2); assert.match(cards()[0].textContent, /0.1.10/);
+    version = '0.1.10'; await click('.pk-toolbar button:last-child');
+    assert.equal(cards().length, 1); assert.match(cards()[0].textContent, /其他插件/);
+  } finally {
+    await act(async () => ReactDOM.unmountComponentAtNode(root)); dom.window.close(); delete globalThis.window; delete globalThis.document;
+  }
+});
+
 test('log table displays failure explanation and native delivery detail without a persistent warning banner', async () => {
   const dom = new JSDOM('<html lang="zh-CN"><body><div id="root"></div></body></html>', { url: 'https://tower.example.invalid', pretendToBeVisual: true });
   globalThis.window = dom.window; globalThis.document = dom.window.document;
