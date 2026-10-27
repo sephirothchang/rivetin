@@ -5,6 +5,10 @@
 **/qa/
 **/.runtime/
 .local/
+# Local-only multi-chat coordination rules and prompt templates.
+/docs/local-collaboration/
+# Agent instructions are local workspace guidance, never published.
+AGENTS.md
 cli/payload/
 cli/.cache/
 **/__pycache__/

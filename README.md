@@ -7,7 +7,6 @@ SmartX 功能增强插件与扩展集合。各插件作为独立子项目维护�
 ```text
 smartx-extensions/
 ├── README.md
-├── AGENTS.md
 ├── LICENSE
 ├── docs/                     # 共享开发规范与配置 API
 ├── cli/                      # 三平台自包含 CLI、版本适配与安装恢复
