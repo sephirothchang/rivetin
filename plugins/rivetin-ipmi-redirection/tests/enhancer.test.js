@@ -102,3 +102,28 @@ test('stale host link cannot navigate during the interval before a route rescan'
     anchor.dispatchEvent(click); assert.equal(click.defaultPrevented, true);
   } finally { f.close(); }
 });
+
+test('pending simulated launch cannot navigate after teardown or host/settings changes', async () => {
+  for (const change of ['teardown', 'route', 'disable', 'login-mode']) {
+    const dom = new JSDOM(`<body>${field('IPMI IP', '203.0.113.21')}</body>`, {
+      url: 'https://tower.example.invalid/#/hosts/host-one', pretendToBeVisual: true,
+    });
+    const store = createPreferenceStore(dom.window);
+    store.update({ loginMode: 'megarac', defaultVendor: 'ami-megarac' });
+    let resolveLaunch, navigations = 0, closed = 0;
+    dom.window.open = () => ({ opener: null, location: { replace() { navigations++; } }, close() { closed++; } });
+    const stop = installIpmiEnhancer({ win: dom.window, store,
+      requestLaunch: () => new Promise(resolve => { resolveLaunch = resolve; }),
+    });
+    try {
+      await settle(); dom.window.document.querySelector('a').click();
+      assert.equal(typeof resolveLaunch, 'function');
+      if (change === 'teardown') stop();
+      if (change === 'route') dom.window.location.hash = '/hosts/host-two';
+      if (change === 'disable') store.update({ ipmiEnabled: false });
+      if (change === 'login-mode') store.update({ loginMode: 'direct' });
+      resolveLaunch('https://gateway.example.invalid/launch/example'); await new Promise(setImmediate);
+      assert.equal(navigations, 0, change); assert.equal(closed, 1, change);
+    } finally { stop(); store.dispose(); dom.window.close(); }
+  }
+});

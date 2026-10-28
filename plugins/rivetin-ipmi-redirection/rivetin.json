@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "rivetin-ipmi-redirection",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "name": {
     "zh-CN": "IPMI 跳转",
     "en-US": "IPMI Redirection"
@@ -203,7 +203,7 @@
     "uninstall": "retain-config"
   },
   "releaseNotes": {
-    "zh-CN": "仅更新兼容性声明，适用于 Rivetin 0.2.x 与 CloudTower 4.9.0；不要求 SMTX OS 版本准入。现有功能保持不变，真实 BMC 网页自动登录尚未接入。",
-    "en-US": "Compatibility metadata only, for Rivetin 0.2.x and CloudTower 4.9.0; no SMTX OS version gate is required. Existing functionality is unchanged; production BMC browser auto-login is not integrated."
+    "zh-CN": "修复停用后重启的资产读取及过期模拟跳转；适用于 Rivetin 0.2.x 与 CloudTower 4.9.0，不要求 SMTX OS 版本准入。真实 BMC 网页自动登录尚未接入。",
+    "en-US": "Fix inventory reload after reactivation and stale simulated launches. For Rivetin 0.2.x and CloudTower 4.9.0 with no SMTX OS version gate; production BMC browser auto-login is not integrated."
   }
 }

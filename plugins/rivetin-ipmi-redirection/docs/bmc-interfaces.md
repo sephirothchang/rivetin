@@ -45,7 +45,7 @@ HCL 证明的是 SMTX OS 的服务器兼容性，未给出全部机型的 BMC �
 | Huawei | 5 | [官方 iBMC Cmdlets 会话实现](https://github.com/Huawei/Huawei-iBMC-Cmdlets/blob/master/code/common/Redfish.ps1)，Redfish 协议实现 |
 | H3C | 14 | [HDM2 Redfish 参考手册](https://www.h3c.com/en/Support/Resource_Center/EN/Severs/Catalog/Management_Software/Management/Technical_Documents/Developer_Documents/API_References/H3C_HDM2_R-13839/)，Redfish 协议实现 |
 | 超聚变 | 8 | [V6 及以后 iBMC API](https://www.xfusion.com/wp-content/uploads/2025/11/Server-V6-or-Later-iBMC-Redfish-API-Description-.pdf)，Redfish 协议实现 |
-| 宝德 | 4 | [自强鲲鹏 iBMC Redfish 1.1](https://rtx.powerleader.com.cn/static/upload/file/20250402/1743581414958895.pdf)，Redfish 协议实现，适用范围需核对 |
+| 宝德 | 4 | [自强鲲鹏 iBMC Redfish 1.1](https://en.powerleader.com.cn/static/upload/file/20250402/1743581414958895.pdf)，Redfish 协议实现，适用范围需核对 |
 | GIGABYTE | 1 | [Redfish V1.11.0](https://download.gigabyte.com/FileList/Manual/server_manual_redfish_v1.11.0.pdf)，Redfish 协议实现 |
 | 中科可控 | 6 | 已收录；公开会话协议待核实，当前仅跳转 |
 | 紫光恒越 | 2 | 同上 |
@@ -69,6 +69,10 @@ HCL 证明的是 SMTX OS 的服务器兼容性，未给出全部机型的 BMC �
 
 AMI 是 BMC 软件协议族，不是该 HCL 中的服务器厂商，作为额外选项保留。通用 BMC 则只做 HTTPS 登录页跳转，不自动探测或套用其他厂商凭据。
 
+资料链接复核（2026-10-28）：H3C 上表原参考手册入口在本机访问时跳转到错误页，当前原文访问仍待恢复或找到等效官方手册。宝德已改为厂商 `en` 域名上的同名文档入口，与源码目录一致；搜索可检索该文档，但本机 TLS 连接失败，当前下载可用性尚未验证。上述引用保留资料溯源，不作为当前链接可用的证明；不得为读取文档关闭证书验证。
+
+同日候选复核补充：实际读取了 H3C 官方 [HDM2-1.68.01 版本说明](https://www.h3c.com/cn/d_202402/2055018_30005_0.htm) 的“支持的设备”和配套下载项；该页列出 G6 系列设备，并配套 Redfish 参考手册 V1.10。它能证明这一固件包的文档配套关系，不能替代 API 手册原文或证明本插件适配这些设备。手册下载链接转至软件许可协议页，本次未接受协议、未取得 API 正文；原英文入口仍返回错误页面。宝德原 PDF 再次发生 TLS/读取失败，另一个官方 PR205KS 用户手册候选也未成功取得全文，故保留待核验，不仅凭搜索摘要认定版本、会话接口或支持固件。当前没有新增可宣称已适配的厂商/型号/固件。
+
 ## 需要按设备核对的差异
 
 - 联想清单含旧款 `System X3650 M5`，其 [官方 IMM2 文档入口](https://pubs.lenovo.com/imm2/) 与 XCC 属于不同产品；不可因为同属联想就假定 XCC 接口可用。
@@ -83,7 +87,7 @@ AMI 是 BMC 软件协议族，不是该 HCL 中的服务器厂商，作为额外
 Redfish API 会话通常通过 HTTP 请求头携带令牌，浏览器打开一个链接不会自动携带该请求头，也不会获得其他来源的 Cookie。会话接口完成接入后，仍需逐个 BMC 网页实现会话建立、Cookie/CSRF、页面资源代理和退出生命周期。
 
 - AMI MegaRAC SP-X：保留已有 `/api/session` 表单适配与本地模拟网页会话；未接真实 BMC。
-- 其他厂商：此迭代完成 API 层及普通跳转，网页免密暂未接入，界面不会虚报支持。
+- 其余厂商：10 家配置完成 Redfish 客户端与本地模拟契约验证，19 家仍仅普通跳转、公开会话协议待核实；均未完成真实网页自动登录，界面不会虚报支持。
 - [联想 XClarity Administrator 的管理控制器单点登录](https://pubs.lenovo.com/lxca/server_launchimm) 有自身管理关系、产品及固件前提，不是可直接套在 Tower 上的通用跳转参数。
 - 超聚变、宝德文档还描述了 Web 会话操作，属于后续网页适配的候选；本次未把这些 OEM Web 操作与标准 Redfish API 会话混用。
 

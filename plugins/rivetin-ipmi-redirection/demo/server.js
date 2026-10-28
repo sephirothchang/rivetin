@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url';
 import { createDemoGateway } from './gateway.js';
 import { createService } from '../../../framework/server/service.js';
 import { createApi } from '../../../framework/server/http.js';
-import { builtinPackages } from '../../../framework/server/builtins.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const pluginPackage = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
@@ -13,7 +12,7 @@ const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': '
 const gateway = createDemoGateway();
 const profile = process.env.RIVETIN_DEMO_PROFILE || 'rivetin';
 if (!/^[a-z0-9-]{1,60}$/.test(profile)) throw new Error('INVALID_DEMO_PROFILE');
-const service = createService(path.join(root, '.runtime', profile), { towerBuild: '4.9.0', builtinPackages: await builtinPackages({ required: true }) });
+const service = createService(path.join(root, '.runtime', profile), { towerBuild: '4.9.0' });
 const demoActor = { id: 'demo-admin', name: 'Demo administrator', source: 'demo', admin: true };
 const initialized = await service.initialize(demoActor);
 if (initialized.created) {

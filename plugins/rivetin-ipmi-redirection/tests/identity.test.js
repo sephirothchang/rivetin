@@ -23,9 +23,9 @@ test('the executable child manifest rejects unregistered BMC protocol IDs before
   assert.throws(() => validateSettings(settings, manifest.configuration.schema));
 });
 
-test('0.1.3 declares only the tested Tower and Rivetin 0.2.x boundary without a SMTX version gate', async () => {
+test('current candidate declares the Tower and Rivetin 0.2.x boundary without a SMTX version gate', async () => {
   const manifest = JSON.parse(await readFile(new URL('../rivetin.json', import.meta.url), 'utf8'));
-  assert.equal(manifest.version, '0.1.3'); assert.doesNotThrow(() => validateManifest(manifest));
+  assert.equal(manifest.version, '0.1.4'); assert.doesNotThrow(() => validateManifest(manifest));
   assert.deepEqual(manifest.compatibility, { schemaVersion: 2, frameworkApi: 1,
     tower: 'CloudTower 4.9.0; Rivetin >=0.2.0 <0.3.0. IPMI HTTPS redirection only.',
     towerBuilds: ['4.9.0'], frameworkMinVersion: '0.2.0', frameworkMaxVersionExclusive: '0.3.0', smtx: 'none' });
@@ -38,7 +38,7 @@ test('0.1.3 declares only the tested Tower and Rivetin 0.2.x boundary without a 
   assert.equal(checkCompatibility(manifest, { ...context, smtx: undefined }).compatible, true);
 });
 
-test('compatibility-only release preserves 0.1.2 permissions, configuration and lifecycle defaults', async () => {
+test('current candidate preserves 0.1.2 permissions, configuration and lifecycle defaults', async () => {
   const manifest = JSON.parse(await readFile(new URL('../rivetin.json', import.meta.url), 'utf8'));
   assert.deepEqual(manifest.permissions, ['inventory.read', 'host.ipmi.enhance', 'bmc.session.launch']);
   assert.deepEqual(manifest.lifecycle, { reset: 'defaults', uninstall: 'retain-config' });

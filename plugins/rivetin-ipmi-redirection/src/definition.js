@@ -8,17 +8,18 @@ import { BmcSettings } from './bmc-settings.js';
 const h = React.createElement;
 export default function createIpmiPlugin({ win, history, apolloClient, options = {}, getLocale = () => 'zh-CN' }) {
   const store = createConfigurationStore(win, options.configurationBackend?.() || createHttpConfigurationBackend(win));
-  let inventory = { loaded: false, loading: false, error: '', hosts: [], clusters: [] }, disposed = false;
+  let inventory = { loaded: false, loading: false, error: '', hosts: [], clusters: [] }, disposed = false, inventoryRequest = 0;
   async function refreshInventory() {
     if (inventory.loading) return;
+    const request = ++inventoryRequest;
     inventory = { ...inventory, loading: true, error: '' };
     try {
       const result = await (options.inventoryProvider ? options.inventoryProvider() : loadTowerInventory(apolloClient));
-      if (disposed) return;
+      if (disposed || request !== inventoryRequest) return;
       inventory = { ...result, loaded: true, loading: false, error: '' }; store.setClusters(result.clusters);
       win.dispatchEvent(new win.Event('c89:inventory-updated'));
     } catch {
-      if (!disposed) { inventory = { ...inventory, loading: false, error: '资产清单暂不可用，请检查读取权限后重试。' }; store.setClusters([]); }
+      if (!disposed && request === inventoryRequest) { inventory = { ...inventory, loaded: false, loading: false, error: '资产清单暂不可用，请检查读取权限后重试。' }; store.setClusters([]); }
     }
   }
   function Settings({ preferences, t, locale }) {
@@ -39,11 +40,14 @@ export default function createIpmiPlugin({ win, history, apolloClient, options =
   return {
     id: PLUGIN_ID, store, Settings,
     activate(onError) {
-      disposed = false; refreshInventory();
+      disposed = false; inventory = { ...inventory, loaded: false, loading: false }; refreshInventory();
       const stop = installIpmiEnhancer({ win, store, history, ...options, getLocale,
-        getHostContext: id => ({ clusterId: inventory.hosts.find(host => host.id === id)?.cluster?.id, contextKnown: inventory.loaded }), onError });
+        getHostContext: id => {
+          const host = inventory.hosts.find(value => value.id === id);
+          return { clusterId: inventory.loaded ? host?.cluster?.id : undefined, contextKnown: inventory.loaded && Boolean(host) };
+        }, onError });
       const poll = win.setInterval(() => { if (!store.status().dirty && win.document.visibilityState === 'visible') store.load(); }, 15000);
-      return () => { disposed = true; stop(); win.clearInterval(poll); };
+      return () => { disposed = true; inventoryRequest++; inventory = { ...inventory, loaded: false, loading: false }; stop(); win.clearInterval(poll); };
     },
   };
 }

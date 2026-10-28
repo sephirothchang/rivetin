@@ -48,11 +48,19 @@ export function installIpmiEnhancer({ win, store, history, resolveDirectUrl = ta
     a.title = '打开此主机的 IPMI 登录页';
     const state = { anchor: a, target: { hostId, ip: field.ip, url: field.url, vendor: profile.vendor.id }, auto: canAutoLogin };
     a.addEventListener('click', async event => {
-      if (currentHostId(win.location) !== state.target.hostId || field.span.textContent.trim() !== state.target.ip || !store.get().ipmiEnabled) {
+      if (disposed || currentHostId(win.location) !== state.target.hostId || field.span.textContent.trim() !== state.target.ip || !store.get().ipmiEnabled) {
         event.preventDefault(); schedule(); return;
       }
       if (!state.auto || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
       event.preventDefault(); event.stopPropagation();
+      const target = { ...state.target };
+      function isCurrent() {
+        const current = store.get(), profile = resolveBmcProfile(current, { hostId: target.hostId, ...getHostContext(target.hostId) });
+        return !disposed && a.isConnected && a.parentNode === field.span &&
+          currentHostId(win.location) === target.hostId && field.span.textContent.trim() === target.ip &&
+          current.ipmiEnabled && current.loginMode === 'megarac' && profile.ready && profile.vendor.id === target.vendor;
+      }
+      if (!isCurrent()) { schedule(); return; }
       let popup;
       if (store.get().openInNewTab) {
         popup = win.open('about:blank', '_blank');
@@ -60,7 +68,8 @@ export function installIpmiEnhancer({ win, store, history, resolveDirectUrl = ta
         popup.opener = null;
       }
       try {
-        const url = await requestLaunch(state.target);
+        const url = await requestLaunch(target);
+        if (!isCurrent()) { popup?.close(); return; }
         if (popup) popup.location.replace(url); else win.location.assign(url);
       } catch {
         popup?.close(); onError('无法建立登录会话，请使用普通跳转重试。');
