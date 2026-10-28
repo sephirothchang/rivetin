@@ -1,4 +1,39 @@
 {
   "schemaVersion": 4,
-  "plugins": []
+  "plugins": [
+    {
+      "id": "rivetin-ipmi-redirection",
+      "version": "0.1.4",
+      "frameworkApi": 1,
+      "status": "published",
+      "downloadPath": "/downloads/plugins/rivetin-ipmi-redirection/0.1.4/rivetin-ipmi-redirection-0.1.4.rivetin.json",
+      "sha256": "7472699d221f06c417547bddf5b7e0c334193390e5adc3bd9ecced62d13e80da",
+      "name": {
+        "zh-CN": "IPMI 跳转",
+        "en-US": "IPMI Redirection"
+      },
+      "description": {
+        "zh-CN": "主机 IPMI 地址跳转与 BMC 厂商协议配置。",
+        "en-US": "Host IPMI links and BMC vendor protocol settings."
+      },
+      "author": "Rivetin contributors",
+      "license": "MIT",
+      "permissions": [
+        "inventory.read",
+        "host.ipmi.enhance",
+        "bmc.session.launch"
+      ],
+      "compatibility": {
+        "schemaVersion": 2,
+        "frameworkApi": 1,
+        "tower": "CloudTower 4.9.0; Rivetin >=0.2.0 <0.3.0. IPMI HTTPS redirection only.",
+        "towerBuilds": [
+          "4.9.0"
+        ],
+        "frameworkMinVersion": "0.2.0",
+        "frameworkMaxVersionExclusive": "0.3.0",
+        "smtx": "none"
+      }
+    }
+  ]
 }
