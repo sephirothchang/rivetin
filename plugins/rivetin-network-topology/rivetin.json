@@ -1,0 +1,49 @@
+{
+  "manifestVersion": 1,
+  "id": "rivetin-network-topology",
+  "version": "0.1.0",
+  "name": {
+    "zh-CN": "网络拓扑可视化编辑（本地预览）",
+    "en-US": "Network topology editor (local preview)"
+  },
+  "description": {
+    "zh-CN": "仅本地 Demo：拖入创建、自由布局、连线调整关联、新建草稿垃圾桶删除、受保护网络校验与 90 秒模拟确认回滚。",
+    "en-US": "Local demo: create and move objects, reconnect networks, trash new drafts, protect system networks and confirm or roll back within 90 seconds."
+  },
+  "author": "PluginKit contributors",
+  "license": "MIT",
+  "repository": "https://github.com/sephirothchang/rivetin",
+  "homepage": "https://github.com/sephirothchang/rivetin/tree/main/plugins/rivetin-network-topology",
+  "compatibility": {
+    "frameworkApi": 1,
+    "tower": "Local standalone demo only; live CloudTower compatibility has not been validated.",
+    "towerBuilds": []
+  },
+  "frontend": {
+    "format": "rivetin-global-v1",
+    "entry": "web/plugin.js"
+  },
+  "permissions": [],
+  "locales": [
+    "zh-CN",
+    "en-US"
+  ],
+  "configuration": {
+    "version": 1,
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {},
+      "required": []
+    },
+    "defaults": {}
+  },
+  "lifecycle": {
+    "reset": "defaults",
+    "uninstall": "retain-config"
+  },
+  "releaseNotes": {
+    "zh-CN": "本地预览。标准包仅包含不执行网络操作的占位入口；完整交互在独立 demo 包。禁止用于真实网络变更。",
+    "en-US": "Local preview. The standard package has a dormant entry; the standalone demo archive contains the interactive editor. No live network changes."
+  }
+}
