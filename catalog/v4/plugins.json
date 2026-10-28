@@ -2,6 +2,72 @@
   "schemaVersion": 4,
   "plugins": [
     {
+      "id": "rivetin-context-menu",
+      "version": "0.5.9",
+      "frameworkApi": 1,
+      "status": "published",
+      "downloadPath": "/downloads/plugins/rivetin-context-menu/0.5.9/rivetin-context-menu-0.5.9.rivetin.json",
+      "sha256": "bd33fce9ab2c664f8612cb873b4391fb53038c09cfd8bcfb40f9de141556f8ee",
+      "name": {
+        "zh-CN": "资源右键菜单",
+        "en-US": "Resource context menus"
+      },
+      "description": {
+        "zh-CN": "资源列表多级右键菜单与虚拟机原生配置快捷入口，复用 CloudTower 官方菜单、对话框和确认流程。",
+        "en-US": "Cascading resource-row menus and VM shortcuts reuse CloudTower native menus, dialogs and confirmation flows."
+      },
+      "author": "Rivetin contributors",
+      "license": "MIT",
+      "permissions": [
+        "ui.context-menu"
+      ],
+      "compatibility": {
+        "schemaVersion": 2,
+        "frameworkApi": 1,
+        "tower": "CloudTower 4.9.0 public DOM; framework 0.2 candidate, live validation pending.",
+        "towerBuilds": [
+          "4.9.0"
+        ],
+        "frameworkMinVersion": "0.2.0",
+        "frameworkMaxVersionExclusive": "0.3.0",
+        "smtx": "none"
+      }
+    },
+    {
+      "id": "rivetin-disk-smart-info",
+      "version": "0.1.6",
+      "frameworkApi": 1,
+      "status": "published",
+      "downloadPath": "/downloads/plugins/rivetin-disk-smart-info/0.1.6/rivetin-disk-smart-info-0.1.6.rivetin.json",
+      "sha256": "25ff2bf981abff5b8aaad4b78a7a60c9e76947e7594f1b0e66885de18f5aa129",
+      "name": {
+        "zh-CN": "磁盘健康展示",
+        "en-US": "Disk SMART information"
+      },
+      "description": {
+        "zh-CN": "CloudTower 4.9.0 受控验收候选：物理盘 SMART 与每日历史、本地化和劣化风险；真实主机采集尚未验收。",
+        "en-US": "CloudTower 4.9.0 controlled acceptance candidate: localized disk SMART, daily history and deterioration. Live host collection remains unverified."
+      },
+      "author": "Rivetin contributors",
+      "license": "MIT",
+      "permissions": [
+        "inventory.read",
+        "ssh.channel.use",
+        "disk.smart.read"
+      ],
+      "compatibility": {
+        "schemaVersion": 2,
+        "frameworkApi": 1,
+        "tower": "CloudTower 4.9.0 controlled candidate; real SMART collection remains unverified.",
+        "towerBuilds": [
+          "4.9.0"
+        ],
+        "frameworkMinVersion": "0.2.0",
+        "frameworkMaxVersionExclusive": "0.3.0",
+        "smtx": "none"
+      }
+    },
+    {
       "id": "rivetin-ipmi-redirection",
       "version": "0.1.4",
       "frameworkApi": 1,
@@ -27,6 +93,36 @@
         "schemaVersion": 2,
         "frameworkApi": 1,
         "tower": "CloudTower 4.9.0; Rivetin >=0.2.0 <0.3.0. IPMI HTTPS redirection only.",
+        "towerBuilds": [
+          "4.9.0"
+        ],
+        "frameworkMinVersion": "0.2.0",
+        "frameworkMaxVersionExclusive": "0.3.0",
+        "smtx": "none"
+      }
+    },
+    {
+      "id": "rivetin-ssh-channel",
+      "version": "0.1.2",
+      "frameworkApi": 1,
+      "status": "published",
+      "downloadPath": "/downloads/plugins/rivetin-ssh-channel/0.1.2/rivetin-ssh-channel-0.1.2.rivetin.json",
+      "sha256": "01de1e563cc07a617f7703fad944315e8952d222e065be4b4e7425571fb46ad6",
+      "name": {
+        "zh-CN": "SSH 通道",
+        "en-US": "SSH channel"
+      },
+      "description": {
+        "zh-CN": "统一管理子插件的受控 SSH 采集、命令审计与执行授权，默认停用。",
+        "en-US": "Shared controlled SSH collection, command review and execution approvals; disabled by default."
+      },
+      "author": "Sephiroth Chang & Rivetin contributors",
+      "license": "MIT",
+      "permissions": [],
+      "compatibility": {
+        "schemaVersion": 2,
+        "frameworkApi": 1,
+        "tower": "Requires the Rivetin SSH channel broker; live collection compatibility must be verified for each host build.",
         "towerBuilds": [
           "4.9.0"
         ],
