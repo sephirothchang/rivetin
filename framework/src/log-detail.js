@@ -27,15 +27,28 @@ const errors = {
   TOWER_AUDIT_TIMEOUT: ['向 Tower 写入日志超时，尚未确认成功。', 'The Tower audit request timed out; delivery is unconfirmed.'],
   TOWER_AUDIT_TASK_PENDING: ['Tower 日志任务尚未确认完成。', 'The Tower audit task has not been confirmed complete.'],
 };
+const safeCode = (value, fallback) => /^[A-Z_]{1,100}$/.test(value || '') ? value : fallback;
+export function logErrorCode(event) {
+  return event.result === 'failed' ? safeCode(event.code, 'OPERATION_FAILED') : null;
+}
+export function logSummary(event, locale) {
+  const en = locale === 'en-US';
+  const code = logErrorCode(event);
+  const primary = code ? (errors[code]?.[en ? 1 : 0] || (en ? 'The operation was rejected.' : '操作被拒绝。')).split(/[。；]|\.(?:\s|$)/)[0]
+    : en ? event.result === 'started' ? 'Processing request' : 'Operation completed' : event.result === 'started' ? '正在处理请求' : '操作已完成';
+  const summary = primary.length > 120 ? `${primary.slice(0, 119)}…` : primary;
+  return ['failed', 'permission-denied'].includes(event.towerDelivery?.state)
+    ? `${summary} · ${en ? 'Audit copy failed' : '原生日志副本失败'}` : summary;
+}
 export function logDetail(event, locale, label) {
   const en = locale === 'en-US', parts = [];
   if (event.result === 'failed') {
-    const code = /^[A-Z_]{1,100}$/.test(event.code || '') ? event.code : 'OPERATION_FAILED';
+    const code = logErrorCode(event);
     parts.push(`${errors[code]?.[en ? 1 : 0] || (en ? 'The operation was rejected.' : '操作被拒绝。')} [${code}]`);
   } else parts.push(`${label} · ${en ? event.result === 'started' ? 'Request accepted for processing' : 'Completed' : event.result === 'started' ? '开始处理请求' : '操作已完成'}`);
   const delivery = event.towerDelivery;
   if (['failed', 'permission-denied'].includes(delivery?.state)) {
-    const code = /^[A-Z_]{1,100}$/.test(delivery.code || '') ? delivery.code : 'TOWER_AUDIT_FAILED';
+    const code = safeCode(delivery.code, 'TOWER_AUDIT_FAILED');
     parts.push(`${en ? 'Audit copy' : '原生日志副本'}：${errors[code]?.[en ? 1 : 0] || code} [${code}]`);
   }
   return parts.join('\n');

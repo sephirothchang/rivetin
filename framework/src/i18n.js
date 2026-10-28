@@ -21,7 +21,7 @@ const en = {
   'UPDATE_SOURCE_ACCESS_REQUIRED': 'Access to the website update source was denied. Retry or upload a package manually.',
   'UPDATE_SOURCE_RATE_LIMITED': 'The update source is rate limited. Retry later.',
   'UPDATE_SOURCE_UNAVAILABLE': 'The update source is unavailable. Please retry or upload a package manually.', 'UPDATE_PACKAGE_UNPUBLISHED': 'The update package has not been published.', 'UPDATE_NOT_AVAILABLE': 'No newer version is available.', 'UPDATE_CHECKSUM_FAILED': 'The downloaded package failed integrity verification.',
-  '内容': 'Details', '记录详情': 'Record details',
+  '内容': 'Details', '记录详情': 'Record details', '记录编号': 'Record ID', '错误码': 'Error code',
   '升级': 'Upgrade', '关于': 'About', '正在检查插件状态': 'Checking plugin status', '插件状态不可用': 'Plugin status unavailable', '插件已启用': 'Plugins enabled', '插件已停用': 'Plugins disabled',
   'PLUGIN_ID_MISMATCH': 'The package belongs to a different plugin.',
   '插件中心': 'Plugin Center', '插件配置': 'Plugin settings', '插件设置': 'Plugin settings', '插件管理': 'Plugin management', '操作日志': 'Activity log', '全局偏好': 'Preferences',

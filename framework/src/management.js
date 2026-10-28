@@ -1,6 +1,6 @@
 import { actionLabel } from './i18n.js';
 import { FRAMEWORK_VERSION } from '../shared/version.js';
-import { logDetail } from './log-detail.js';
+import { logDetail, logErrorCode, logSummary } from './log-detail.js';
 const versionPattern = /^(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})$/;
 function newerVersion(candidate, current) {
   if (!versionPattern.test(candidate || '') || !versionPattern.test(current || '')) return false;
@@ -10,17 +10,22 @@ function newerVersion(candidate, current) {
 }
 export function createManagement(React) {
   const h = React.createElement;
+  const singleLine = (value, className = '') => h('td', { className: `pk-log-single ${className}`.trim(), title: value }, value);
   return function Management({ tab, records, packages, runtime, logs, onAction, onUpload, onRefresh, onMore, onCheck, onMarket, updates = {}, updateChecked, updateSourceStatus = { checking: true, reachable: false }, busy, t, locale }) {
     const name = item => item.manifest?.name?.[locale] || item.id;
     if (tab === 'logs') return h(React.Fragment, null,
       h('div', { className: 'pk-toolbar' }, h('h3', null, t('操作日志')), h('button', { onClick: onRefresh, disabled: busy }, t('刷新'))),
-      logs.items.length ? h('table', { className: 'pk-table' },
+      logs.items.length ? h('div', { className: 'pk-log-scroll', role: 'region', 'aria-label': t('操作日志'), tabIndex: 0 }, h('table', { className: 'pk-table pk-log-table' },
+        h('colgroup', null, ...['time', 'actor', 'action', 'object', 'result', 'content'].map(column => h('col', { key: column, className: `pk-log-col-${column}` }))),
         h('thead', null, h('tr', null, ...['时间', '操作者', '操作', '对象', '结果', '内容'].map(text => h('th', { key: text }, t(text))))),
-        h('tbody', null, ...logs.items.map(event => h('tr', { key: event.id }, h('td', null, new Date(event.time).toLocaleString(locale)),
-          h('td', null, event.actor.name), h('td', null, actionLabel(event.action, locale)), h('td', null, event.pluginId || 'Rivetin'),
-          h('td', { className: event.result === 'failed' ? 'pk-danger-text' : '' }, t({ success: '成功', failed: '失败', started: '开始' }[event.result] || event.result)),
-          h('td', { className: 'pk-log-detail' }, logDetail(event, locale, actionLabel(event.action, locale)),
-            h('details', null, h('summary', null, t('记录详情')), h('code', null, event.id))))))) : h('p', null, t('暂无日志')),
+        h('tbody', null, ...logs.items.map(event => h('tr', { key: event.id }, singleLine(new Date(event.time).toLocaleString(locale)),
+          singleLine(event.actor.name), singleLine(actionLabel(event.action, locale)), singleLine(event.pluginId || 'Rivetin'),
+          singleLine(t({ success: '成功', failed: '失败', started: '开始' }[event.result] || event.result), event.result === 'failed' ? 'pk-danger-text' : ''),
+          h('td', { className: 'pk-log-detail' }, h('div', { className: 'pk-log-summary' }, logSummary(event, locale)),
+            h('details', null, h('summary', null, t('记录详情')),
+              h('div', { className: 'pk-log-description' }, logDetail(event, locale, actionLabel(event.action, locale))),
+              h('dl', { className: 'pk-log-metadata' }, h('dt', null, t('记录编号')), h('dd', null, h('code', null, event.id)),
+                logErrorCode(event) && h(React.Fragment, null, h('dt', null, t('错误码')), h('dd', null, h('code', null, logErrorCode(event)))))))))))) : h('p', null, t('暂无日志')),
       logs.next && h('button', { disabled: busy, onClick: onMore }, t('加载更多')));
     return h(React.Fragment, null,
       h('div', { className: 'pk-toolbar' }, h('h3', null, 'Rivetin'), h('span', { className: `c89-badge ${runtime.enabled ? 'c89-badge-enabled' : 'c89-badge-disabled'}` }, t(runtime.enabled ? '框架运行' : '插件已全部停用'))),

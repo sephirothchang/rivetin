@@ -198,7 +198,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
     },
     async initialize(actor, { upgradeFrom } = {}) {
       actorCheck(actor);
-      if (upgradeFrom !== undefined && (!['0.1.0', '0.1.1', '0.1.2', '0.1.3'].includes(upgradeFrom) || FRAMEWORK_VERSION !== '0.1.4')) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
+      if (upgradeFrom !== undefined && (!['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4'].includes(upgradeFrom) || FRAMEWORK_VERSION !== '0.1.5')) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
       return disk.locked(() => runtimeDisk.locked(async () => {
         await mkdir(path.dirname(frameworkFile), { recursive: true });
         const created = !(await exists(frameworkFile));
@@ -206,7 +206,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
         if (created && upgradeFrom !== undefined) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
         if (!created) {
           const stored = await json(frameworkFile);
-          if (stored.apiVersion !== 1 || !['0.1.0', '0.1.1', '0.1.2', '0.1.3', FRAMEWORK_VERSION].includes(stored.version)) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
+          if (stored.apiVersion !== 1 || !['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', FRAMEWORK_VERSION].includes(stored.version)) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
           if (upgradeFrom !== undefined && !(await exists(disabledFile))) throw new Error('FRAMEWORK_DISABLE_BEFORE_UPGRADE');
           if (stored.version !== FRAMEWORK_VERSION) {
             if (upgradeFrom !== stored.version) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');

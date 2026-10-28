@@ -21,7 +21,7 @@ import (
 )
 
 const recoveryTimeout = 4 * time.Minute
-const cliVersion = "0.1.4"
+const cliVersion = "0.1.5"
 
 var diagnosticMessages = map[string][2]string{
 	"PLUGIN_INCOMPATIBLE":                           {"该插件不支持当前 CloudTower 或框架版本，操作已停止。", "The plugin does not support the current CloudTower or framework version; the operation stopped."},

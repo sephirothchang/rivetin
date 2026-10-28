@@ -219,7 +219,7 @@ export function createFrameworkHub(options = {}) {
       (prefs.showFloatingButton || menuUnsupported) && h(FloatingButton, { win: window, state: floatingState, label: t(floatingLabels[floatingState]), settingsLabel: t('插件设置'),
         position: prefs.floatingPosition, onPosition: point => personal.update({ floatingPosition: point }), onOpen: show }),
       open && h('div', { className: 'c89-backdrop', onClick: event => { if (event.target === event.currentTarget) close(); } },
-        h('section', { className: 'c89-panel', role: 'dialog', 'aria-modal': true, 'aria-hidden': modal || undefined, 'aria-labelledby': 'pk-title', ref: dialog },
+        h('section', { className: `c89-panel${tab === 'logs' ? ' pk-panel-logs' : ''}`, role: 'dialog', 'aria-modal': true, 'aria-hidden': modal || undefined, 'aria-labelledby': 'pk-title', ref: dialog },
           h('header', null, h('h2', { id: 'pk-title' }, t('插件中心')), h('button', { className: 'c89-close', onClick: close, 'aria-label': t('关闭插件配置') }, '×')),
           h('div', { className: 'c89-panel-body' },
             h('nav', { className: 'c89-nav' }, ...[['global', '全局偏好'], ['center', '插件管理'], ['market', '插件市场'], ['logs', '操作日志']].map(([key, label]) => h('button', { role: 'tab', key, 'data-pk-tab': key, 'aria-selected': tab === key, onClick: () => setTab(key) }, t(label))),

@@ -262,21 +262,51 @@ test('package cards hide installed and older versions while newer packages and r
   }
 });
 
-test('log table displays failure explanation and native delivery detail without a persistent warning banner', async () => {
+test('log rows keep metadata single-line with local scrolling and collapse complete diagnostic details', async () => {
   const dom = new JSDOM('<html lang="zh-CN"><body><div id="root"></div></body></html>', { url: 'https://tower.example.invalid', pretendToBeVisual: true });
   globalThis.window = dom.window; globalThis.document = dom.window.document;
-  const event = { id: 'EXAMPLE_RECORD', time: '2026-01-01T00:00:00Z', actor: { name: 'EXAMPLE_ADMIN' }, action: 'configuration.save', result: 'failed', code: 'INVALID_SETTINGS', towerDelivery: { state: 'permission-denied', code: 'TOWER_AUDIT_SYSTEM_USER_REQUIRED' } };
+  const event = { id: 'EXAMPLE_RECORD', time: '2026-01-01T00:00:00Z', actor: { name: 'EXAMPLE_ADMIN_WITH_A_LONG_DISPLAY_NAME' }, pluginId: 'rivetin-example-plugin-with-a-long-identifier', action: 'configuration.save', result: 'failed', code: 'INVALID_SETTINGS', message: 'EXAMPLE_SECRET', towerDelivery: { state: 'permission-denied', code: 'TOWER_AUDIT_SYSTEM_USER_REQUIRED' } };
   const client = async route => route === '/updates/status' ? { reachable: true } : route === '/runtime' ? { enabled: false, version: '0.1.0', audit: 'permission-denied' } : route === '/plugins' ? { items: [], packages: [] } : { items: [event], next: null };
   const Hub = createFrameworkHub({ client }), root = document.getElementById('root');
   const click = async selector => act(async () => { document.querySelector(selector).click(); await new Promise(setImmediate); });
   try {
     await act(async () => { ReactDOM.render(React.createElement(Hub), root); await new Promise(setImmediate); });
-    await click('.c89-plugin-fab'); await click('[data-pk-tab="logs"]');
+    await click('.c89-plugin-fab');
+    assert.equal(document.querySelector('.c89-panel').classList.contains('pk-panel-logs'), false);
+    await click('[data-pk-tab="logs"]');
+    assert.equal(document.querySelector('.c89-panel').classList.contains('pk-panel-logs'), true);
     assert.match(document.querySelector('.pk-table thead').textContent, /内容/);
     assert.match(document.querySelector('.pk-log-detail').textContent, /INVALID_SETTINGS/);
     assert.match(document.querySelector('.pk-log-detail').textContent, /only allow by system user/);
     assert.equal(document.querySelector('.c89-content > .pk-muted'), null);
-    assert.match(document.querySelector('.pk-log-detail details').textContent, /EXAMPLE_RECORD/);
+    const details = document.querySelector('.pk-log-detail details'), summary = document.querySelector('.pk-log-summary');
+    assert.equal(details.open, false);
+    assert.match(summary.textContent, /配置内容不符合插件的配置规则 · 原生日志副本失败/);
+    assert.doesNotMatch(summary.textContent, /only allow by system user|TOWER_AUDIT_SYSTEM_USER_REQUIRED|INVALID_SETTINGS/);
+    assert.match(details.textContent, /EXAMPLE_RECORD/);
+    assert.match(details.textContent, /记录编号/); assert.match(details.textContent, /错误码/);
+    assert.doesNotMatch(document.querySelector('.pk-log-detail').textContent, /EXAMPLE_SECRET/);
+    const cells = [...document.querySelectorAll('.pk-log-table tbody tr > td')];
+    assert.equal(cells.length, 6);
+    for (const cell of cells.slice(0, 5)) {
+      assert.equal(cell.title, cell.textContent);
+      const style = window.getComputedStyle(cell);
+      assert.equal(style.whiteSpace, 'nowrap'); assert.equal(style.textOverflow, 'ellipsis'); assert.equal(style.overflow, 'hidden');
+    }
+    assert.equal(cells[1].title, event.actor.name); assert.equal(cells[3].title, event.pluginId);
+    assert.equal(window.getComputedStyle(document.querySelector('.pk-log-table')).tableLayout, 'fixed');
+    assert.equal(window.getComputedStyle(document.querySelector('.pk-log-table')).minWidth, '940px');
+    const scroll = document.querySelector('.pk-log-scroll');
+    assert.equal(window.getComputedStyle(scroll).overflowX, 'auto'); assert.equal(scroll.tabIndex, 0);
+    assert.equal(scroll.getAttribute('aria-label'), '操作日志');
+    await click('.pk-log-detail summary'); assert.equal(details.open, true);
+    await act(async () => { document.documentElement.lang = 'en-US'; await new Promise(setImmediate); });
+    assert.match(document.querySelector('.pk-log-summary').textContent, /Settings do not match the plugin schema · Audit copy failed/);
+    assert.match(document.querySelector('.pk-log-metadata').textContent, /Record ID/);
+    assert.match(document.querySelector('.pk-log-metadata').textContent, /Error code/);
+    assert.equal(document.querySelector('.pk-log-scroll').getAttribute('aria-label'), 'Activity log');
+    await click('[data-pk-tab="center"]');
+    assert.equal(document.querySelector('.c89-panel').classList.contains('pk-panel-logs'), false);
   } finally {
     await act(async () => ReactDOM.unmountComponentAtNode(root)); dom.window.close(); delete globalThis.window; delete globalThis.document;
   }
