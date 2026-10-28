@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { candidateEntry, draftEntry, downloadPath, mergeEntries, serializeCatalog, validateCatalog, verifyReceipt } from '../catalog-package.mjs';
-import { fixturePackage, receipt, sha } from './catalog-fixtures.mjs';
+import { assertKnownDigestConsistency, candidateEntry, draftEntry, downloadPath, mergeEntries, serializeCatalog, validateCatalog, verifyReceipt } from '../catalog-package.mjs';
+import { fixturePackage, fixtureV4Package, receipt, sha, v4Compatibility } from './catalog-fixtures.mjs';
 const empty = () => ({ schemaVersion: 3, plugins: [] });
 
 test('draft derives exact manifest metadata and candidate uses canonical v3 path without claiming a publication proof', () => {
@@ -39,4 +39,29 @@ test('offline website receipt requires exact site/path, actual readback bytes, d
   assert.throws(() => verifyReceipt(proof, Buffer.concat([bytes, Buffer.from('CHANGED')]), bytes, path, clock));
   assert.throws(() => verifyReceipt(proof, bytes, bytes, path, { now: clock.now }), /SITE_READBACK_TIME_INVALID/);
   assert.throws(() => verifyReceipt({ ...proof, verifiedAt: '2026-02-30T12:00:00Z' }, bytes, bytes, path, { notBefore: '2026-01-01T00:00:00Z', now: Date.parse('2026-03-03T12:00:00Z') }), /SITE_READBACK_TIME_INVALID/);
+});
+
+test('v4 is explicitly selected, preserves strict schema 2 metadata and never converts v3 in place', () => {
+  for (const patch of [{}, { smtx: 'none' }, { smtx: { product: 'SMTX_OS', scope: 'all-managed-product-clusters', builds: ['6.3.0'] } }]) {
+    const bytes = fixtureV4Package('rivetin-example', '0.2.0', patch), entry = candidateEntry(bytes, 4);
+    assert.deepEqual(entry.compatibility, JSON.parse(bytes).manifest.compatibility);
+    assert.equal(validateCatalog({ schemaVersion: 4, plugins: [entry] }, 4).plugins[0].compatibility.schemaVersion, 2);
+    assert.deepEqual(serializeCatalog({ schemaVersion: 4, plugins: [] }, 4), Buffer.from('{\n  "schemaVersion": 4,\n  "plugins": []\n}\n'));
+    assert.throws(() => candidateEntry(bytes), /CATALOG_V4_REQUIRED/);
+  }
+  assert.throws(() => validateCatalog({ schemaVersion: 3, plugins: [] }, 4), /CATALOG_V4_REQUIRED/);
+  assert.throws(() => validateCatalog({ schemaVersion: 4, plugins: [] }), /CATALOG_V3_REQUIRED/);
+  assert.throws(() => draftEntry(fixturePackage(), 4), /CATALOG_V4_COMPATIBILITY_REQUIRED/);
+  for (const patch of [{ frameworkMinVersion: undefined }, { frameworkMaxVersionExclusive: undefined }, { towerBuilds: [] }, { smtx: { mode: 'none' } }, { smtx: { product: 'SMTX_OS', scope: 'all-managed-product-clusters', builds: [] } }]) {
+    const entry = { ...candidateEntry(fixtureV4Package(), 4), compatibility: v4Compatibility(patch) };
+    assert.throws(() => validateCatalog({ schemaVersion: 4, plugins: [entry] }, 4));
+  }
+});
+
+test('known v3/v4 same identity digest checks reject conflicts without inventing a global release ledger', () => {
+  const a = candidateEntry(fixturePackage()), b = candidateEntry(fixtureV4Package('rivetin-example', '0.1.0'), 4);
+  assert.throws(() => assertKnownDigestConsistency([{ schemaVersion: 3, plugins: [a] }, { schemaVersion: 4, plugins: [b] }]), /CATALOG_KNOWN_DIGEST_CONFLICT/);
+  assert.equal(assertKnownDigestConsistency([{ schemaVersion: 3, plugins: [a] }], [{ ...a }]), true);
+  assert.throws(() => assertKnownDigestConsistency([{ schemaVersion: 3, plugins: [a] }], [{ ...a, status: 'draft', sha256: 'f'.repeat(64) }]), /CATALOG_KNOWN_DIGEST_CONFLICT/);
+  assert.equal(assertKnownDigestConsistency([{ schemaVersion: 3, plugins: [a] }], [candidateEntry(fixtureV4Package('rivetin-example', '0.2.0'), 4)]), true);
 });

@@ -6,6 +6,8 @@ import testUtils from 'react-dom/test-utils.js';
 import { JSDOM } from 'jsdom';
 import { createFrameworkHub } from '../src/hub.js';
 import { createConfigurationStore } from '../src/config-store.js';
+import { CSS } from '../src/style.js';
+import { translator } from '../src/i18n.js';
 const { act } = testUtils;
 
 test('Rivetin uses its own SDK and factory identity without creating legacy globals', async () => {
@@ -274,7 +276,7 @@ test('log rows keep metadata single-line with local scrolling and collapse compl
     await click('.c89-plugin-fab');
     assert.equal(document.querySelector('.c89-panel').classList.contains('pk-panel-logs'), false);
     await click('[data-pk-tab="logs"]');
-    assert.equal(document.querySelector('.c89-panel').classList.contains('pk-panel-logs'), true);
+    assert.equal(document.querySelector('.c89-panel').classList.contains('pk-panel-logs'), false);
     assert.match(document.querySelector('.pk-table thead').textContent, /内容/);
     assert.match(document.querySelector('.pk-log-detail').textContent, /INVALID_SETTINGS/);
     assert.match(document.querySelector('.pk-log-detail').textContent, /only allow by system user/);
@@ -310,4 +312,70 @@ test('log rows keep metadata single-line with local scrolling and collapse compl
   } finally {
     await act(async () => ReactDOM.unmountComponentAtNode(root)); dom.window.close(); delete globalThis.window; delete globalThis.document;
   }
+});
+
+test('component status is wired after activity logs and uses the same fixed panel across tabs', async () => {
+  const dom = new JSDOM('<html lang="zh-CN"><body><div id="root"></div></body></html>', { url: 'https://tower.example.invalid', pretendToBeVisual: true });
+  globalThis.window = dom.window; globalThis.document = dom.window.document;
+  const status = { schemaVersion: 1, checkedAt: '2026-01-01T00:00:00Z', overall: 'unknown', framework: { version: '0.1.5', enabled: false, compatibility: { compatible: null, reason: 'TOWER_BUILD_UNKNOWN', declared: { towerBuilds: ['4.9.0'] }, observed: { towerVersion: '4.9.0' } } }, components: [], plugins: [], actions: { repair: { available: false }, reset: { available: false }, support: { available: false } }, limitations: [] };
+  const calls = [], client = async route => {
+    calls.push(route);
+    if (route.startsWith('/components/status')) return status;
+    if (route === '/updates/status') return { reachable: true };
+    if (route === '/runtime') return { enabled: false, version: '0.1.5' };
+    if (route === '/plugins') return { items: [], packages: [] };
+    if (route === '/market') return { schemaVersion: 3, items: [], source: { reachable: true } };
+    return { items: [], next: null };
+  };
+  const Hub = createFrameworkHub({ client }), root = document.getElementById('root');
+  const click = async selector => act(async () => { const node = document.querySelector(selector); assert.ok(node, selector); node.click(); await new Promise(setImmediate); });
+  try {
+    await act(async () => { ReactDOM.render(React.createElement(Hub), root); await new Promise(setImmediate); });
+    await click('.c89-plugin-fab');
+    const panel = document.querySelector('.c89-panel'), header = panel.querySelector('header'), footer = panel.querySelector('footer');
+    const size = () => { const style = window.getComputedStyle(panel); return { width: style.width, height: style.height, maxHeight: style.maxHeight }; };
+    const original = size(); assert.match(original.width, /1220px/); assert.match(original.height, /820px/); assert.match(original.height, /100vh - 48px/);
+    assert.deepEqual([...document.querySelectorAll('.c89-nav [data-pk-tab]')].map(node => node.dataset.pkTab), ['global', 'center', 'market', 'logs', 'components']);
+    const components = document.querySelector('[data-pk-tab="components"]'); assert.equal(components.nextElementSibling.textContent, '插件配置');
+    for (const tab of ['global', 'logs', 'components', 'market', 'center']) {
+      await click(`[data-pk-tab="${tab}"]`);
+      assert.equal(document.querySelector('.c89-panel'), panel); assert.deepEqual(size(), original); assert.equal(panel.querySelector('header'), header); assert.equal(panel.querySelector('footer'), footer);
+      assert.equal(panel.className, 'c89-panel');
+    }
+    await click('[data-pk-tab="components"]');
+    assert.match(document.querySelector('.rv-components').textContent, /CloudTower 4\.9\.0/);
+    assert.equal(calls.filter(route => route === '/components/status').length, 2);
+    await click('.rv-components-refresh'); assert.equal(calls.filter(route => route === '/components/status?fresh=true').length, 1);
+    const scrollStyle = window.getComputedStyle(panel.querySelector('.c89-content'));
+    assert.equal(scrollStyle.overflowY, 'auto'); assert.equal(scrollStyle.minHeight, '0');
+    assert.equal(window.getComputedStyle(header).flexShrink, '0'); assert.equal(window.getComputedStyle(footer).flexShrink, '0');
+    await act(async () => { document.documentElement.lang = 'en-US'; await new Promise(setImmediate); });
+    assert.equal(document.querySelector('[data-pk-tab="components"]').textContent, 'Component status');
+    assert.equal(document.querySelector('.rv-components h3').textContent, 'Component status');
+    await click('.pk-about-tab'); assert.deepEqual(size(), original);
+  } finally { await act(async () => ReactDOM.unmountComponentAtNode(root)); dom.window.close(); delete globalThis.window; delete globalThis.document; }
+});
+
+test('shared panel geometry has one definition and narrow navigation/content remain independently scrollable', () => {
+  const rule = CSS.match(/\.c89-panel\{([^}]+)\}/)?.[1] || '';
+  assert.match(rule, /width:min\(1220px,100%\)/); assert.match(rule, /height:min\(820px,calc\(100vh - 48px\)\)/);
+  assert.equal((CSS.match(/\.c89-panel\{/g) || []).length, 1); assert.doesNotMatch(CSS, /pk-panel-logs/);
+  assert.match(CSS, /\.c89-panel-body\{[^}]*min-height:0[^}]*overflow:hidden/);
+  const mobile = CSS.slice(CSS.indexOf('@media(max-width:620px){.c89-panel-body'));
+  assert.match(mobile, /grid-template-columns:1fr;grid-template-rows:auto minmax\(0,1fr\)/);
+  assert.match(mobile, /\.c89-nav\{[^}]*overflow-x:auto;overflow-y:hidden/);
+  assert.match(mobile, /\.c89-nav>\*\{flex:0 0 auto;white-space:nowrap\}/);
+  assert.match(CSS, /\.c89-plugin-root \.rv-components button\.rv-components-confirm-repair\{color:white;background:#1683ff/);
+});
+
+test('compatibility reasons distinguish framework mismatch, SMTX mismatch and unavailable evidence in both languages', () => {
+  const reasons = ['FRAMEWORK_TOWER_INCOMPATIBLE', 'FRAMEWORK_VERSION_UNKNOWN', 'PLUGIN_COMPATIBILITY_INVALID', 'SMTX_SNAPSHOT_UNAVAILABLE', 'SMTX_SNAPSHOT_INVALID', 'SMTX_SNAPSHOT_EXPIRED', 'SMTX_SCOPE_UNTRUSTED', 'SMTX_SCOPE_INCOMPLETE', 'SMTX_SCOPE_EMPTY', 'SMTX_VERSION_UNKNOWN', 'SMTX_INCOMPATIBLE'];
+  for (const locale of ['zh-CN', 'en-US']) for (const reason of reasons) {
+    const value = translator(locale)(reason); assert.notEqual(value, reason); assert.doesNotMatch(value, /EXAMPLE_SECRET|https?:|[A-Z]:\\/);
+    if (reason.startsWith('SMTX_')) assert.match(value, /SMTX/);
+  }
+  assert.match(translator('zh-CN')('SMTX_SNAPSHOT_UNAVAILABLE'), /未知/);
+  assert.match(translator('zh-CN')('SMTX_INCOMPATIBLE'), /已阻止插件执行/);
+  assert.match(translator('en-US')('SMTX_SNAPSHOT_UNAVAILABLE'), /remains unknown/);
+  assert.match(translator('en-US')('SMTX_INCOMPATIBLE'), /execution is blocked/);
 });

@@ -34,6 +34,12 @@ export function createApi(service, { authenticate, origins = [] } = {}) {
           if (keys.some(key => !names.includes(key)) || new Set(keys).size !== keys.length || [...url.searchParams.values()].some(value => value.length > 4096)) throw new Error('INVALID_REQUEST');
           return Object.fromEntries(url.searchParams);
         };
+        if (route === '/components/status') {
+          const values = parameters(['fresh']);
+          if (values.fresh !== undefined && values.fresh !== 'true') throw new Error('INVALID_REQUEST');
+          return send(res, 200, await service.components.status(actor, { fresh: values.fresh === 'true' }));
+        }
+        if (route === '/components/support') { parameters([]); return send(res, 200, await service.components.support(actor)); }
         if (route.startsWith('/data/disk-smart/')) {
           const operation = route.slice('/data/disk-smart/'.length);
           if (operation === 'inventory') {
@@ -78,12 +84,15 @@ export function createApi(service, { authenticate, origins = [] } = {}) {
           return send(res, 200, route === '/ssh-channel' ? await service.sshChannel.status(actor) : await service.sshChannel.results(url.searchParams.get('pluginId'), actor));
         }
         if (route === '/runtime') return send(res, 200, await service.runtime());
-        if (route === '/plugins') return send(res, 200, { items: await service.plugins(), packages: actor.admin ? await service.packages() : [] });
+        if (route === '/plugins') return send(res, 200, { items: await service.plugins(actor), packages: actor.admin ? await service.packages() : [] });
         if (route === '/config') return send(res, 200, await service.loadConfig());
         if (route === '/logs') {
           if (!actor.admin) return send(res, 403, { error: 'ADMIN_REQUIRED' });
           return send(res, 200, await service.logs({ pluginId: url.searchParams.get('pluginId'), limit: url.searchParams.get('limit'), before: url.searchParams.get('before') }));
         }
+      }
+      if (req.method === 'POST' && ['/components/repair', '/components/reset'].includes(route)) {
+        return send(res, 200, await service.components.maintain(route.split('/').at(-1), JSON.parse(await body(req, 4096)), actor));
       }
       if (req.method === 'POST' && route === '/disable') return send(res, 200, await service.disable(actor));
       if (req.method === 'POST' && route === '/ssh-channel/preflight') {

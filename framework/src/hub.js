@@ -14,17 +14,17 @@ import { installUpgradeNotice } from './upgrade-notice.js';
 import { validId } from '../shared/identity.js';
 import { createDataProviders } from './data-providers.js';
 import { createSshConnectionsStore } from './ssh-connection-settings.js';
+import { createComponentsStatus } from './components-status.js';
 
 const extraCss = `
 .pk-badge-suspended{color:#946000;background:#fff8e6;border-color:#f0d28d}
 .c89-content .pk-upload{margin-left:auto;display:inline-flex;position:relative;align-items:center;min-height:34px}.c89-content .pk-upload input{position:absolute;width:1px;max-width:1px;height:1px;margin:0;padding:0;opacity:0;clip-path:inset(50%)}.pk-upload:focus-within{outline:2px solid #1385ee;outline-offset:3px}
-.c89-panel{width:min(1100px,100%)}.c89-panel-body{grid-template-columns:190px minmax(0,1fr)}
 .pk-toolbar,.pk-framework,.pk-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.pk-toolbar{justify-content:space-between;margin:0 0 12px}.pk-framework{justify-content:space-between;padding:14px 0 22px;border-bottom:1px solid #e7edf5;margin-bottom:22px}.pk-plugin-card,.pk-package-card{border:1px solid #dfe8f2;border-radius:8px;padding:16px;margin-top:14px}.pk-actions{margin-top:14px}.pk-muted{color:#71849b;font-size:12px;overflow-wrap:anywhere}.pk-danger-text{color:#cf1322!important}.pk-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:16px}.pk-table th,.pk-table td{text-align:left;padding:10px 6px;border-bottom:1px solid #e8eef6;vertical-align:top;overflow-wrap:anywhere}.pk-table td:first-child{white-space:nowrap}.pk-upload{cursor:pointer;background:#0784f5;color:white;padding:6px 10px;border-radius:6px;font-size:12px}.pk-upload input{display:block;max-width:190px;font-size:11px;margin-top:4px}.pk-disabled{opacity:.5;cursor:default}.c89-content button:not(.c89-remove-rule){border:1px solid #d7e3f0;border-radius:6px;padding:6px 10px;background:white;cursor:pointer}.pk-nav-group{font-size:11px;color:#8491a3;margin:18px 12px 8px}.pk-warning{color:#9a4810;background:#fff7ed;padding:10px;border-radius:7px;margin:12px 0}.pk-plugin-error{color:#bd2834}.pk-confirm-description{overflow-wrap:anywhere}
 .c89-plugin-root .c89-content button.pk-emergency{background:#e1192d;border-color:#e1192d;color:white;font-weight:700;padding:9px 16px}.c89-plugin-root .c89-content button.pk-emergency:hover{background:#bd1022;border-color:#bd1022}
 `;
 export function createFrameworkHub(options = {}) {
   const React = options.React || defaultReact, ReactDOM = options.ReactDOM || defaultReactDOM;
-  const { useEffect, useRef, useState } = React, h = React.createElement, Management = createManagement(React), About = createAbout(React), FloatingButton = createFloatingButton(React), SshSettings = createSshSettings(React), Marketplace = createMarketplace(React);
+  const { useEffect, useRef, useState } = React, h = React.createElement, Management = createManagement(React), About = createAbout(React), FloatingButton = createFloatingButton(React), SshSettings = createSshSettings(React), Marketplace = createMarketplace(React), ComponentsStatus = createComponentsStatus(React);
   return function RivetinHub({ history, apolloClient, locale: suppliedLocale } = {}) {
     const [locale, setLocale] = useState(towerLocale(window, suppliedLocale));
     const t = translator(locale), localeRef = useRef(locale); localeRef.current = locale;
@@ -219,10 +219,10 @@ export function createFrameworkHub(options = {}) {
       (prefs.showFloatingButton || menuUnsupported) && h(FloatingButton, { win: window, state: floatingState, label: t(floatingLabels[floatingState]), settingsLabel: t('插件设置'),
         position: prefs.floatingPosition, onPosition: point => personal.update({ floatingPosition: point }), onOpen: show }),
       open && h('div', { className: 'c89-backdrop', onClick: event => { if (event.target === event.currentTarget) close(); } },
-        h('section', { className: `c89-panel${tab === 'logs' ? ' pk-panel-logs' : ''}`, role: 'dialog', 'aria-modal': true, 'aria-hidden': modal || undefined, 'aria-labelledby': 'pk-title', ref: dialog },
+        h('section', { className: 'c89-panel', role: 'dialog', 'aria-modal': true, 'aria-hidden': modal || undefined, 'aria-labelledby': 'pk-title', ref: dialog },
           h('header', null, h('h2', { id: 'pk-title' }, t('插件中心')), h('button', { className: 'c89-close', onClick: close, 'aria-label': t('关闭插件配置') }, '×')),
           h('div', { className: 'c89-panel-body' },
-            h('nav', { className: 'c89-nav' }, ...[['global', '全局偏好'], ['center', '插件管理'], ['market', '插件市场'], ['logs', '操作日志']].map(([key, label]) => h('button', { role: 'tab', key, 'data-pk-tab': key, 'aria-selected': tab === key, onClick: () => setTab(key) }, t(label))),
+            h('nav', { className: 'c89-nav' }, ...[['global', '全局偏好'], ['center', '插件管理'], ['market', '插件市场'], ['logs', '操作日志'], ['components', '组件状态']].map(([key, label]) => h('button', { role: 'tab', key, 'data-pk-tab': key, 'aria-selected': tab === key, onClick: () => setTab(key) }, t(label))),
               h('div', { className: 'pk-nav-group' }, t('插件配置')),
               ...records.filter(record => record.installed).map(record => h('button', { role: 'tab', key: record.id, 'aria-selected': tab === record.id, onClick: () => setTab(record.id) }, record.manifest?.name?.[locale] || record.id)),
               h('button', { className: 'pk-about-tab', role: 'tab', 'aria-selected': tab === 'about', onClick: () => setTab('about') }, t('关于'))),
@@ -231,7 +231,7 @@ export function createFrameworkHub(options = {}) {
                 h('div', { className: 'c89-preference-intro' }, h('p', null, t('个人偏好设置仅在当前浏览器生效。'))),
                 h('div', { className: 'c89-setting' }, h('div', { className: 'c89-setting-row' }, h('label', { htmlFor: 'pk-floating' }, t('显示右下角插件按钮')),
                   h('input', { id: 'pk-floating', type: 'checkbox', checked: prefs.showFloatingButton, onChange: event => personal.update({ showFloatingButton: event.target.checked }) })), h('small', null, t('关闭后，仍可通过主菜单 → 插件配置打开本面板。')))) :
-              tab === 'about' ? h(About, { locale }) : tab === 'market' ? h(Marketplace, { client: api, locale, onInstalled: () => refresh(), onError: message => setError(message) }) : tab === 'rivetin-ssh-channel' ? h(React.Fragment, null,
+              tab === 'about' ? h(About, { locale }) : tab === 'components' ? h(ComponentsStatus, { client: api, locale, t, onRefresh: refresh }) : tab === 'market' ? h(Marketplace, { client: api, locale, onInstalled: () => refresh(), onError: message => setError(message) }) : tab === 'rivetin-ssh-channel' ? h(React.Fragment, null,
                 session && h('fieldset', { className: 'c89-functional', disabled: !session.store.status().loaded || busy || !runtime.enabled || !records.some(record => record.id === tab && record.active) }, h(session.Settings, { preferences: session.store.getDraft(), store: session.store, t, locale })),
                 h(SshSettings, { client: api, locale, connectionStore, preflightEnabled: runtime.enabled === true && records.some(record => record.id === 'rivetin-ssh-channel' && record.active), onError: message => setError(message) })) : tab === 'center' || tab === 'logs' ? h(Management, { tab, records, packages, runtime, logs, onAction: perform, onUpload: upload,
                 onRefresh: () => { refresh(); setUpdateProbeEpoch(value => value + 1); }, onMore: () => refreshLogs(true).catch(() => setError('请求失败，请刷新后重试。')), onCheck: checkUpdates, onMarket: () => setTab('market'), updates, updateChecked, updateSourceStatus, busy, t, locale }) :

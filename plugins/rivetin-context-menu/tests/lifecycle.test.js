@@ -9,10 +9,14 @@ import { defaults, PLUGIN_ID } from '../src/configuration.js';
 test('context-menu package lifecycle preserves independent settings, disable and rollback', async t => {
   const { service, directory, install } = await fixture(t);
   const manifest = JSON.parse(await readFile(new URL('../rivetin.json', import.meta.url)));
+  assert.equal(manifest.compatibility.schemaVersion, undefined);
+  assert.equal(manifest.compatibility.frameworkApi, 1);
+  assert.deepEqual(manifest.compatibility.towerBuilds, ['4.9.0']);
   function packageBytes(version) {
     const code = Buffer.from('/* non-executed lifecycle fixture */'), license = Buffer.from('MIT License');
-    // This non-executed service fixture declares its simulated Tower build only.
-    return Buffer.from(JSON.stringify({ format: 'rivetin-package-v1', manifest: { ...manifest, version, compatibility: { ...manifest.compatibility, towerBuilds: ['4.9.0'] } }, files: [
+    // Synthetic 0.2 lifecycle packages exercise the in-progress framework gate.
+    // They do not change the release manifest or claim real 0.2 compatibility.
+    return Buffer.from(JSON.stringify({ format: 'rivetin-package-v1', manifest: { ...manifest, version, compatibility: { schemaVersion: 2, frameworkApi: 1, frameworkMinVersion: '0.2.0', frameworkMaxVersionExclusive: '0.3.0', towerBuilds: ['4.9.0'], smtx: 'none', tower: 'Synthetic lifecycle fixture; not a release compatibility claim' } }, files: [
       { path: 'web/plugin.js', data: code.toString('base64'), sha256: hash(code) },
       { path: 'LICENSE', data: license.toString('base64'), sha256: hash(license) },
     ] }));

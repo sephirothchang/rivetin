@@ -21,7 +21,7 @@ import (
 )
 
 const recoveryTimeout = 4 * time.Minute
-const cliVersion = "0.1.5"
+const cliVersion = "0.2.0"
 
 var diagnosticMessages = map[string][2]string{
 	"PLUGIN_INCOMPATIBLE":                           {"该插件不支持当前 CloudTower 或框架版本，操作已停止。", "The plugin does not support the current CloudTower or framework version; the operation stopped."},
@@ -69,6 +69,7 @@ var diagnosticMessages = map[string][2]string{
 	"ALREADY_INSTALLED_USE_UPDATE":                  {"框架已由安装器安装。需要更新时请使用 update。", "The framework is already installed by this installer. Use update to update it."},
 	"FRAMEWORK_NOT_INSTALLED":                       {"未找到符合当前操作要求的 Rivetin 安装或数据布局。", "A Rivetin installation or data layout required for this operation was not found."},
 	"FRAMEWORK_MIGRATION_REQUIRED":                  {"现有框架数据版本需要迁移，本版本安装器不执行该迁移。请先备份并使用受支持的迁移流程。", "The existing framework data version requires a migration that this installer does not perform. Back up the data and use a supported migration workflow."},
+	"FRAMEWORK_DISABLE_BEFORE_UPGRADE":              {"框架停用标记缺失，升级已在部署写入前停止。请先核对待恢复操作并保持框架停用，再按对应恢复记录处理，不要盲目重复升级。", "The framework disabled marker is missing. The upgrade stopped before deployment writes. Inspect the pending operation, keep the framework disabled and follow its recovery record; do not blindly retry."},
 	"REMOTE_BOOTSTRAP_UNAVAILABLE":                  {"无法启动 Tower 端引导器。请检查 SSH 账户的免密 sudo、Python 3 可用性及执行权限。", "The Tower-side bootstrap could not be started. Check passwordless sudo, Python 3 availability and execution permissions for the SSH account."},
 	"KUBERNETES_COMMAND_FAILED":                     {"Tower 端 Kubernetes 操作失败。请检查相关组件状态，并结合恢复记录确认是否需要回滚。", "A Tower-side Kubernetes operation failed. Check component health and the recovery record to determine whether rollback is required."},
 	"REMOTE_TIMEOUT_OUTCOME_UNKNOWN":                {"等待远程操作超时，执行结果尚未确认。不要直接重试写入；先查询 status，并按恢复记录处理。", "The remote operation timed out and its outcome is unconfirmed. Do not repeat the write immediately; inspect status and follow the recovery record."},

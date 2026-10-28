@@ -1,10 +1,11 @@
-import { mkdir, copyFile, mkdtemp, readdir } from 'node:fs/promises';
+import { mkdir, copyFile, mkdtemp, lstat, realpath, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { validatePackage, FRAMEWORK_VERSION } from '../server/manifest.js';
 import { runtimeFiles } from './runtime-files.mjs';
+import { buildIntegrity } from './release-integrity.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const stage = path.join(root, '.packaging'), output = path.join(root, 'release');
 const metadata = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
@@ -30,8 +31,24 @@ execFileSync('tar', ['-czf', path.join(output, `rivetin-${FRAMEWORK_VERSION}-isl
 const serviceStage = await mkdtemp(path.join(stage, 'service-'));
 for (const directory of ['server', 'server/vendor', 'server/builtins', 'shared', 'deploy']) await mkdir(path.join(serviceStage, directory), { recursive: true });
 const sourceFiles = await runtimeFiles(root);
-const deployFiles = (await readdir(path.join(root, 'deploy'))).filter(file => /^[a-z][a-z0-9-]*\.(?:sh|yaml)$/.test(file)).map(file => `deploy/${file}`);
-for (const file of new Set([...sourceFiles, ...deployFiles, 'server/vendor/ssh2.cjs', 'server/builtins/rivetin-ssh-channel.json', 'package.json', 'THIRD_PARTY_NOTICES.txt'])) await copyFile(path.join(root, file), path.join(serviceStage, file));
+const deployFiles = ['deploy/install.sh', 'deploy/rivetin.yaml'];
+const releaseFiles = [...new Set([...sourceFiles, ...deployFiles, 'server/vendor/ssh2.cjs', 'server/builtins/rivetin-ssh-channel.json', 'package.json', 'THIRD_PARTY_NOTICES.txt', 'LICENSE'])].sort();
+if (releaseFiles.length > 200) throw new Error('RELEASE_INPUT_LIMIT');
+for (const file of releaseFiles.filter(file => file !== 'LICENSE')) {
+  const source = path.join(root, file), info = await lstat(source);
+  if (!info.isFile() || info.isSymbolicLink() || await realpath(source) !== source) throw new Error('RELEASE_INPUT_INVALID');
+  await mkdir(path.dirname(path.join(serviceStage, file)), { recursive: true });
+  await copyFile(source, path.join(serviceStage, file));
+}
+const licenseInfo = await lstat(path.join(root, '../LICENSE'));
+if (!licenseInfo.isFile() || licenseInfo.isSymbolicLink() || await realpath(path.join(root, '../LICENSE')) !== path.resolve(root, '../LICENSE')) throw new Error('RELEASE_INPUT_INVALID');
 await copyFile(path.join(root, '../LICENSE'), path.join(serviceStage, 'LICENSE'));
-execFileSync('tar', ['-czf', path.join(output, `rivetin-${FRAMEWORK_VERSION}-service.tar.gz`), '-C', serviceStage, 'server', 'shared', 'deploy', 'cli.mjs', 'package.json', 'THIRD_PARTY_NOTICES.txt', 'LICENSE']);
+let releaseBytes = 0;
+for (const file of releaseFiles) {
+  const info = await lstat(path.join(serviceStage, file));
+  if (!info.isFile() || info.isSymbolicLink() || info.size > 16 * 1024 * 1024 || (releaseBytes += info.size) > 32 * 1024 * 1024) throw new Error('RELEASE_INPUT_LIMIT');
+}
+const integrity = buildIntegrity({ frameworkVersion: FRAMEWORK_VERSION, files: await Promise.all(releaseFiles.map(async file => ({ path: file, content: await readFile(path.join(serviceStage, file)) }))) });
+await writeFile(path.join(serviceStage, 'integrity.json'), JSON.stringify(integrity, null, 2) + '\n', { flag: 'wx' });
+execFileSync('tar', ['-czf', path.join(output, `rivetin-${FRAMEWORK_VERSION}-service.tar.gz`), '-C', serviceStage, ...releaseFiles, 'integrity.json']);
 console.log('Local framework Island and service packages built.');

@@ -17,6 +17,16 @@ const tower = createTowerConnection({ baseUrl: towerUrl });
 const sshTransport = createSshTransport();
 const service = createService(data, { towerSink: createTowerAuditSink({ request: tower.request }), updateSource: createUpdateSource(), sshRun: sshTransport.run, sshPreflightTransport: sshTransport, towerVersionProvider: createTowerVersionProvider({ request: tower.request }), readDisk: createTowerDiskReader({ request: tower.request }), readDiskInventory: createTowerDiskInventoryReader({ request: tower.request }), towerRequest: tower.request });
 service.sshChannel.start();
+// No saved browser authentication is used by the monitor. Unknown product evidence fails closed.
+let checkingCompatibility = false;
+async function reconcileCompatibility() {
+  if (checkingCompatibility) return;
+  checkingCompatibility = true;
+  try { await service.reconcileCompatibility(); } catch { console.error('Rivetin compatibility check unavailable'); }
+  finally { checkingCompatibility = false; }
+}
+await reconcileCompatibility();
+const compatibilityTimer = setInterval(reconcileCompatibility, 20000); compatibilityTimer.unref();
 const handler = createApi(service, { authenticate: tower.authenticate, origins });
 const server = http.createServer(async (req, res) => {
   try {
@@ -29,6 +39,7 @@ server.listen(listenPort({ RIVETIN_LISTEN_PORT: port }), '0.0.0.0', () => consol
 let stopping = false;
 async function stop() {
   if (stopping) return; stopping = true;
+  clearInterval(compatibilityTimer);
   const timer = setTimeout(() => process.exit(1), 5000); timer.unref();
   try { await Promise.all([service.sshPreflight.stop(), service.smartBatch.stop(), service.smartCollection.stop(), service.sshChannel.stop(), new Promise(resolve => server.close(resolve))]); clearTimeout(timer); process.exit(0); }
   catch { process.exit(1); }

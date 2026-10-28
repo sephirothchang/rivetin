@@ -6,7 +6,7 @@ export const actor = { id: 'example-admin', name: 'Example administrator', sourc
 export function bundle(id = 'rivetin-example', version = '0.1.0', mutate = value => value) {
   const code = Buffer.from('window.RivetinPlugins = window.RivetinPlugins || {};'), license = Buffer.from('MIT License - test fixture');
   const manifest = { manifestVersion: 1, id, version, name: { 'zh-CN': '测试插件', 'en-US': 'Example plugin' }, description: { 'zh-CN': '测试', 'en-US': 'Example' }, author: 'Example', license: 'MIT',
-    compatibility: { frameworkApi: 1, tower: 'test fixture', towerBuilds: ['4.9.0'] }, frontend: { format: 'rivetin-global-v1', entry: 'web/plugin.js' }, permissions: [], locales: ['zh-CN', 'en-US'],
+    compatibility: { schemaVersion: 2, frameworkApi: 1, tower: 'test fixture', towerBuilds: ['4.9.0'], frameworkMinVersion: '0.1.0', frameworkMaxVersionExclusive: '0.3.0', smtx: 'none' }, frontend: { format: 'rivetin-global-v1', entry: 'web/plugin.js' }, permissions: [], locales: ['zh-CN', 'en-US'],
     configuration: { version: 1, defaults: { enabled: true }, schema: { type: 'object', additionalProperties: false, required: ['enabled'], properties: { enabled: { type: 'boolean' } } } }, lifecycle: { reset: 'defaults', uninstall: 'retain-config' } };
   return Buffer.from(JSON.stringify(mutate({ format: 'rivetin-package-v1', manifest, files: [{ path: 'web/plugin.js', sha256: hash(code), data: code.toString('base64') }, { path: 'LICENSE', sha256: hash(license), data: license.toString('base64') }] })));
 }

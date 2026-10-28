@@ -2,15 +2,27 @@
 export function createTowerConnection({ baseUrl, fetchImpl = fetch }) {
   const base = new URL(baseUrl);
   if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password) throw new Error('INVALID_TOWER_URL');
+  async function responseJson(response) {
+    const max = 16 * 1024 * 1024, chunks = []; let size = 0;
+    if (Number(response.headers?.get?.('content-length')) > max) { await response.body?.cancel?.(); throw new Error('TOWER_RESPONSE_TOO_LARGE'); }
+    if (!response.body?.[Symbol.asyncIterator]) {
+      // Test transports may supply a pre-parsed body; real Fetch responses always stream.
+      if (typeof response.json === 'function' && !response.headers) return response.json();
+      throw new Error('TOWER_RESPONSE_INVALID');
+    }
+    for await (const chunk of response.body) { size += chunk.length; if (size > max) throw new Error('TOWER_RESPONSE_TOO_LARGE'); chunks.push(Buffer.from(chunk)); }
+    try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new Error('TOWER_RESPONSE_INVALID'); }
+  }
   async function request(path, body, actor) {
+    if (typeof path !== 'string' || !/^\/(?:api|v2\/api\/[a-z0-9-]+)$/.test(path)) throw new Error('INVALID_TOWER_PATH');
     const response = await fetchImpl(new URL(path, base), { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(4000),
       headers: { 'Content-Type': 'application/json', ...actor?.auth }, body: JSON.stringify(body) });
     if (!response.ok) {
-      let reason = ''; try { reason = (await response.json()).message || ''; } catch { /* No server diagnostic body is exposed. */ }
+      let reason = ''; try { reason = (await responseJson(response)).message || ''; } catch { /* No server diagnostic body is exposed. */ }
       if (path === '/v2/api/create-user-audit-log' && /only allow by system user/i.test(reason)) throw new Error('TOWER_AUDIT_SYSTEM_USER_REQUIRED');
       throw Object.assign(new Error('TOWER_REQUEST_FAILED'), { status: response.status });
     }
-    return response.json();
+    return responseJson(response);
   }
   async function authenticate(req) {
     const auth = {};

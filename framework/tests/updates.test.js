@@ -8,7 +8,7 @@ import { createApi } from '../server/http.js';
 import { Readable } from 'node:stream';
 
 const id = 'rivetin-example';
-const catalogURL = 'https://rivetin.dev/catalog/plugins.json';
+const catalogURL = 'https://rivetin.dev/catalog/v4/plugins.json';
 const path = (pluginId = id, version = '0.1.1') => `/downloads/plugins/${pluginId}/${version}/${pluginId}-${version}.rivetin.json`;
 const bundle = (pluginId = id, version = '0.1.0', mutate = value => value) => baseBundle(pluginId, version, value => {
   value.manifest.compatibility.towerBuilds = ['4.9.0']; return mutate(value);
@@ -18,7 +18,7 @@ const item = (bytes, patch = {}) => {
   return { id, version: '0.1.1', frameworkApi: 1, status: 'published', downloadPath: path(), sha256: hash(bytes), name: manifest.name, description: manifest.description,
     author: manifest.author, license: manifest.license, permissions: manifest.permissions, compatibility: manifest.compatibility, ...patch };
 };
-const envelope = (plugins, schemaVersion = 3) => new Response(JSON.stringify({ schemaVersion, plugins }), { status: 200 });
+const envelope = (plugins, schemaVersion = 4) => new Response(JSON.stringify({ schemaVersion, plugins }), { status: 200 });
 const publishedSource = (bytes, row = item(bytes), extra = {}) => createUpdateSource({ fetchImpl: async url => url === catalogURL ? envelope([row]) : new Response(bytes), ...extra });
 
 test('update versions compare numerically and reject ambiguous formats', () => {
@@ -44,7 +44,7 @@ test('official catalog and package paths are fixed and requests never contain cr
 
 test('market exposes only published canonical downloads and retrieves a plugin without installation', async () => {
   const bytes = bundle(id, '0.1.1');
-  const draft = item(bytes, { id: 'rivetin-unpublished', status: 'draft', downloadPath: null, sha256: null, compatibility: { frameworkApi: 1, tower: 'Not yet accepted.', towerBuilds: [] } });
+  const draft = item(bytes, { id: 'rivetin-unpublished', status: 'draft', downloadPath: null, sha256: null, compatibility: JSON.parse(bytes).manifest.compatibility });
   const source = createUpdateSource({ fetchImpl: async url => url === catalogURL ? envelope([item(bytes), draft]) : new Response(bytes) });
   assert.equal((await source.catalog()).length, 2); assert.deepEqual(await source.market(), [item(bytes)]);
   assert.deepEqual(await source.download(id, '0.1.1'), bytes);
@@ -52,11 +52,28 @@ test('market exposes only published canonical downloads and retrieves a plugin w
 });
 
 test('legacy catalog schemas and API envelopes are rejected with no domain fallback', async () => {
-  for (const response of [() => envelope([], 1), () => envelope([], 2), () => new Response(JSON.stringify({ encoding: 'base64', content: 'EXAMPLE_NOT_A_CATALOG' }))]) {
+  for (const response of [() => envelope([], 1), () => envelope([], 2), () => envelope([], 3), () => new Response(JSON.stringify({ encoding: 'base64', content: 'EXAMPLE_NOT_A_CATALOG' }))]) {
     const calls = [], source = createUpdateSource({ fetchImpl: async url => { calls.push(url); return response(); } });
     await assert.rejects(source.catalog(), { message: 'UPDATE_CATALOG_INVALID' });
     assert.deepEqual(calls, [catalogURL]);
   }
+});
+
+test('v4 requires compatibility schema two for every row including drafts and cannot downgrade to v3', async () => {
+  const bytes = bundle(id, '0.1.1'), declaration = JSON.parse(bytes).manifest.compatibility;
+  for (const status of ['draft', 'published']) for (const compatibility of [
+    { ...declaration, schemaVersion: undefined }, { ...declaration, schemaVersion: 1 },
+    { ...declaration, schemaVersion: 3 }, { frameworkApi: 1, tower: 'Legacy display only.' },
+    { ...declaration, frameworkMinVersion: undefined }, { ...declaration, towerBuilds: [] },
+  ]) {
+    const row = item(bytes, { status, ...(status === 'draft' ? { downloadPath: null, sha256: null } : {}), compatibility }), calls = [];
+    const source = createUpdateSource({ fetchImpl: async url => { calls.push(url); return envelope([row]); } });
+    assert.equal((await source.probe()).reachable, false);
+    assert.deepEqual(calls, [catalogURL]);
+  }
+  const calls = [], legacy = createUpdateSource({ fetchImpl: async url => { calls.push(url); return envelope([item(bytes)], 3); } });
+  await assert.rejects(legacy.download(id, '0.1.1'), { message: 'UPDATE_CATALOG_INVALID' });
+  assert.deepEqual(calls, [catalogURL]);
 });
 
 test('published rows require canonical same-origin relative paths, exact builds and complete reviewed metadata', async () => {
@@ -78,9 +95,9 @@ test('published rows require canonical same-origin relative paths, exact builds 
 test('malformed envelopes, oversized catalogs and duplicate rows fail closed without diagnostic fragments', async () => {
   const bytes = bundle(id, '0.1.1');
   for (const response of [
-    'EXAMPLE_PRIVATE_RESPONSE', 'null', '[]', JSON.stringify({ schemaVersion: 3, plugins: [], unexpected: true }),
-    JSON.stringify({ schemaVersion: 3, plugins: [null] }), JSON.stringify({ schemaVersion: 3, plugins: [item(bytes), item(bytes)] }),
-    JSON.stringify({ schemaVersion: 3, plugins: Array.from({ length: 501 }, () => item(bytes)) }),
+    'EXAMPLE_PRIVATE_RESPONSE', 'null', '[]', JSON.stringify({ schemaVersion: 4, plugins: [], unexpected: true }),
+    JSON.stringify({ schemaVersion: 4, plugins: [null] }), JSON.stringify({ schemaVersion: 4, plugins: [item(bytes), item(bytes)] }),
+    JSON.stringify({ schemaVersion: 4, plugins: Array.from({ length: 501 }, () => item(bytes)) }),
   ]) await assert.rejects(createUpdateSource({ fetchImpl: async () => new Response(response) }).catalog(), { message: 'UPDATE_CATALOG_INVALID' });
   await assert.rejects(createUpdateSource({ fetchImpl: async () => new Response('x'.repeat(512 * 1024 + 1)) }).catalog(), { message: 'UPDATE_DOWNLOAD_TOO_LARGE' });
 });
@@ -104,7 +121,7 @@ test('download requires exact reviewed metadata, permissions and machine compati
     { compatibility: { ...declaration, towerBuilds: ['4.8.0'] } },
     { compatibility: { ...declaration, frameworkMinVersion: '0.1.1' } },
   ]) await assert.rejects(publishedSource(bytes, item(bytes, patch)).download(id, '0.1.1'), { message: 'UPDATE_METADATA_MISMATCH' });
-  const legacy = bundle(id, '0.1.1', value => { delete value.manifest.compatibility.towerBuilds; return value; });
+  const legacy = bundle(id, '0.1.1', value => { value.manifest.compatibility = { frameworkApi: 1, tower: 'Legacy display-only declaration.' }; return value; });
   await assert.rejects(publishedSource(legacy, item(bytes, { sha256: hash(legacy) })).download(id, '0.1.1'), { message: 'UPDATE_METADATA_MISMATCH' });
 });
 
@@ -135,13 +152,24 @@ test('catalog and package redirects cannot leave the exact official canonical pa
   }
 });
 
-test('same-canonical-path redirect loops and package sizes remain bounded', async () => {
+test('same-canonical-path redirects are rejected without retry and package sizes remain bounded', async () => {
   let calls = 0;
   const source = createUpdateSource({ fetchImpl: async url => { calls++; return new Response(null, { status: 302, headers: { location: url } }); } });
-  await assert.rejects(source.catalog(), { message: 'UPDATE_SOURCE_UNAVAILABLE' }); assert.equal(calls, 4);
+  await assert.rejects(source.catalog(), { message: 'UPDATE_REDIRECT_REJECTED' }); assert.equal(calls, 1);
   const bytes = bundle(id, '0.1.1');
   const large = createUpdateSource({ fetchImpl: async url => url === catalogURL ? envelope([item(bytes)]) : new Response('x'.repeat(MAX_PACKAGE_BYTES + 1)) });
   await assert.rejects(large.download(id, '0.1.1'), { message: 'UPDATE_DOWNLOAD_TOO_LARGE' });
+});
+
+test('every redirect response is rejected once for both catalog and packages, even to the same v4 URL', async () => {
+  const bytes = bundle(id, '0.1.1');
+  for (const status of [300, 301, 302, 303, 304, 305, 307, 308]) {
+    const calls = [], source = createUpdateSource({ fetchImpl: async url => { calls.push(url); return new Response(null, { status, headers: { location: catalogURL } }); } });
+    await assert.rejects(source.catalog(), { message: 'UPDATE_REDIRECT_REJECTED' }); assert.deepEqual(calls, [catalogURL]);
+    const packageCalls = [], packageSource = createUpdateSource({ fetchImpl: async url => { packageCalls.push(url); return url === catalogURL ? envelope([item(bytes)]) : new Response(null, { status, headers: { location: url } }); } });
+    await assert.rejects(packageSource.download(id, '0.1.1'), { message: 'UPDATE_REDIRECT_REJECTED' });
+    assert.deepEqual(packageCalls, [catalogURL, 'https://rivetin.dev' + path()]);
+  }
 });
 
 test('only validated catalogs cache for sixty seconds and concurrent callers receive independent deep clones', async () => {

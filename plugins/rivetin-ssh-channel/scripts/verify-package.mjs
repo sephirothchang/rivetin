@@ -10,6 +10,8 @@ const { JSDOM } = require('jsdom'), React = require('react');
 const id = 'rivetin-ssh-channel', metadata = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
 const raw = await readFile(path.join(root, 'release', `${id}-${metadata.version}.rivetin.json`)), pkg = validatePackage(raw);
 assert.equal(pkg.manifest.id, id); assert.equal(pkg.manifest.configuration.defaults.enabled, false);
+assert.equal(pkg.manifest.version, metadata.version);
+assert.deepEqual(pkg.manifest.compatibility, { schemaVersion: 2, frameworkApi: 1, frameworkMinVersion: '0.2.0', frameworkMaxVersionExclusive: '0.3.0', tower: pkg.manifest.compatibility.tower, towerBuilds: ['4.9.0'], smtx: 'none' });
 assert.deepEqual(pkg.files.map(item => item.path).sort(), ['LICENSE', 'web/plugin.js']);
 const dom = new JSDOM('<html><body></body></html>', { url: 'https://tower.example.invalid', runScripts: 'outside-only' });
 let requests = 0;

@@ -5,6 +5,7 @@ import { validId } from '../framework/shared/identity.js';
 
 export const SITE = 'https://rivetin.dev';
 export const INDEX_PATH = '/catalog/plugins.json';
+export const V4_INDEX_PATH = '/catalog/v4/plugins.json';
 const version = /^(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})$/;
 const digest = /^[a-f0-9]{64}$/;
 const fields = ['id', 'version', 'frameworkApi', 'status', 'downloadPath', 'sha256', 'name', 'description', 'author', 'license', 'permissions', 'compatibility'];
@@ -17,52 +18,66 @@ export function downloadPath(id, release) {
   if (!validId(id) || !version.test(release || '')) fail('CATALOG_IDENTITY_INVALID');
   return `/downloads/plugins/${id}/${release}/${id}-${release}.rivetin.json`;
 }
-function entry(value) {
+function entry(value, schemaVersion = 3) {
   if (!exact(value, fields) || !validId(value.id) || !version.test(value.version || '') || value.frameworkApi !== 1 || !['draft', 'published'].includes(value.status) ||
       !language(value.name, 120) || !language(value.description, 500) || !text(value.author, 120) || value.license !== 'MIT' ||
       !Array.isArray(value.permissions) || value.permissions.length > 20 || new Set(value.permissions).size !== value.permissions.length || value.permissions.some(item => typeof item !== 'string' || item.length > 100 || !/^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/.test(item))) fail('CATALOG_ENTRY_INVALID');
   const compatibility = validateCompatibility(value.compatibility);
+  if (schemaVersion === 4 && compatibility.schemaVersion !== 2) fail('CATALOG_V4_COMPATIBILITY_REQUIRED');
+  if (schemaVersion === 3 && compatibility.schemaVersion === 2) fail('CATALOG_V4_REQUIRED');
   if (value.status === 'published' ? value.downloadPath !== downloadPath(value.id, value.version) || !digest.test(value.sha256 || '') || !compatibility.towerBuilds?.length : value.downloadPath !== null || value.sha256 !== null) fail('CATALOG_PUBLICATION_INVALID');
   return { id: value.id, version: value.version, frameworkApi: 1, status: value.status, downloadPath: value.downloadPath, sha256: value.sha256,
     name: { 'zh-CN': value.name['zh-CN'], 'en-US': value.name['en-US'] }, description: { 'zh-CN': value.description['zh-CN'], 'en-US': value.description['en-US'] },
     author: value.author, license: value.license, permissions: [...value.permissions], compatibility: {
+      ...(schemaVersion === 4 ? { schemaVersion: 2 } : {}),
       frameworkApi: compatibility.frameworkApi, tower: compatibility.tower, ...(compatibility.towerBuilds === undefined ? {} : { towerBuilds: [...compatibility.towerBuilds] }),
       ...(compatibility.frameworkMinVersion === undefined ? {} : { frameworkMinVersion: compatibility.frameworkMinVersion }),
       ...(compatibility.frameworkMaxVersionExclusive === undefined ? {} : { frameworkMaxVersionExclusive: compatibility.frameworkMaxVersionExclusive }),
+      ...(schemaVersion === 4 && compatibility.smtx !== undefined ? { smtx: structuredClone(compatibility.smtx) } : {}),
     } };
 }
-export function validateCatalog(value) {
-  if (!exact(value, ['schemaVersion', 'plugins']) || value.schemaVersion !== 3 || !Array.isArray(value.plugins) || value.plugins.length > 500) fail('CATALOG_V3_REQUIRED');
-  const ids = new Set(), plugins = value.plugins.map(item => { const result = entry(item); if (ids.has(result.id)) fail('CATALOG_DUPLICATE_ID'); ids.add(result.id); return result; });
-  return { schemaVersion: 3, plugins: plugins.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0) };
+export function validateCatalog(value, schemaVersion = 3) {
+  if (![3, 4].includes(schemaVersion) || !exact(value, ['schemaVersion', 'plugins']) || value.schemaVersion !== schemaVersion || !Array.isArray(value.plugins) || value.plugins.length > 500) fail(schemaVersion === 4 ? 'CATALOG_V4_REQUIRED' : 'CATALOG_V3_REQUIRED');
+  const ids = new Set(), plugins = value.plugins.map(item => { const result = entry(item, schemaVersion); if (ids.has(result.id)) fail('CATALOG_DUPLICATE_ID'); ids.add(result.id); return result; });
+  return { schemaVersion, plugins: plugins.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0) };
 }
-function fromPackage(bytes, status) {
+function fromPackage(bytes, status, schemaVersion) {
   const { manifest } = validatePackage(bytes);
   return entry({ id: manifest.id, version: manifest.version, frameworkApi: manifest.compatibility.frameworkApi, status,
     downloadPath: status === 'draft' ? null : downloadPath(manifest.id, manifest.version), sha256: status === 'draft' ? null : hash(bytes),
-    ...Object.fromEntries(['name', 'description', 'author', 'license', 'permissions', 'compatibility'].map(key => [key, structuredClone(manifest[key])])) });
+    ...Object.fromEntries(['name', 'description', 'author', 'license', 'permissions', 'compatibility'].map(key => [key, structuredClone(manifest[key])])) }, schemaVersion);
 }
-export const draftEntry = bytes => fromPackage(bytes, 'draft');
+export const draftEntry = (bytes, schemaVersion = 3) => fromPackage(bytes, 'draft', schemaVersion);
 // This is an unpublished deployment candidate. Only verifyReceipt can authorize
 // committing the staged published entry into the canonical repository catalog.
-export const candidateEntry = bytes => fromPackage(bytes, 'published');
+export const candidateEntry = (bytes, schemaVersion = 3) => fromPackage(bytes, 'published', schemaVersion);
 function compare(a, b) { return a.split('.').map(Number).map((part, index) => part - Number(b.split('.')[index])).find(part => part !== 0) || 0; }
-export function mergeEntries(catalog, entries) {
-  const result = validateCatalog(catalog), incoming = new Set();
+export function mergeEntries(catalog, entries, schemaVersion = 3) {
+  const result = validateCatalog(catalog, schemaVersion), incoming = new Set();
   for (const value of entries) {
-    const next = entry(value); if (incoming.has(next.id)) fail('CATALOG_DUPLICATE_INPUT'); incoming.add(next.id);
+    const next = entry(value, schemaVersion); if (incoming.has(next.id)) fail('CATALOG_DUPLICATE_INPUT'); incoming.add(next.id);
     const index = result.plugins.findIndex(item => item.id === next.id), previous = result.plugins[index];
     if (previous && compare(next.version, previous.version) < 0) fail('CATALOG_DOWNGRADE_REJECTED');
     if (previous?.status === 'published' && next.status === 'draft') fail('CATALOG_PUBLICATION_DOWNGRADE_REJECTED');
     if (previous && next.version === previous.version && previous.status === 'published' && !isDeepStrictEqual(next, previous)) fail('CATALOG_SAME_VERSION_IMMUTABLE');
     if (index < 0) result.plugins.push(next); else result.plugins[index] = next;
   }
-  return validateCatalog(result);
+  return validateCatalog(result, schemaVersion);
 }
-export function serializeCatalog(value) {
-  const bytes = Buffer.from(JSON.stringify(validateCatalog(value), null, 2) + '\n');
+export function serializeCatalog(value, schemaVersion = 3) {
+  const bytes = Buffer.from(JSON.stringify(validateCatalog(value, schemaVersion), null, 2) + '\n');
   if (bytes.length > 512 * 1024) fail('CATALOG_SIZE_LIMIT');
   return bytes;
+}
+export function assertKnownDigestConsistency(catalogs, entries = []) {
+  const known = new Map();
+  for (const item of [...catalogs.flatMap(catalog => catalog.plugins.filter(item => item.status === 'published')), ...entries]) {
+    if (!digest.test(item.sha256 || '')) continue;
+    const key = item.id + '@' + item.version, previous = known.get(key);
+    if (previous && previous !== item.sha256) fail('CATALOG_KNOWN_DIGEST_CONFLICT');
+    known.set(key, item.sha256);
+  }
+  return true;
 }
 export function verifyReceipt(receipt, downloaded, expected, path, { notBefore, now = Date.now() } = {}) {
   if (!exact(receipt, ['schemaVersion', 'site', 'path', 'status', 'sha256', 'bytes', 'verifiedAt']) || receipt.schemaVersion !== 1 || receipt.site !== SITE || receipt.path !== path || receipt.status !== 200 ||

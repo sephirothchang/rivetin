@@ -1,6 +1,16 @@
 {
   "name": "rivetin",
   "versionRange": ">=4.9.0 <4.10.0",
-  "metadata": { "info": { "version": "0.1.5" } },
-  "data": [{ "region": "PERMANENT_CLUSTER_MANAGER_MODAL", "order": 100, "island": "./Rivetin" }]
+  "metadata": {
+    "info": {
+      "version": "0.2.0"
+    }
+  },
+  "data": [
+    {
+      "region": "PERMANENT_CLUSTER_MANAGER_MODAL",
+      "order": 100,
+      "island": "./Rivetin"
+    }
+  ]
 }

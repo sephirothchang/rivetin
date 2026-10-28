@@ -65,9 +65,12 @@ export function validatePackage(input) {
   const manifest = validateManifest(pkg.manifest), files = [], names = new Set(); let total = 0;
   for (const file of pkg.files) {
     if (!object(file) || Object.keys(file).sort().join() !== 'data,path,sha256' || !safePath(file.path) || !/^(web\/.*\.(js|css|json)|LICENSE)$/.test(file.path) ||
-      names.has(file.path.toLowerCase()) || typeof file.data !== 'string' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(file.data) || !/^[a-f0-9]{64}$/.test(file.sha256)) throw new Error('INVALID_PACKAGE_FILE');
+      names.has(file.path.toLowerCase()) || typeof file.data !== 'string' || file.data.length % 4 !== 0 || !/^[a-f0-9]{64}$/.test(file.sha256)) throw new Error('INVALID_PACKAGE_FILE');
     names.add(file.path.toLowerCase());
-    const content = Buffer.from(file.data, 'base64'); total += content.length;
+    const content = Buffer.from(file.data, 'base64');
+    // Canonical round-trip validation stays bounded for large files; a repeated-group regex can exhaust V8's stack.
+    if (content.toString('base64') !== file.data) throw new Error('INVALID_PACKAGE_FILE');
+    total += content.length;
     if (total > 10 * 1024 * 1024 || hash(content) !== file.sha256) throw new Error('PACKAGE_INTEGRITY_FAILED');
     files.push({ path: file.path, content, sha256: file.sha256 });
   }

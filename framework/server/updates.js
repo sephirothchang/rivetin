@@ -2,7 +2,7 @@ import { hash, validatePackage, MAX_PACKAGE_BYTES, FRAMEWORK_VERSION } from './m
 import { validateCompatibility } from './compatibility.js';
 import { validId, assertId } from '../shared/identity.js';
 const origin = 'https://rivetin.dev';
-const catalogPath = '/catalog/plugins.json';
+const catalogPath = '/catalog/v4/plugins.json';
 const sourceErrors = new Set(['UPDATE_SOURCE_ACCESS_REQUIRED', 'UPDATE_SOURCE_RATE_LIMITED', 'UPDATE_SOURCE_UNAVAILABLE', 'UPDATE_REDIRECT_REJECTED', 'UPDATE_DOWNLOAD_TOO_LARGE', 'UPDATE_CATALOG_INVALID']);
 const versionPattern = /^(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})$/;
 const text = (value, max) => typeof value === 'string' && value.trim().length > 0 && value.length <= max;
@@ -12,7 +12,8 @@ const packagePath = (id, version) => `/downloads/plugins/${id}/${version}/${id}-
 function metadata(value) {
   const compatibility = validateCompatibility(value.compatibility);
   return { name: ['zh-CN', 'en-US'].map(locale => value.name[locale]), description: ['zh-CN', 'en-US'].map(locale => value.description[locale]), author: value.author,
-    license: value.license, permissions: [...value.permissions].sort(), compatibility: { frameworkApi: compatibility.frameworkApi, tower: compatibility.tower,
+    license: value.license, permissions: [...value.permissions].sort(), compatibility: { schemaVersion: compatibility.schemaVersion ?? 1, frameworkApi: compatibility.frameworkApi, tower: compatibility.tower,
+      smtx: compatibility.smtx && compatibility.smtx !== 'none' ? { product: compatibility.smtx.product, scope: compatibility.smtx.scope, builds: [...compatibility.smtx.builds].sort() } : 'none',
       towerBuilds: [...(compatibility.towerBuilds || [])].sort(), frameworkMinVersion: compatibility.frameworkMinVersion ?? null, frameworkMaxVersionExclusive: compatibility.frameworkMaxVersionExclusive ?? null } };
 }
 export function newer(candidate, current) {
@@ -23,17 +24,13 @@ export function newer(candidate, current) {
 }
 export function createUpdateSource({ fetchImpl = fetch, now = Date.now } = {}) {
   async function request(path, max, binary = false) {
-    const initial = new URL(path, origin);
-    let url = initial, response;
+    const url = new URL(path, origin);
     const signal = AbortSignal.timeout(8000);
     try {
-      for (let attempt = 0; attempt < 4; attempt++) {
-        if (url.origin !== origin || url.username || url.password || url.port || url.search || url.hash || url.href !== initial.href) throw new Error('UPDATE_REDIRECT_REJECTED');
-        response = await fetchImpl(url.href, { method: 'GET', redirect: 'manual', credentials: 'omit', signal,
-          headers: { Accept: binary ? 'application/octet-stream' : 'application/json', 'User-Agent': `Rivetin/${FRAMEWORK_VERSION}` } });
-        if ([301, 302, 303, 307, 308].includes(response.status)) { const next = response.headers.get('location'); await response.body?.cancel(); if (!next) throw new Error('UPDATE_REDIRECT_REJECTED'); url = new URL(next, url); continue; }
-        break;
-      }
+      if (url.origin !== origin || url.username || url.password || url.port || url.search || url.hash) throw new Error('UPDATE_REDIRECT_REJECTED');
+      const response = await fetchImpl(url.href, { method: 'GET', redirect: 'manual', credentials: 'omit', signal,
+        headers: { Accept: binary ? 'application/octet-stream' : 'application/json', 'User-Agent': `Rivetin/${FRAMEWORK_VERSION}` } });
+      if (response.status >= 300 && response.status < 400) { await response.body?.cancel(); throw new Error('UPDATE_REDIRECT_REJECTED'); }
       if (!response?.ok) {
         const limited = response?.status === 429 || response?.status === 403 && (response.headers.get('x-ratelimit-remaining') === '0' || response.headers.has('retry-after'));
         try { await response?.body?.cancel(); } catch { /* Keep response diagnostics private. */ }
@@ -47,7 +44,7 @@ export function createUpdateSource({ fetchImpl = fetch, now = Date.now } = {}) {
   async function readCatalog() {
     try {
       const data = JSON.parse(await request(catalogPath, 512 * 1024));
-      if (!data || typeof data !== 'object' || Array.isArray(data) || Object.keys(data).some(key => !['schemaVersion', 'plugins'].includes(key)) || data.schemaVersion !== 3 || !Array.isArray(data.plugins) || data.plugins.length > 500) throw new Error('UPDATE_CATALOG_INVALID');
+      if (!data || typeof data !== 'object' || Array.isArray(data) || Object.keys(data).some(key => !['schemaVersion', 'plugins'].includes(key)) || data.schemaVersion !== 4 || !Array.isArray(data.plugins) || data.plugins.length > 500) throw new Error('UPDATE_CATALOG_INVALID');
       const seen = new Set();
       for (const item of data.plugins) {
         if (!item || typeof item !== 'object' || Array.isArray(item) || Object.keys(item).some(key => !catalogFields.has(key)) ||
@@ -55,6 +52,7 @@ export function createUpdateSource({ fetchImpl = fetch, now = Date.now } = {}) {
             !['draft', 'published'].includes(item.status) || !languageText(item.name, 120) || !languageText(item.description, 500) || !text(item.author, 120) || item.license !== 'MIT' ||
             !Array.isArray(item.permissions) || item.permissions.length > 20 || item.permissions.some(permission => !text(permission, 100) || !/^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/.test(permission)) ||
             new Set(item.permissions).size !== item.permissions.length) throw new Error('UPDATE_CATALOG_INVALID');
+        if (item.compatibility?.schemaVersion !== 2) throw new Error('UPDATE_CATALOG_INVALID');
         const compatibility = validateCompatibility(item.compatibility);
         if (item.status === 'published' ? item.downloadPath !== packagePath(item.id, item.version) || typeof item.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(item.sha256) || !compatibility.towerBuilds?.length : item.downloadPath !== null || item.sha256 !== null) throw new Error('UPDATE_CATALOG_INVALID');
         seen.add(item.id);

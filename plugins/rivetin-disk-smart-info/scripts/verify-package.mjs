@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { hash, validatePackage } from '../../../framework/server/manifest.js';
+import { checkCompatibility } from '../../../framework/server/compatibility.js';
 import { defaults, PLUGIN_ID } from '../src/configuration.js';
 import { createMockProvider } from '../demo/fixtures.js';
 import { createMockBatchProvider } from '../demo/global-fixture.js';
@@ -18,10 +19,26 @@ assert.equal(pkg.manifest.frontend.format, 'rivetin-global-v1');
 assert.ok(pkg.manifest.permissions.includes('disk.smart.read'));
 assert.equal(pkg.manifest.ssh.commands[0].intervalSeconds, 86400);
 assert.deepEqual(pkg.manifest.compatibility.towerBuilds, ['4.9.0']);
-assert.equal(pkg.manifest.compatibility.frameworkMinVersion, '0.1.2');
+assert.equal(pkg.manifest.version, '0.1.4');
+assert.deepEqual(pkg.manifest.compatibility, {
+  schemaVersion: 2, frameworkApi: 1, frameworkMinVersion: '0.2.0', frameworkMaxVersionExclusive: '0.3.0',
+  tower: 'CloudTower 4.9.0 controlled candidate; real SMART collection remains unverified.', towerBuilds: ['4.9.0'], smtx: 'none',
+});
+for (const frameworkVersion of ['0.2.0', '0.2.99']) assert.equal(checkCompatibility(pkg.manifest, { towerBuild: '4.9.0', frameworkVersion }).compatible, true);
+for (const frameworkVersion of ['0.1.99', '0.3.0']) assert.equal(checkCompatibility(pkg.manifest, { towerBuild: '4.9.0', frameworkVersion }).reason, 'PLUGIN_INCOMPATIBLE');
+assert.equal(checkCompatibility(pkg.manifest, { towerBuild: '4.9.1', frameworkVersion: '0.2.0' }).compatible, false);
+assert.equal(checkCompatibility(pkg.manifest, { towerBuild: '4.9.0', frameworkVersion: '0.2.0', frameworkApi: 2 }).compatible, false);
 assert.equal(pkg.manifest.repository, 'https://github.com/sephirothchang/rivetin');
 assert.equal(pkg.manifest.homepage, `https://github.com/sephirothchang/rivetin/tree/main/plugins/${PLUGIN_ID}`);
 assert.deepEqual(pkg.files.map(file => file.path), ['web/plugin.js', 'LICENSE']);
+const previousBytes = await readFile(new URL(`../release/${PLUGIN_ID}-0.1.3.rivetin.json`, import.meta.url));
+assert.equal(hash(previousBytes), 'b54df579f28d619890dd76ef12cd4e5605517b2d7a595763ec204802d29bf240');
+const previous = validatePackage(previousBytes);
+assert.equal(previous.manifest.version, '0.1.3'); assert.equal(previous.manifest.compatibility.schemaVersion, undefined);
+assert.equal(checkCompatibility(previous.manifest, { towerBuild: '4.9.0', frameworkVersion: '0.2.0' }).reason, 'PLUGIN_COMPATIBILITY_UNDECLARED');
+for (const file of pkg.files) assert.deepEqual(file.content, previous.files.find(item => item.path === file.path)?.content, 'PRODUCTION_BYTES_CHANGED');
+const featureMetadata = ({ version, compatibility, releaseNotes, ...value }) => value;
+assert.deepEqual(featureMetadata(pkg.manifest), featureMetadata(previous.manifest), 'NON_COMPATIBILITY_MANIFEST_CHANGE');
 const runtimeCode = pkg.files.find(file => file.path === 'web/plugin.js').content.toString('utf8');
 assert.ok(!/pluginkit|PluginKit/.test(runtimeCode), 'LEGACY_BRAND_IN_RUNTIME');
 const patterns = [/[A-Z]:[\\/](?:Users|Documents)[\\/]/i, /\b(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})\b/, /-----BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY-----/, /thread:\/\//];
@@ -97,7 +114,7 @@ try {
   assert.equal(settingsRoot.querySelector('[data-smart-collect-all]').disabled, true);
   assert.equal(win.document.querySelectorAll('[data-pk-smart-tab],[data-pk-smart-panel],[data-pk-smart-style]').length, 0);
   assert.equal(win.document.querySelector('.tab-content').hidden, false);
-  const report = { version: pkg.manifest.version, towerBuilds: pkg.manifest.compatibility.towerBuilds, packageId: pkg.digest, sha256: hash(bytes), bytes: bytes.length, files: pkg.files.map(file => ({ path: file.path, bytes: file.content.length, sha256: file.sha256 })), publicPatternFindings: 0, emittedFactorySmokeTest: 'passed', collectOnceAndRefresh: 'passed', globalSettingsCollectOnceAndPartialFailure: 'passed', virtualExamplesBilingualAndIsolated: 'passed', historyPaginationAndFailure: 'passed', cleanup: 'passed', mode: 'emitted bundle mock smoke; shared HTTP integration tested separately; no live host acceptance' };
+  const report = { version: pkg.manifest.version, compatibility: pkg.manifest.compatibility, towerBuilds: pkg.manifest.compatibility.towerBuilds, packageId: pkg.digest, sha256: hash(bytes), bytes: bytes.length, files: pkg.files.map(file => ({ path: file.path, bytes: file.content.length, sha256: file.sha256 })), previousArchiveSha256: hash(previousBytes), productionBytesIdenticalTo013: true, strictSchema2OfflineGate: 'passed', publicPatternFindings: 0, emittedFactorySmokeTest: 'passed', collectOnceAndRefresh: 'passed', globalSettingsCollectOnceAndPartialFailure: 'passed', virtualExamplesBilingualAndIsolated: 'passed', historyPaginationAndFailure: 'passed', cleanup: 'passed', mode: 'metadata-only release; emitted bundle mock smoke; shared HTTP integration tested separately; no live 0.2/0.1.4 acceptance' };
   const qa = new URL('../qa/', import.meta.url); await mkdir(qa, { recursive: true });
   await writeFile(new URL('rivetin-verify-package-current.json', qa), JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));

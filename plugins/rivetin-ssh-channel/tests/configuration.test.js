@@ -4,6 +4,8 @@ import { createRequire } from 'node:module';
 import { JSDOM } from '../../../framework/node_modules/jsdom/lib/api.js';
 import { configuration, defaults, validate } from '../src/configuration.js';
 import createPlugin from '../src/definition.js';
+import { readFile } from 'node:fs/promises';
+import { checkCompatibility } from '../../../framework/server/compatibility.js';
 const require = createRequire(new URL('../../../framework/package.json', import.meta.url));
 const React = require('react'), ReactDOM = require('react-dom'), { act } = require('react-dom/test-utils');
 test('channel configuration defaults off and rejects credential or arbitrary command fields', () => {
@@ -11,6 +13,14 @@ test('channel configuration defaults off and rejects credential or arbitrary com
   assert.throws(() => validate({ version: 1, enabled: false, password: 'EXAMPLE_NOT_A_PASSWORD' }), /INVALID_SETTINGS/);
   assert.throws(() => validate({ version: 1, enabled: true, command: 'EXAMPLE_NOT_A_COMMAND' }), /INVALID_SETTINGS/);
   assert.equal(configuration.id, 'rivetin-ssh-channel');
+});
+
+test('structured compatibility accepts only the declared framework range and Tower build without granting execution', async () => {
+  const manifest = JSON.parse(await readFile(new URL('../rivetin.json', import.meta.url), 'utf8'));
+  const context = { towerBuild: '4.9.0', frameworkApi: 1, frameworkVersion: '0.2.0' };
+  assert.equal(checkCompatibility(manifest, context).compatible, true);
+  for (const patch of [{ frameworkVersion: '0.1.5' }, { frameworkVersion: '0.3.0' }, { towerBuild: '4.9.1' }, { towerBuild: null }, { frameworkApi: 2 }]) assert.equal(checkCompatibility(manifest, { ...context, ...patch }).compatible, false);
+  assert.equal(manifest.configuration.defaults.enabled, false); assert.deepEqual(manifest.permissions, []); assert.equal(manifest.ssh, undefined);
 });
 test('settings use the framework draft store and activation does not connect to hosts', async () => {
   const dom = new JSDOM('<div id="root"></div>', { url: 'https://tower.example.invalid' });

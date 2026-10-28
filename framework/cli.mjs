@@ -2,6 +2,8 @@ import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { createService } from './server/service.js';
 import { builtinPackages } from './server/builtins.js';
+import { createTowerConnection } from './server/tower.js';
+import { createTowerVersionProvider } from './server/tower-version.js';
 
 const [command, ...args] = process.argv.slice(2), index = args.indexOf('--data');
 if (index < 0 || !args[index + 1]) {
@@ -10,10 +12,12 @@ if (index < 0 || !args[index + 1]) {
   const directory = args[index + 1]; args.splice(index, 2);
   try {
     if (!path.isAbsolute(directory)) throw new Error('ABSOLUTE_DATA_PATH_REQUIRED');
-    const service = createService(directory, { builtinPackages: await builtinPackages({ required: command === 'init' }) }), actor = { id: 'local-operator', name: 'Local CLI operator', source: 'cli', admin: true };
+    if (command === 'init' && args.length && (args.length !== 2 || args[0] !== '--upgrade-from' || !args[1])) throw new Error('INVALID_INIT_ARGUMENTS');
+    const upgrading = command === 'init' && args.length === 2;
+    const towerVersionProvider = process.env.RIVETIN_TOWER_URL ? createTowerVersionProvider({ request: createTowerConnection({ baseUrl: process.env.RIVETIN_TOWER_URL }).request }) : undefined;
+    const service = createService(directory, { builtinPackages: upgrading ? [] : await builtinPackages({ required: command === 'init' }), towerVersionProvider }), actor = { id: 'local-operator', name: 'Local CLI operator', source: 'cli', admin: true };
     let result;
     if (command === 'init') {
-      if (args.length && (args.length !== 2 || args[0] !== '--upgrade-from' || !args[1])) throw new Error('INVALID_INIT_ARGUMENTS');
       result = await service.initialize(actor, args.length ? { upgradeFrom: args[1] } : {});
     }
     else if (command === 'status') result = await service.runtime();

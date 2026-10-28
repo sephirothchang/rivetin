@@ -1,6 +1,6 @@
 # Rivetin 子插件市场目录
 
-`plugins.json` 是主项目维护的市场目录，使用 `schemaVersion: 3`。客户端固定通过官网 `https://rivetin.dev/catalog/plugins.json` 获取清单，通过同源的版本路径下载插件包，不调用 GitHub REST API，也不需要仓库访问令牌。官网由独立的 `rivetin-website` 仓库构建和发布；主项目负责插件版本准入、包审核、兼容声明和目录内容。
+`plugins.json` 是主项目保留的 v3 市场目录，使用 `schemaVersion: 3`，对应官网 `https://rivetin.dev/catalog/plugins.json`。新契约使用独立的 `v4/plugins.json`，对应 `https://rivetin.dev/catalog/v4/plugins.json`，不原地转换 v3。两者均通过同源版本路径下载插件包，不调用 GitHub REST API，也不需要仓库访问令牌。官网由独立的 `rivetin-website` 仓库构建和发布；主项目负责插件版本准入、包审核、兼容声明和目录内容。
 
 ## 目录和下载契约
 
@@ -52,3 +52,23 @@ node scripts/catalog-update.mjs verify --stage-output .local/site-drops/example 
 ## 格式迁移
 
 官网源使用 v3 的固定同源 `downloadPath`，不使用 v2 的 GitHub Release `assetId`。旧 GitHub 清单不会被静默解释为官网目录；框架需升级到支持官网源的版本。升级不改写既有插件配置，不重新授予 SSH 审批。
+
+## 独立 v4 清单
+
+v4 顶层精确为 `{schemaVersion:4,plugins:[...]}`，条目字段和下载路径沿用上述契约；所有条目的 `compatibility` 必须使用 schema 2，强制 `frameworkApi:1`、有效的框架版本半开范围及非空精确 Tower 版本列表。SMTX 可以省略、使用字符串 `none`，或使用明确产品／全范围／版本对象，规则见 [兼容性规范](../docs/rivetin-compatibility.md)。旧包继续由 v3 管理；工具不会把旧声明自动补成 schema 2，也不会将新 schema 2 包降级写入 v3。
+
+工具默认仍维护 v3，必须显式指定 `--catalog catalog/v4/plugins.json` 才能维护 v4。选定目录须已存在，工具不创建或覆盖另一版本的 canonical 清单。
+
+```sh
+node scripts/catalog-update.mjs draft --catalog catalog/v4/plugins.json --package plugins/rivetin-example/release/rivetin-example-0.2.0.rivetin.json
+node scripts/catalog-update.mjs stage --catalog catalog/v4/plugins.json --package plugins/rivetin-example/release/rivetin-example-0.2.0.rivetin.json --stage-output .local/site-drops/v4-example
+node scripts/catalog-update.mjs verify --catalog catalog/v4/plugins.json --stage-output .local/site-drops/v4-example --proof-directory .local/site-readback/v4-example
+```
+
+仅发布空的或未变更的 v4 清单时，`stage` 可以不传 `--package`。v3 仍要求提供包。v4 drop 只包含 `stage.json`、`catalog/v4/plugins.json` 及本次变化的包；已在选定清单以相同版本和摘要发布的输入包不会重复复制。省略包的提案不能据此新增或修改 published 条目。
+
+v4 的 `stage.json` 精确包含八个字段：`schemaVersion:1`、ISO `preparedAt`、`catalogPath:catalog/v4/plugins.json`、`baseCatalogSHA256`、`indexPath:/catalog/v4/plugins.json`、`indexSHA256`、`packages`、`candidateOnly:true`。packages 可为空；非空时每项精确为 `{id,version,downloadPath,sha256,bytes}`。这些只是待发布提案，不代表官网已经上线。
+
+官网回读仍使用七字段证明 `{schemaVersion:1,site,path,status,sha256,bytes,verifiedAt}`，清单实体和证明文件名仍是 `catalog.plugins.json`、`catalog.receipt.json`。v4 清单的证明路径必须为 `/catalog/v4/plugins.json`；包的固定下载路径不变。每个变化包都需要独立原始实体和证明，verify 逐字节核验后才更新选定 canonical。`draft --check` 和 `verify --check` 继续只检查，不写入。
+
+每次操作还会核对本地已知的 `catalog/plugins.json` 和 `catalog/v4/plugins.json`：同一插件 ID 和版本若存在不同已发布 SHA-256，或输入包与该已知摘要冲突，会拒绝操作。该检查不等于官网全局发布账本，也不验证已不在当前两个清单中的历史版本；官网仍需独立维护不可变发布记录。工具不联网核实证明来源，也不提供跨两个 canonical 文件的原子发布事务，发布方须串行维护并保存真实 HTTPS 回读证据。

@@ -41,15 +41,15 @@ func mainFixtureDirectory(t *testing.T) string {
 	return directory
 }
 
-func TestRelease015VersionAndLocalizedHelp(t *testing.T) {
+func TestRelease020VersionAndLocalizedHelp(t *testing.T) {
 
 	var version bytes.Buffer
-	if err := run([]string{"version"}, &version); err != nil || version.String() != "rivetin 0.1.5\n" {
+	if err := run([]string{"version"}, &version); err != nil || version.String() != "rivetin 0.2.0\n" {
 		t.Fatal("release version mismatch", err, version.String())
 	}
 	for _, language := range []string{"zh-CN", "en-US"} {
 		var help bytes.Buffer
-		if err := run([]string{"--lang", language, "--help"}, &help); err != nil || !strings.Contains(help.String(), "0.1.5") {
+		if err := run([]string{"--lang", language, "--help"}, &help); err != nil || !strings.Contains(help.String(), "0.2.0") {
 			t.Fatal("localized help version mismatch", language, err)
 		}
 	}
@@ -304,7 +304,7 @@ func TestCredentialInputAppearsInLocalizedHelpAndMigrationIsRejected(t *testing.
 }
 
 func TestDiagnosticsLocalizedAndRedacted(t *testing.T) {
-	for _, code := range []string{"UNTESTED_TOWER_BUILD", "TOWER_COMPONENT_MISSING", "SSH_HOST_KEY_MISMATCH", "TOWER_CONNECTION_OR_CERTIFICATE_FAILED", "TOWER_ADMIN_REQUIRED", "EXISTING_INSTALLATION_UNMANAGED", "INSTALLER_RECOVERY_REQUIRED", "REMOTE_TIMEOUT_OUTCOME_UNKNOWN", "RESOURCE_OWNERSHIP_MISMATCH"} {
+	for _, code := range []string{"UNTESTED_TOWER_BUILD", "TOWER_COMPONENT_MISSING", "SSH_HOST_KEY_MISMATCH", "TOWER_CONNECTION_OR_CERTIFICATE_FAILED", "TOWER_ADMIN_REQUIRED", "EXISTING_INSTALLATION_UNMANAGED", "INSTALLER_RECOVERY_REQUIRED", "REMOTE_TIMEOUT_OUTCOME_UNKNOWN", "RESOURCE_OWNERSHIP_MISMATCH", "FRAMEWORK_DISABLE_BEFORE_UPGRADE"} {
 		t.Run(code, func(t *testing.T) {
 			zh, en := explainError(errors.New(code), "zh-CN"), explainError(errors.New(code), "en-US")
 			if zh == en || !strings.Contains(zh, "["+code+"]") || !strings.Contains(en, "["+code+"]") {

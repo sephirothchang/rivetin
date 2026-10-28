@@ -28,6 +28,16 @@ export async function atomic(file, value) {
 export async function exists(file) {
   try { await stat(file); return true; } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
 }
+// Classify only observed lock-open failures; a missing Windows lock is transient,
+// not permission to wait through a persistent access failure.
+export function lockRetryDecision(error, { platform, info, statError, now, missing = null }) {
+  if (error.code === 'EEXIST') return { retry: true, missing: null };
+  if (platform !== 'win32' || error.code !== 'EPERM') return { retry: false, missing: null };
+  if (!statError) return { retry: Boolean(info?.isFile() && !info.isSymbolicLink()), missing: null };
+  if (statError.code !== 'ENOENT') return { retry: false, missing: null };
+  const transient = missing || { expiresAt: now + 180, error };
+  return now < transient.expiresAt ? { retry: true, missing: transient } : { retry: false, missing: transient, error: transient.error };
+}
 export function storage(directory) {
   const root = path.resolve(directory);
   return {
@@ -39,19 +49,19 @@ export function storage(directory) {
     async locked(task) {
       await mkdir(root, { recursive: true });
       const file = path.join(root, '.write.lock');
-      let handle;
+      let handle, missing = null;
       const deadline = Date.now() + 5000;
       while (!handle) {
         try { handle = await open(file, 'wx', 0o600); }
         catch (error) {
-          // Windows may report a live exclusive lock as EPERM during another process's open/unlink.
-          let competing = error.code === 'EEXIST';
-          if (!competing && process.platform === 'win32' && error.code === 'EPERM') {
-            const info = await lstat(file).catch(() => null);
-            competing = Boolean(info?.isFile() && !info.isSymbolicLink());
+          let info, statError;
+          if (process.platform === 'win32' && error.code === 'EPERM') {
+            try { info = await lstat(file); } catch (failure) { statError = failure; }
           }
-          if (!competing) throw error;
-          if (Date.now() >= deadline) throw new Error('STORE_BUSY');
+          const decision = lockRetryDecision(error, { platform: process.platform, info, statError, now: Date.now(), missing });
+          missing = decision.missing;
+          if (!decision.retry) throw decision.error || error;
+          if (Date.now() >= deadline) throw missing?.error || new Error('STORE_BUSY');
           await new Promise(resolve => setTimeout(resolve, 20));
         }
       }

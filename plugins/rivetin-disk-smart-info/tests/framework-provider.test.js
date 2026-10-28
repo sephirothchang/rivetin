@@ -22,6 +22,7 @@ import { loadDiskData, readHistoryPage } from '../src/provider.js';
 import { collectDisk, createRequestId } from '../src/collection.js';
 import { collectAll } from '../src/batch-collection.js';
 import { sample, disks } from '../demo/fixtures.js';
+import { syntheticServiceManifest } from './fixtures/service-manifest.js';
 
 const requireFramework = createRequire(new URL('../../../framework/package.json', import.meta.url));
 const { JSDOM } = requireFramework('jsdom');
@@ -63,14 +64,16 @@ async function setup(t) {
   });
   await service.initialize(admin);
   const manifest = JSON.parse(await readFile(new URL('../rivetin.json', import.meta.url), 'utf8'));
-  // Exercise the actual controlled candidate's version gate without an override.
+  // The unexecuted service package tests configuration/data flow, not deployment
+  // or successful physical collection. Historical 0.1.3 remains a separate package.
+  const fixtureManifest = syntheticServiceManifest(manifest);
   const files = [];
   for (const name of ['web/plugin.js', 'LICENSE']) {
     // Source factory is exercised below; bundle execution has a separate package check.
     const bytes = name === 'LICENSE' ? await readFile(new URL('../LICENSE', import.meta.url)) : Buffer.from('/* unexecuted integration lifecycle fixture */');
     files.push({ path: name, sha256: hash(bytes), data: bytes.toString('base64') });
   }
-  const uploaded = await service.upload(Buffer.from(JSON.stringify({ format: 'rivetin-package-v1', manifest, files })), admin);
+  const uploaded = await service.upload(Buffer.from(JSON.stringify({ format: 'rivetin-package-v1', manifest: fixtureManifest, files })), admin);
   await service.change('install', PLUGIN_ID, uploaded.packageId, admin);
   await service.sshSaveHost({ hostId: 'ssh-profile-example', clusterId: 'cluster-profile-example', address: '192.0.2.10', port: 22,
     username: 'collector', hostKeySha256: 'a'.repeat(64), password: 'EXAMPLE_NOT_A_REAL_SECRET',

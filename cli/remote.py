@@ -29,8 +29,8 @@ IMAGE = 'registry.smtx.io/cloudtower/tower:v4.9.0-rc-20260517114030'
 # thirty seconds after a successful Pod rollout for init and ingress readback.
 APPLY_ROLLOUT_SECONDS = 270
 APPLY_ROLLOUT_PROCESS_SECONDS = 280
-KNOWN_METADATA_VERSIONS = ('0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5')
-METADATA_UPGRADES = {('0.1.0', '0.1.1'), ('0.1.0', '0.1.2'), ('0.1.1', '0.1.2'), ('0.1.0', '0.1.3'), ('0.1.1', '0.1.3'), ('0.1.2', '0.1.3'), ('0.1.0', '0.1.4'), ('0.1.1', '0.1.4'), ('0.1.2', '0.1.4'), ('0.1.3', '0.1.4'), ('0.1.0', '0.1.5'), ('0.1.1', '0.1.5'), ('0.1.2', '0.1.5'), ('0.1.3', '0.1.5'), ('0.1.4', '0.1.5')}
+KNOWN_METADATA_VERSIONS = ('0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0')
+METADATA_UPGRADES = {('0.1.0', '0.1.1'), ('0.1.0', '0.1.2'), ('0.1.1', '0.1.2'), ('0.1.0', '0.1.3'), ('0.1.1', '0.1.3'), ('0.1.2', '0.1.3'), ('0.1.0', '0.1.4'), ('0.1.1', '0.1.4'), ('0.1.2', '0.1.4'), ('0.1.3', '0.1.4'), ('0.1.0', '0.1.5'), ('0.1.1', '0.1.5'), ('0.1.2', '0.1.5'), ('0.1.3', '0.1.5'), ('0.1.4', '0.1.5'), ('0.1.0', '0.2.0'), ('0.1.1', '0.2.0'), ('0.1.2', '0.2.0'), ('0.1.3', '0.2.0'), ('0.1.4', '0.2.0'), ('0.1.5', '0.2.0')}
 
 def fail(code):
     raise RuntimeError(code)
@@ -234,7 +234,7 @@ def transaction(op):
     return BASE / 'backups' / op
 
 def extract_release(data, target):
-    allowed = {'cli.mjs', 'package.json', 'LICENSE', 'THIRD_PARTY_NOTICES.txt'}
+    allowed = {'cli.mjs', 'package.json', 'LICENSE', 'THIRD_PARTY_NOTICES.txt', 'integrity.json'}
     contents = {}
     if len(data) > 8 * 1024 * 1024:
         fail('SERVICE_ARCHIVE_LIMIT')
@@ -253,7 +253,7 @@ def extract_release(data, target):
                 if name not in ['server', 'deploy', 'server/vendor', 'server/builtins', 'shared']:
                     fail('SERVICE_ARCHIVE_INVALID')
                 continue
-            if not m.isfile() or not (name in allowed or name in ['shared/identity.js', 'shared/version.js', 'server/vendor/ssh2.cjs', 'server/builtins/rivetin-ssh-channel.json'] or re.fullmatch(r'(server/[a-z-]+\.js|deploy/[a-z.-]+)', name)):
+            if not m.isfile() or not (name in allowed or name in ['shared/identity.js', 'shared/version.js', 'shared/framework-compatibility.js', 'server/vendor/ssh2.cjs', 'server/builtins/rivetin-ssh-channel.json'] or re.fullmatch(r'(server/[a-z-]+\.js|deploy/[a-z.-]+)', name)):
                 fail('SERVICE_ARCHIVE_INVALID')
             if name in contents:
                 fail('SERVICE_ARCHIVE_INVALID')
@@ -439,6 +439,8 @@ def apply(req, backup):
         fail('FRAMEWORK_MIGRATION_REQUIRED')
     if before_version and before_version['version'] != target_version and (before_version['version'], target_version) not in METADATA_UPGRADES:
         fail('FRAMEWORK_MIGRATION_REQUIRED')
+    if state['mode'] == 'update' and not (BASE / 'data/framework/disabled.json').is_file():
+        fail('FRAMEWORK_DISABLE_BEFORE_UPGRADE')
     if target.exists():
         # Compare with the shipped archive, not a mutable on-disk inventory.
         for name, content in expected.items():

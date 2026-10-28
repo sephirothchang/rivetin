@@ -7,7 +7,11 @@ import { auditStore } from './audit.js';
 import { newer } from './updates.js';
 import { createSshVault } from './ssh-vault.js';
 import { createSshBroker } from './ssh-broker.js';
-import { checkCompatibility, assertCompatible } from './compatibility.js';
+import { checkCompatibility, assertCompatible, checkFrameworkCompatibility } from './compatibility.js';
+import { FRAMEWORK_COMPATIBILITY } from '../shared/framework-compatibility.js';
+import { createTowerProductsProvider } from './tower-products.js';
+import { createComponents } from './components.js';
+import { createComponentMaintenance } from './component-maintenance.js';
 import { createSmartProvider } from './smart-provider.js';
 import { createSmartCollection } from './smart-collection.js';
 import { createSmartBatch } from './smart-batch.js';
@@ -16,17 +20,61 @@ import { createSshInventory } from './tower-inventory.js';
 import { createSshPreflight } from './ssh-preflight.js';
 
 const missing = { installed: false, enabled: false, version: null, packageId: null, previous: null };
-export function createService(directory, { towerSink, updateSource, builtinPackages = [], sshRun, sshPreflightTransport, towerBuild, towerVersionProvider, readDisk, readDiskInventory, towerRequest } = {}) {
+export function createService(directory, { towerSink, updateSource, builtinPackages = [], sshRun, sshPreflightTransport, towerBuild, towerVersionProvider, productVersionProvider, readDisk, readDiskInventory, towerRequest } = {}) {
   const disk = storage(directory), runtimeDisk = storage(path.join(disk.root, 'framework'));
   const frameworkFile = path.join(disk.root, 'framework', 'settings.json'), disabledFile = path.join(disk.root, 'framework', 'disabled.json');
   const sshRevocationFile = path.join(disk.root, 'framework', 'ssh-revocation.json');
   const audit = auditStore(disk.root, towerSink);
-  async function compatibilityContext({ fresh = false } = {}) {
+  const readProducts = productVersionProvider || (towerRequest ? createTowerProductsProvider({ request: towerRequest }) : null);
+  let productSnapshot;
+  async function compatibilityContext({ fresh = false, actor, manifest } = {}) {
     const version = towerVersionProvider ? await towerVersionProvider({ fresh }) : towerBuild || (await json(frameworkFile, {})).towerBuild || null;
-    return { towerBuild: version, frameworkApi: 1, frameworkVersion: FRAMEWORK_VERSION };
+    if (manifest?.compatibility?.smtx && manifest.compatibility.smtx !== 'none' && readProducts && actor &&
+        (productVersionProvider || actor.source === 'tower' && actor.role === 'ROOT' && actor.auth)) productSnapshot = await readProducts(actor);
+    return { towerBuild: version, frameworkApi: 1, frameworkVersion: FRAMEWORK_VERSION, smtx: productSnapshot };
+  }
+  async function requireCompatibility(manifest, actor) {
+    const context = await compatibilityContext({ fresh: true, actor, manifest });
+    const framework = checkFrameworkCompatibility(context);
+    if (!framework.compatible) throw new Error(framework.reason);
+    return assertCompatible(manifest, context);
+  }
+  function describeCompatibility(manifest, context) {
+    const result = checkCompatibility(manifest, context), snapshot = context.smtx;
+    const valid = snapshot?.trusted && snapshot?.complete && Array.isArray(snapshot.clusters);
+    return { ...result, declared: manifest.compatibility, observed: { frameworkVersion: FRAMEWORK_VERSION, towerVersion: context.towerBuild,
+      ...(valid ? { smtxVersions: [...new Set(snapshot.clusters.filter(row => row.product === 'SMTX_OS').map(row => row.version))].sort(), clusterCount: snapshot.clusters.length, smtxClusterCount: snapshot.clusters.filter(row => row.product === 'SMTX_OS').length } : {}) } };
   }
   const vault = createSshVault(disk.root);
-  let service, smart, preflight;
+  let service, smart, preflight, components;
+  const maintenance = createComponentMaintenance({ dataDirectory: disk.root,
+    disableAll: async actor => {
+      const result = await service.disable(actor);
+      await disk.locked(async () => {
+        for (const id of await pluginIds()) {
+          const current = await state(id);
+          if (current.installed && current.enabled) await atomic(disk.plugin(id, 'state.json'), { ...current, enabled: false, updatedAt: new Date().toISOString() });
+        }
+      });
+      return result;
+    },
+    repairMetadata: () => runtimeDisk.locked(async () => {
+      let stored; try { stored = await json(frameworkFile); } catch { /* Original bytes were backed up before repair. */ }
+      if (stored?.apiVersion === 1 && stored.version === FRAMEWORK_VERSION) return { changed: false };
+      if (stored?.version !== undefined || stored?.apiVersion !== undefined) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
+      await atomic(frameworkFile, { version: FRAMEWORK_VERSION, apiVersion: 1, initializedAt: new Date().toISOString(), ...(towerBuild ? { towerBuild } : {}) });
+      return { changed: true };
+    }),
+    clearCaches: async () => { productSnapshot = undefined; return { changed: true }; },
+    inspect: async () => {
+      const stored = await json(frameworkFile);
+      const disabled = await exists(disabledFile);
+      const switchedOff = (await Promise.all((await pluginIds()).map(state))).every(item => !item.installed || !item.enabled);
+      return { verified: stored.apiVersion === 1 && stored.version === FRAMEWORK_VERSION && disabled && switchedOff, requiresCli: true };
+    },
+    audit: event => audit.append(event),
+  });
+  function componentsReady() { return components ||= createComponents({ service, dataDirectory: disk.root, maintenance }); }
   const pluginStatus = async id => {
     const runtime = await service.runtime(), plugin = (await service.plugins()).find(item => item.id === id);
     return { ...plugin, frameworkEnabled: runtime.enabled, enabled: Boolean(plugin?.active), compatible: Boolean(plugin?.compatible) };
@@ -123,6 +171,19 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
   }
   return service = {
     root: disk.root,
+    async compatibilityStatus(actor) {
+      actorCheck(actor); if (!actor.admin) throw Object.assign(new Error('ADMIN_REQUIRED'), { status: 403 });
+      const context = await compatibilityContext({ fresh: true });
+      if (readProducts && (productVersionProvider || actor.source === 'tower' && actor.role === 'ROOT' && actor.auth)) productSnapshot = await readProducts(actor);
+      const snapshot = productSnapshot, result = checkFrameworkCompatibility(context);
+      return { ...result, declared: FRAMEWORK_COMPATIBILITY, observed: { frameworkVersion: FRAMEWORK_VERSION, towerVersion: context.towerBuild,
+        ...(snapshot?.trusted && snapshot.complete ? { smtxVersions: [...new Set(snapshot.clusters.filter(row => row.product === 'SMTX_OS').map(row => row.version))].sort(), clusterCount: snapshot.clusters.length, smtxClusterCount: snapshot.clusters.filter(row => row.product === 'SMTX_OS').length } : {}) } };
+    },
+    components: {
+      status: (...args) => componentsReady().status(...args),
+      support: (...args) => componentsReady().support(...args),
+      maintain: (...args) => componentsReady().maintain(...args),
+    },
     sshChannel: ssh,
     smartCollection: { stop: () => collection?.stop(), drain: () => collection?.drain() },
     smartBatch: { stop: () => batch?.stop(), drain: () => batch?.drain() },
@@ -198,7 +259,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
     },
     async initialize(actor, { upgradeFrom } = {}) {
       actorCheck(actor);
-      if (upgradeFrom !== undefined && (!['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4'].includes(upgradeFrom) || FRAMEWORK_VERSION !== '0.1.5')) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
+      if (upgradeFrom !== undefined && (!['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5'].includes(upgradeFrom) || FRAMEWORK_VERSION !== '0.2.0')) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
       return disk.locked(() => runtimeDisk.locked(async () => {
         await mkdir(path.dirname(frameworkFile), { recursive: true });
         const created = !(await exists(frameworkFile));
@@ -206,7 +267,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
         if (created && upgradeFrom !== undefined) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
         if (!created) {
           const stored = await json(frameworkFile);
-          if (stored.apiVersion !== 1 || !['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', FRAMEWORK_VERSION].includes(stored.version)) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
+          if (stored.apiVersion !== 1 || !['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', FRAMEWORK_VERSION].includes(stored.version)) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
           if (upgradeFrom !== undefined && !(await exists(disabledFile))) throw new Error('FRAMEWORK_DISABLE_BEFORE_UPGRADE');
           if (stored.version !== FRAMEWORK_VERSION) {
             if (upgradeFrom !== stored.version) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
@@ -229,6 +290,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
           await checkedId(id);
           // A retained uninstall tombstone must not be silently reinstalled.
           if (await exists(disk.plugin(id, 'state.json'))) continue;
+          await requireCompatibility(pkg.manifest, actor);
           await persistPackage(bytes);
           await atomic(disk.plugin(id), await config(id, pkg.manifest));
           await atomic(disk.plugin(id, 'state.json'), { installed: true, enabled: false, version: pkg.manifest.version, packageId: pkg.digest, previous: null, updatedAt: new Date().toISOString() });
@@ -241,7 +303,32 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
       const initialized = await exists(frameworkFile), disabled = await exists(disabledFile);
       let valid = false;
       try { const value = await json(frameworkFile); valid = value.apiVersion === 1 && value.version === FRAMEWORK_VERSION; } catch { /* Fail closed. */ }
-      return { initialized, enabled: valid && !disabled, version: FRAMEWORK_VERSION, towerBuild: (await compatibilityContext()).towerBuild, isolation: 'TODO', audit: audit.status() };
+      const context = await compatibilityContext(), compatibility = checkFrameworkCompatibility(context);
+      return { initialized, enabled: valid && !disabled && compatibility.compatible, version: FRAMEWORK_VERSION, towerBuild: context.towerBuild, isolation: 'TODO', audit: audit.status(),
+        compatibility: { ...compatibility, declared: FRAMEWORK_COMPATIBILITY, observed: { frameworkVersion: FRAMEWORK_VERSION, towerVersion: context.towerBuild } } };
+    },
+    async reconcileCompatibility(actor = { id: 'rivetin-compatibility-monitor', name: 'Rivetin compatibility monitor', source: 'cli', admin: true }) {
+      actorCheck(actor);
+      const context = await compatibilityContext({ fresh: true });
+      const framework = checkFrameworkCompatibility(context);
+      if (framework.status === 'incompatible' && !(await exists(disabledFile))) await this.disable(actor);
+      return disk.locked(async () => {
+        const disabled = [];
+        for (const id of await pluginIds()) {
+          let item, pkg;
+          try { ({ item, pkg } = await entry(id)); } catch { continue; }
+          if (!item.enabled) continue;
+          const compatibility = framework.status === 'incompatible' ? framework : checkCompatibility(pkg.manifest, await compatibilityContext({ actor, manifest: pkg.manifest }));
+          // Unknown evidence suspends execution through active=false; only a confirmed mismatch changes the saved switch.
+          if (compatibility.status !== 'incompatible') continue;
+          await preflight?.cancel();
+          await ssh.invalidate(id === 'rivetin-ssh-channel' ? null : id, 'PLUGIN_COMPATIBILITY_CHANGED');
+          await atomic(disk.plugin(id, 'state.json'), { ...item, enabled: false, disabledReason: compatibility.reason, updatedAt: new Date().toISOString() });
+          await audit.append({ actor, action: 'plugin.compatibility.disable', pluginId: id, code: compatibility.reason });
+          disabled.push(id);
+        }
+        return { framework, disabled };
+      });
     },
     async disable(actor) {
       actorCheck(actor);
@@ -259,8 +346,12 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
     },
     async enable(actor) {
       actorCheck(actor);
+      const compatibility = checkFrameworkCompatibility(await compatibilityContext({ fresh: true }));
+      if (!compatibility.compatible) throw new Error(compatibility.reason);
       return runtimeDisk.locked(async () => {
         if (!(await exists(frameworkFile))) throw new Error('FRAMEWORK_NOT_INITIALIZED');
+        let stored; try { stored = await json(frameworkFile); } catch { throw new Error('FRAMEWORK_MIGRATION_REQUIRED'); }
+        if (stored?.apiVersion !== 1 || stored.version !== FRAMEWORK_VERSION) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
         // Resuming never restores an SSH approval, even after an offline rescue.
         await atomic(sshRevocationFile, { nonce: randomBytes(16).toString('hex') });
         await audit.append({ actor, action: 'framework.enable' });
@@ -294,13 +385,13 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
         if (!installed.installed || !newer(version, installed.version)) throw new Error('UPDATE_VERSION_MUST_INCREASE');
         if (!updateSource) throw new Error('UPDATE_SOURCE_UNAVAILABLE');
         const bytes = await updateSource.download(id, version);
-        assertCompatible(validatePackage(bytes).manifest, await compatibilityContext());
+        await requireCompatibility(validatePackage(bytes).manifest, actor);
         return persistPackage(bytes);
       });
     },
     async marketplace(actor) {
       actorCheck(actor); if (!actor.admin) throw new Error('ADMIN_REQUIRED');
-      const context = await compatibilityContext();
+      const context = await compatibilityContext({ fresh: true });
       if (!updateSource?.market) return { items: [], source: { reachable: false, reason: 'UPDATE_SOURCE_UNAVAILABLE' }, towerBuild: context.towerBuild };
       try {
         const items = await updateSource.market(), installed = await this.plugins();
@@ -316,10 +407,10 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
         if (!updateSource?.market) throw new Error('UPDATE_SOURCE_UNAVAILABLE');
         const candidate = (await updateSource.market()).find(item => item.id === id && item.version === version);
         if (!candidate) throw new Error('UPDATE_PACKAGE_UNPUBLISHED');
-        assertCompatible({ compatibility: candidate.compatibility }, await compatibilityContext({ fresh: true }));
+        await requireCompatibility({ compatibility: candidate.compatibility }, actor);
         const bytes = await updateSource.download(id, version), pkg = validatePackage(bytes);
         if (pkg.manifest.id !== id || pkg.manifest.version !== version || pkg.digest !== candidate.sha256) throw new Error('UPDATE_METADATA_MISMATCH');
-        assertCompatible(pkg.manifest, await compatibilityContext({ fresh: true }));
+        await requireCompatibility(pkg.manifest, actor);
         await persistPackage(bytes);
         const saved = await config(id, pkg.manifest);
         await atomic(disk.plugin(id), saved);
@@ -336,7 +427,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
       }
       return items;
     },
-    async plugins() {
+    async plugins(actor) {
       const items = [];
       for (const id of await pluginIds()) {
         try {
@@ -344,8 +435,8 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
           if (!item.installed) { items.push({ id: id, ...item }); continue; }
           const { pkg } = await entry(id), runtime = await this.runtime();
           let error = null; try { await config(id, pkg.manifest); } catch { error = 'CONFIGURATION_UNAVAILABLE'; }
-          const compatibility = checkCompatibility(pkg.manifest, await compatibilityContext());
-          items.push({ id: id, ...item, manifest: pkg.manifest, active: runtime.enabled && item.enabled && !error && compatibility.compatible, error, ...compatibility,
+          const compatibility = describeCompatibility(pkg.manifest, await compatibilityContext({ actor, manifest: pkg.manifest }));
+          items.push({ id: id, ...item, manifest: pkg.manifest, active: runtime.enabled && item.enabled && !error && compatibility.compatible, error, ...compatibility, compatibility,
             frontendSha256: pkg.files.find(file => file.path === pkg.manifest.frontend.entry).sha256 });
         } catch { items.push({ id: id, installed: false, enabled: false, active: false, error: 'PLUGIN_UNAVAILABLE' }); }
       }
@@ -378,7 +469,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
         if (['install', 'update'].includes(action)) {
           if ((action === 'install' && previous.installed) || (action === 'update' && !previous.installed)) throw new Error('INVALID_TRANSITION');
           const pkg = await getPackage(packageId), manifest = pkg.manifest;
-          assertCompatible(manifest, await compatibilityContext({ fresh: true }));
+          await requireCompatibility(manifest, actor);
           if (manifest.id !== id) throw new Error('PLUGIN_ID_MISMATCH');
           if (previous.installed && previous.version === manifest.version) throw new Error('VERSION_ALREADY_INSTALLED');
           if (previous.installed) {
@@ -401,7 +492,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
         if (!previous.installed) throw new Error('PLUGIN_NOT_INSTALLED');
         if (action === 'rollback') {
           if (!previous.previous) throw new Error('NO_PREVIOUS_VERSION');
-          const pkg = await getPackage(previous.previous.packageId); assertCompatible(pkg.manifest, await compatibilityContext({ fresh: true })); await config(id, pkg.manifest);
+          const pkg = await getPackage(previous.previous.packageId); await requireCompatibility(pkg.manifest, actor); await config(id, pkg.manifest);
           const next = { ...previous.previous, enabled: false, previous: { ...previous, previous: null }, updatedAt: new Date().toISOString() };
           await atomic(disk.plugin(id, 'state.json'), next); return next;
         }
@@ -415,8 +506,8 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
           return previous;
         }
         if (!['enable', 'disable', 'uninstall'].includes(action)) throw new Error('INVALID_ACTION');
-        if (action === 'enable') { const { pkg } = await entry(id); assertCompatible(pkg.manifest, await compatibilityContext({ fresh: true })); await config(id, pkg.manifest); }
-        const next = { ...previous, enabled: action === 'enable', installed: action !== 'uninstall', updatedAt: new Date().toISOString() };
+        if (action === 'enable') { const { pkg } = await entry(id); await requireCompatibility(pkg.manifest, actor); await config(id, pkg.manifest); }
+        const next = { ...previous, enabled: action === 'enable', installed: action !== 'uninstall', disabledReason: null, updatedAt: new Date().toISOString() };
         await atomic(disk.plugin(id, 'state.json'), next); return next;
       });
     },

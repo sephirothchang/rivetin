@@ -12,6 +12,18 @@ export function watchTowerLocale(win, onChange, supplied) {
   return () => { observer.disconnect(); win.removeEventListener('storage', read); win.clearInterval(timer); };
 }
 const en = {
+  FRAMEWORK_TOWER_INCOMPATIBLE: 'This CloudTower version is outside the framework verified range. Framework execution is disabled.',
+  FRAMEWORK_VERSION_UNKNOWN: 'The framework version could not be verified. Compatibility remains unknown.',
+  PLUGIN_COMPATIBILITY_INVALID: 'The plugin compatibility declaration is invalid. Installation and activation are blocked.',
+  SMTX_SNAPSHOT_UNAVAILABLE: 'SMTX version evidence is unavailable. Compatibility remains unknown.',
+  SMTX_SNAPSHOT_INVALID: 'SMTX version evidence is invalid. Compatibility remains unknown.',
+  SMTX_SNAPSHOT_EXPIRED: 'SMTX version evidence has expired. Refresh trusted inventory before proceeding.',
+  SMTX_SCOPE_UNTRUSTED: 'The completeness and authority of SMTX inventory could not be verified. Compatibility remains unknown.',
+  SMTX_SCOPE_INCOMPLETE: 'SMTX inventory is incomplete. Partial inventory cannot establish compatibility.',
+  SMTX_SCOPE_EMPTY: 'No managed SMTX product matches the plugin declared applicability scope.',
+  SMTX_VERSION_UNKNOWN: 'The managed SMTX product version could not be verified. Compatibility remains unknown.',
+  SMTX_INCOMPATIBLE: 'A managed SMTX product version is outside the plugin declared verified range. Plugin execution is blocked.',
+  '组件状态': 'Component status',
   '插件市场': 'Plugin marketplace',
   '未声明已验证的兼容版本': 'No verified compatible versions declared', '与当前 CloudTower 版本不兼容': 'Incompatible with the current CloudTower version', '已验证版本': 'Verified versions',
   'PLUGIN_INCOMPATIBLE': 'This plugin does not support the current CloudTower or framework version.', 'TOWER_BUILD_UNKNOWN': 'The CloudTower version could not be verified; installation and activation were blocked.', 'PLUGIN_COMPATIBILITY_UNDECLARED': 'The plugin has no machine-readable verified version declaration.',
@@ -65,6 +77,17 @@ const en = {
   '通用 BMC · 仅跳转': 'Generic BMC · redirection only',
 };
 const errorChinese = {
+  FRAMEWORK_TOWER_INCOMPATIBLE: '当前 CloudTower 版本不在框架已验证范围内，框架执行已停用。',
+  FRAMEWORK_VERSION_UNKNOWN: '无法确认框架版本，兼容性仍为未知。',
+  PLUGIN_COMPATIBILITY_INVALID: '插件兼容性声明无效，已阻止安装和启用。',
+  SMTX_SNAPSHOT_UNAVAILABLE: '无法获取 SMTX 版本证据，兼容性仍为未知。',
+  SMTX_SNAPSHOT_INVALID: 'SMTX 版本证据无效，兼容性仍为未知。',
+  SMTX_SNAPSHOT_EXPIRED: 'SMTX 版本证据已过期，请刷新可信库存后再操作。',
+  SMTX_SCOPE_UNTRUSTED: '无法确认 SMTX 库存的完整性和可信范围，兼容性仍为未知。',
+  SMTX_SCOPE_INCOMPLETE: 'SMTX 库存不完整，不能使用部分库存判定兼容。',
+  SMTX_SCOPE_EMPTY: '没有受管 SMTX 产品符合插件声明的适用范围。',
+  SMTX_VERSION_UNKNOWN: '无法确认受管 SMTX 产品版本，兼容性仍为未知。',
+  SMTX_INCOMPATIBLE: '受管 SMTX 产品版本不在插件声明的已验证范围内，已阻止插件执行。',
   SSH_PERMISSION_REQUIRED: '插件未声明 SSH 通道使用权限，已拒绝注册。', SSH_OPERATION_REJECTED: '该操作不在框架允许的只读采集目录中，已拒绝注册。', SSH_REGISTRATION_INVALID: 'SSH 注册声明无效，不接受任意命令、脚本或参数。', SSH_TARGET_LIMIT: '展开后的采集目标超过限制，请缩小范围后重新审核。',
   PLUGIN_INCOMPATIBLE: '该插件不兼容当前 CloudTower 或框架版本，已停止操作。', TOWER_BUILD_UNKNOWN: '无法确认 CloudTower 版本，已阻止安装和启用。', PLUGIN_COMPATIBILITY_UNDECLARED: '该插件尚未声明可校验的已验证版本，已停止操作。', UPDATE_METADATA_MISMATCH: '下载包的元数据与已发布清单不一致，已拒绝使用。',
   INVALID_PACKAGE: '插件包格式无效，请选择有效的 Rivetin 插件包。',

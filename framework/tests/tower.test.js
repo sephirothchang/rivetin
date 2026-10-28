@@ -4,6 +4,18 @@ import { createTowerConnection } from '../server/tower.js';
 import { towerLocale, watchTowerLocale } from '../src/i18n.js';
 import { JSDOM } from 'jsdom';
 const token = id => 'EXAMPLE.' + Buffer.from(id).toString('base64url') + '.EXAMPLE_SIGNATURE';
+
+test('Tower transport confines requests to fixed local API paths and bounds streamed JSON before parsing', async () => {
+  let calls = 0;
+  const connection = createTowerConnection({ baseUrl: 'https://tower.example.invalid', fetchImpl: async () => { calls++; return Response.json({ ok: true }); } });
+  for (const target of ['https://other.example.invalid/api', '//other.example.invalid/api', '/v2/api/../secrets', '/api?token=EXAMPLE', '/healthz']) await assert.rejects(connection.request(target, {}), /INVALID_TOWER_PATH/);
+  assert.equal(calls, 0);
+  assert.deepEqual(await connection.request('/v2/api/get-clusters', {}), { ok: true });
+  const oversized = createTowerConnection({ baseUrl: 'https://tower.example.invalid', fetchImpl: async () => new Response('[]', { headers: { 'Content-Length': String(16 * 1024 * 1024 + 1) } }) });
+  await assert.rejects(oversized.request('/api', {}), /TOWER_RESPONSE_TOO_LARGE/);
+  const stream = createTowerConnection({ baseUrl: 'https://tower.example.invalid', fetchImpl: async () => new Response(new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array(16 * 1024 * 1024)); controller.enqueue(new Uint8Array(1)); controller.close(); } })) });
+  await assert.rejects(stream.request('/api', {}), /TOWER_RESPONSE_TOO_LARGE/);
+});
 test('decoded JWT identity is accepted only after Tower verifies it; role determines admin rights', async () => {
   const seen = [];
   const connection = createTowerConnection({ baseUrl: 'http://tower.example.invalid', fetchImpl: async (url, options) => {
