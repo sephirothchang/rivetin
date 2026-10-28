@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "rivetin-ipmi-redirection",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "name": {
     "zh-CN": "IPMI 跳转",
     "en-US": "IPMI Redirection"
@@ -14,11 +14,15 @@
   "license": "MIT",
   "repository": "https://github.com/sephirothchang/rivetin",
   "compatibility": {
+    "schemaVersion": 2,
     "frameworkApi": 1,
-    "tower": "CloudTower 4.9.0; Rivetin framework API 1.",
+    "tower": "CloudTower 4.9.0; Rivetin >=0.2.0 <0.3.0. IPMI HTTPS redirection only.",
     "towerBuilds": [
       "4.9.0"
-    ]
+    ],
+    "frameworkMinVersion": "0.2.0",
+    "frameworkMaxVersionExclusive": "0.3.0",
+    "smtx": "none"
   },
   "frontend": {
     "format": "rivetin-global-v1",
@@ -199,7 +203,7 @@
     "uninstall": "retain-config"
   },
   "releaseNotes": {
-    "zh-CN": "Rivetin 首个功能插件；真实 BMC 自动登录尚待验证。",
-    "en-US": "First Rivetin plugin; real BMC browser auto-login remains unverified."
+    "zh-CN": "仅更新兼容性声明，适用于 Rivetin 0.2.x 与 CloudTower 4.9.0；不要求 SMTX OS 版本准入。现有功能保持不变，真实 BMC 网页自动登录尚未接入。",
+    "en-US": "Compatibility metadata only, for Rivetin 0.2.x and CloudTower 4.9.0; no SMTX OS version gate is required. Existing functionality is unchanged; production BMC browser auto-login is not integrated."
   }
 }

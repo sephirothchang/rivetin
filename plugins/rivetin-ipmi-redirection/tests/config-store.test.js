@@ -101,6 +101,39 @@ test('HTTP config backend uses the distinct same-origin API namespace and no loc
   assert.deepEqual(requests.map(value => value.opts.method), ['GET', 'PUT']);
   assert.throws(() => createHttpConfigurationBackend(win, 'https://other.example.invalid/config'));
 });
+test('rebuilt shared client preserves fixed HTTP errors and rejects arbitrary diagnostics without alternate routes or retry', async () => {
+  for (const [status, body, expected] of [[404, { error: 'CONFIGURATION_UNAVAILABLE' }, 'CONFIGURATION_UNAVAILABLE'], [500, { error: 'EXAMPLE_PRIVATE_DIAGNOSTIC\npassword=EXAMPLE_SECRET' }, 'REQUEST_FAILED'], [403, { error: 'ADMIN_REQUIRED' }, 'ADMIN_REQUIRED']]) {
+    const requests = [], win = { location: { origin: 'https://tower.example.invalid' }, fetch: async (url, options) => { requests.push({ url, options }); return Response.json(body, { status }); } };
+    await assert.rejects(createHttpConfigurationBackend(win).load(), failure => failure.message === expected && failure.code === expected && failure.status === status);
+    assert.equal(requests.length, 1); assert.equal(requests[0].url, '/api/rivetin/v1/config');
+    assert.equal(requests[0].options.credentials, 'same-origin'); assert.equal(requests[0].options.redirect, 'error');
+  }
+});
+test('HTML 404 and malformed API responses fail closed without trying another endpoint or leaking response text', async () => {
+  for (const [status, expected] of [[404, 'NOT_FOUND'], [500, 'INVALID_API_RESPONSE'], [200, 'INVALID_API_RESPONSE']]) {
+    let calls = 0;
+    const win = { location: { origin: 'https://tower.example.invalid' }, fetch: async () => { calls++; return new Response('EXAMPLE_PRIVATE_RESPONSE', { status }); } };
+    await assert.rejects(createHttpConfigurationBackend(win).load(), failure => failure.message === expected);
+    assert.equal(calls, 1);
+  }
+});
+test('recompiled HTTP backend keeps drafts on an uncertain PUT and performs one confirmation GET without retrying the write', async () => {
+  const requests = [], remote = backend();
+  const win = { location: { origin: 'https://tower.example.invalid' }, fetch: async (url, options) => {
+    requests.push(options.method);
+    assert.ok(options.signal instanceof AbortSignal); assert.equal(options.signal.aborted, false);
+    assert.equal(url, '/api/rivetin/v1/config');
+    if (options.method === 'PUT') return Response.json({ error: 'EXAMPLE_PRIVATE_DIAGNOSTIC\nsecret=EXAMPLE_SECRET' }, { status: 500 });
+    return Response.json({ version: 1, plugins: { [PLUGIN_ID]: await remote.load() } });
+  } };
+  const f = fixture(createHttpConfigurationBackend(win));
+  try {
+    await f.store.load(); f.store.update({ defaultVendor: 'dell-idrac' });
+    assert.equal(await f.store.save(), false); assert.equal(f.store.status().dirty, true);
+    assert.deepEqual(requests, ['GET', 'PUT', 'GET']);
+    assert.equal(f.store.getDraft().defaultVendor, 'dell-idrac'); assert.doesNotMatch(f.store.status().error, /EXAMPLE_PRIVATE|EXAMPLE_SECRET/);
+  } finally { f.close(); }
+});
 test('cluster seeding keeps existing custom rules, supports long IDs, and does not silently drop excess clusters', () => {
   const existing = sanitizeFunctionalSettings({ bmcExceptions: [{ id: 'custom', scope: 'cluster', targetId: 'cluster-a', vendor: 'ami-megarac' }] });
   const generated = seedClusterExceptions(existing, [{ id: 'cluster-a' }, { id: 'x'.repeat(128) }]);

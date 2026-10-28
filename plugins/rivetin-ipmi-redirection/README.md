@@ -2,7 +2,11 @@
 
 本项目是 Rivetin 的首个功能子插件，由框架的常驻 Island 加载，增强主机概览中的 IPMI 地址。0.1 已在获准的 CloudTower 4.9 RC 测试环境部署，尚未连接真实 BMC 或启用真实自动登录。 许可证为 [MIT](LICENSE)，源码位于 [smartx-extensions 仓库的插件子目录](https://github.com/sephirothchang/rivetin/tree/main/plugins/rivetin-ipmi-redirection)。
 
-0.1.2 为当前本地开发版，改名为 Rivetin ，使用新的 ID、API 与配置目录；尚未以新品牌部署。补充可校验的 CloudTower 4.9.0 兼容声明，保持权限与配置 schema 不变。此前 0.1.1 为界面修订版：移除主机协议状态说明，将规则优先级收纳至“例外规则”标题旁的信息提示；保持插件 ID、权限、配置 schema 与默认配置不变，可通过现有升级流程保留配置升级。版本清单中的发布资产仍为空时，不提供自动下载包。
+0.1.3 为兼容性元数据修订版，要求 **Rivetin 框架 >=0.2.0 且 <0.3.0、CloudTower 4.9.0**。插件使用兼容性 schema 2；`smtx: "none"` 表示不以 SMTX OS 版本作为此插件的准入条件，不代表对任意服务器、BMC 厂商或固件的兼容承诺。本插件自有功能源码、权限、配置 schema 和默认配置与 0.1.2 保持一致，已有配置无需迁移。
+
+常规构建会重新打入当前框架的共享 HTTP 客户端与多语言资源，因此本版本不承诺可执行包与 0.1.2 字节一致。共享客户端包含固定错误码过滤、HTTP 错误状态和可选中止信号处理；IPMI 配置仍只发出单次同源请求，不增加写入重试或真实自动登录能力。
+
+正式包默认仅提供 HTTPS 地址跳转。MegaRAC SP-X 自动登录仍限本地模拟，其他 BMC 的真实网页自动登录也未接入；本版本不新增真实硬件验收结论。0.1.2 正式包作为历史版本保留，不覆盖或改写。详见 [版本记录](CHANGELOG.md)。
 
 ## 本地运行
 
@@ -40,7 +44,7 @@ npm run demo -- rivetin-ipmi-redirection
 
 完整型号与来源见 [CSV](data/hcl-models.csv) 和 [BMC 接口接入说明](docs/bmc-interfaces.md)。HCL 是服务器兼容清单，不能作为所有型号、BMC 固件的协议兼容承诺。
 
-本插件通过 Rivetin 框架加载；正式子插件包为 `release/rivetin-ipmi-redirection-0.1.2.rivetin.json`，通过插件中心上传、安装和启用。独立 Island 包仅供本地挂载验证，不应与框架同时注册，以免重复入口。
+本插件通过 Rivetin 框架加载；正式子插件包为 `release/rivetin-ipmi-redirection-0.1.3.rivetin.json`，通过插件中心上传、安装和启用。独立 Island 包仅供本地挂载验证，不应与框架同时注册，以免重复入口。
 
 Rivetin 统一 API 为 `/api/rivetin/v1/config`：GET 获取按插件 ID 隔离的配置集合；PUT 携带 `pluginId` 和 `settings`，只更新指定插件。同一插件以服务端最后成功保存的版本为准，不覆盖其他插件的配置。演示服务持久化到 `.runtime/rivetin/plugins/rivetin-ipmi-redirection/config.json`，不在静态资源目录中，重启后保留。演示使用固定模拟管理员，仅限回环地址；正式服务由 Tower 验证身份，详见框架说明。 接口与接入要求见 [共享配置 API](../../docs/rivetin-configuration.md)。
 
@@ -61,7 +65,7 @@ npm run package
 
 正式构建位于 `dist/production/build/`。演示 Island 和模拟网页位于 `dist/demo/`，与正式构建独立。正式包中没有演示网关 URL、模拟凭据、真实凭据或服务端登录适配器；默认只提供 HTTPS 地址跳转，自动登录选项不可用。
 
-本地制品：`release/rivetin-ipmi-redirection-0.1.2.tar.gz`。名称和清单、包名一致；此前旧名称制品不再使用。
+本地制品：`release/rivetin-ipmi-redirection-0.1.3.tar.gz`。名称和清单、包名一致；此前旧名称制品不再使用。
 
 ```text
 sea-map.json
@@ -97,14 +101,14 @@ build.tar.gz
 | `scripts/import-hcl.js` | 离线重现或显式刷新公开 HCL 数据 |
 | `demo/gateway.js` | 仅本地的模拟会话网关 |
 
-当前配置面板只包含实际实现的 IPMI 插件。后续插件可在统一面板中增加自己的设置页；目前没有实现通用插件市场、任意第三方模块发现或安装功能。
+本插件只提供 IPMI 字段增强与独立配置页，生命周期、插件市场和其他插件功能由 Rivetin 框架分别管理。
 
 ## 验证与边界
 
 - `npm test` 覆盖 DOM 目标识别、复制按钮保留、切换主机、撤销增强、菜单重建、浏览器偏好、BMC 规则优先级、输入过滤、登录超时、强制改密停止、一次性票据和会话检查。
 - 已使用浏览器验证本地 Module Federation 加载、普通跳转、模拟自动登录及配置入口。
 - 共享配置的跨浏览器读取与同插件最后保存生效使用本地持久化和模拟独立客户端验证；演示不模拟真实 Tower 账户鉴权，正式接入仍须实现会话验证、管理员写权限、审计和持久卷。
-- 真实 Tower 页面只读核对了菜单 DOM，未注入此插件。资产 GraphQL 查询已用模拟 Apollo Client 验证契约，未在真实 Tower 上运行本项目的查询。
+- 本次 0.1.3 仅完成本地兼容性校验、回归测试、构建与打包，不新增真实 Tower 或 BMC 验收结论。
 - DOM 适配依赖当前界面结构。不能保证其他 Tower 版本、主题、全部语言或所有角色权限下兼容。
 - 实际 BMC 的 Cookie/页面代理、绝对资源路径、跳转、证书、WebSocket/KVM、固件差异和真实权限接入尚未验证。
 - 生产自动登录还需要独立凭据代理与会话网关，不能仅把服务端登录结果重定向给浏览器。详见 [设计说明](docs/architecture.md)。
