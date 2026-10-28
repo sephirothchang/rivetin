@@ -1,63 +1,92 @@
-# Rivetin
+<p align="center">
+  <img src="https://rivetin.dev/assets/mark.svg" alt="Rivetin 标识" width="64" height="64">
+</p>
 
-SmartX 功能增强插件与扩展集合。各插件作为独立子项目维护，统一存放在本仓库中。
+<h1 align="center">Rivetin</h1>
 
-项目品牌为 **Rivetin**，官网为 https://rivetin.dev；[GitHub 仓库](https://github.com/sephirothchang/rivetin)。项目统一命名与配置路径见[命名规范](docs/rivetin-naming.md)。
+<p align="center">
+  Small extensions. A better CloudTower.
+  <br>
+  让实用的扩展，在同一个 CloudTower 管理空间中协同工作。
+</p>
 
-## 仓库结构
+<p align="center">
+  <a href="https://rivetin.dev/"><strong>官网 Website</strong></a>
+  &nbsp; · &nbsp;
+  <a href="https://rivetin.dev/guide.html"><strong>使用文档 Docs</strong></a>
+  &nbsp; · &nbsp;
+  <a href="https://rivetin.dev/catalog/plugins.json"><strong>插件清单 Catalog</strong></a>
+</p>
 
-```text
-smartx-extensions/
-├── README.md
-├── LICENSE
-├── docs/                     # 共享开发规范与配置 API
-├── cli/                      # 三平台自包含 CLI、版本适配与安装恢复
-├── catalog/                  # 官网子插件版本及发布包清单
-├── framework/                # Rivetin 框架、管理服务、CLI 与部署
-└── plugins/
-    ├── README.md
-    ├── rivetin-ipmi-redirection/
-    ├── rivetin-ssh-channel/
-    ├── rivetin-disk-smart-info/
-    └── rivetin-context-menu/
-```
+<p align="center">
+  <img src="https://img.shields.io/badge/License-MIT-536d82?style=flat-square" alt="许可证：MIT">
+  <img src="https://img.shields.io/badge/CloudTower-4.9.0-536d82?style=flat-square" alt="声明的 CloudTower 版本：4.9.0">
+  <img src="https://img.shields.io/badge/Framework_API-1-536d82?style=flat-square" alt="框架 API：1">
+</p>
 
-## 插件目录
+---
 
-| 插件 | 功能 | 状态 |
-|---|---|---|
-| [Rivetin](framework/README.md) | 插件中心、生命周期、独立配置、紧急禁用、操作日志 | 0.1；故障隔离 TODO |
-| [rivetin-ipmi-redirection](plugins/rivetin-ipmi-redirection/README.md) | 主机 IPMI 跳转、BMC 协议配置 | 0.1；真实 BMC 自动登录未完成 |
-| [rivetin-ssh-channel](plugins/rivetin-ssh-channel/README.md) | 全局及例外凭据、只读命令审计、独立授权和调度 | 0.1.1；真实指纹、认证与一次只读主机标识验证通过 |
-| [rivetin-disk-smart-info](plugins/rivetin-disk-smart-info/README.md) | 物理盘 SMART 页面、立即采集与每日历史 | 0.1.2；真实单盘失败路径及每日计划登记已验证，有效 SMART 样本尚未取得 |
-| [rivetin-context-menu](plugins/rivetin-context-menu/README.md) | 按资源提供分组菜单与受控操作表单 | 0.2.6；菜单与表单的实机只读验收通过，实际资源写入待验收 |
+## 简介
 
-## 本地开发
+Rivetin 是一个面向 CloudTower 的独立扩展平台。框架提供统一的插件中心、生命周期管理、独立配置、紧急禁用和操作日志；插件在共享契约下独立开发与维护。
 
-使用已构建 CLI 的用户请阅读 [便携式安装器](cli/README.md)。客户端不需要以下源码构建工具。
+本仓库包含框架、便携式 CLI 与插件源码。项目由社区独立开发，**并非 SmartX 官方产品，也未获得 SmartX 背书**。
 
-使用 Node.js 22、npm 和系统 `tar`。每个插件保留独立的依赖和锁文件，根目录不安装或提升插件依赖。
+## 插件与扩展
 
-```powershell
+以下版本以[公开插件清单](https://rivetin.dev/catalog/plugins.json)为准，源码中的开发版本可能不同。已发布包的下载路径和 SHA-256 以清单为准。
+
+| 插件 | 清单版本 | 状态 | 能力 |
+| :--- | :--- | :--- | :--- |
+| [IPMI Redirection](plugins/rivetin-ipmi-redirection/README.md) | `0.1.2` | 已发布 | 主机 BMC 地址跳转和厂商协议配置 |
+| [SSH Channel](plugins/rivetin-ssh-channel/README.md) | `0.1.1` | 已发布 | 共享的受控 SSH 采集、命令审阅与授权 |
+| [Disk SMART](plugins/rivetin-disk-smart-info/README.md) | `0.1.3` | 已发布 | 物理盘 SMART 信息、采样比较与历史 |
+| [Context Menu](plugins/rivetin-context-menu/README.md) | `0.4.2` | 清单草稿 | CloudTower 原生操作入口；清单条目未发布 |
+
+Network Topology 仍为本地演示，Policy Converter 仍为离线预览；二者尚未发布，也没有已接受的 CloudTower 构建声明。扩展能力、状态与下载入口可在[官网扩展库](https://rivetin.dev/#extensions)查看。
+
+## 兼容性与当前状态
+
+- 已发布插件声明 **CloudTower 4.9.0** 与 **框架 API 1**。Disk SMART 需要 Rivetin **0.1.2 或更高版本**；SSH 采集依赖共享通道，并须针对目标主机单独验证。
+- 框架 **0.1.5** 已在 CloudTower 4.9.0 开发测试环境完成受控升级与日志界面验收。声明的版本号不能代表所有构建或生产环境均已验证。
+- 框架 **0.2.0** 当前为本地候选，尚未部署或正式发布。未发布的插件候选不等于可从市场安装的版本。
+- 框架 0.2 使用更严格的兼容性声明：0.1 插件包的最低版本字段不代表自动兼容 0.2。旧声明不能通过新门禁，须由插件发布新的明确兼容版本。
+- Context Menu **0.5.2** 的实机验收尚未完成，SSH Channel **0.1.2** 属于框架 0.2 候选；二者均未发布。
+- 尚未取得有效的真实主机 SMART 健康样本，跨日计划执行仍待验证。BMC 自动登录的真实适配尚未完成。
+- 第三方插件代码隔离仍待实现。Tower 原生审计写入受系统用户限制；Rivetin 保留自己的操作日志，不将其描述为已接通原生审计。
+
+安装前请查看[框架说明](framework/README.md)、[安装器验证范围](docs/portable-cli-validation.md)与[实机验证记录](docs/0.1-validation.md)，并核对具体制品和环境。
+
+## 安装与开发
+
+### 使用便携式 CLI
+
+便携式 CLI 提供安装、更新、扩展管理和恢复流程。使用已经取得的经过验证的客户端时，用户设备无需另装 Node.js、Python、SSH 或 `kubectl`。框架安装器目前没有公开下载；安装要求和平台范围见 [CLI 文档](cli/README.md)。
+
+### 从源码开发
+
+插件各自维护依赖与锁文件。仓库级插件任务使用 Node.js 22 或更高版本、npm 与 `tar`：
+
+```sh
 npm run setup
 npm test
 npm run build
 npm run package
-npm run demo -- rivetin-ipmi-redirection
 ```
 
-只处理指定插件时，可在命令末尾传入插件 ID，例如 `npm run build -- rivetin-ipmi-redirection`，也可以进入子目录使用插件自己的命令。
+只处理指定插件时，可传入插件 ID，例如 `npm run build -- rivetin-ipmi-redirection`。便携式 CLI 使用独立 Go 模块及构建资源；源码构建要求见 [CLI 文档](cli/README.md)。共享设置和保存行为见[配置规范](docs/rivetin-configuration.md)。
 
-共享配置使用 Rivetin 统一 API，详见 [配置与保存规范](docs/rivetin-configuration.md)。框架使用独立后端，由 Tower 验证登录身份及管理员角色。安装、应急恢复及版本边界见 [Rivetin](framework/README.md)。
+## 仓库结构
 
-便携式 CLI 使用独立 Go 模块和显式嵌入资源，源码构建及平台验证边界见 [CLI 文档](cli/README.md) 和 [安装器验证范围](docs/portable-cli-validation.md)。公开文档与示例的检查及整改见 [公开内容检查](docs/public-content-review.md)。
+```text
+rivetin/
+├── framework/  # 扩展中心、管理服务与框架
+├── cli/        # 便携式 CLI 与安装流程
+├── plugins/    # 独立维护的插件
+├── catalog/    # 官网市场清单与发布流程
+└── docs/       # 共享契约与验证资料
+```
 
-## 开发约定
+## 作者与许可
 
-- 每个插件放在 `plugins/<plugin-name>/`，目录名使用小写字母和短横线。
-- 各插件独立管理代码、依赖、配置示例和测试。
-- 每个插件提供自己的 `README.md`，说明功能、适用版本、安装配置和使用方法。
-- 插件可独立发布，版本标签采用 `<plugin-name>/v<version>`，例如 `example-plugin/v1.0.0`。
-- 通用资料在确有需要时集中维护，避免重复。
-
-本项目由社区独立开发，非 SmartX 官方产品。代码采用 [MIT](LICENSE) 许可证，按“现状”提供。仓库当前保持私有，0.1 为开发测试环境版本；验收记录见 [0.1 验证范围](docs/0.1-validation.md)。
+由 **Sephiroth Chang 与 Rivetin contributors** 开发维护，采用 [MIT 许可证](LICENSE)。
