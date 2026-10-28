@@ -5,7 +5,11 @@ const codes = new Set(['SMART_DISK_UNBOUND', 'SMART_GENERATION_CHANGED', 'SMART_
   'SMART_COLLECTION_INTERRUPTED', 'SMART_UNSUPPORTED', 'SMART_OUTPUT_INVALID', 'SMART_IDENTITY_MISMATCH',
   'SMART_PROFILE_UNAVAILABLE', 'SMART_DEVICE_UNAVAILABLE', 'SSH_CHANNEL_DISABLED', 'SSH_TARGET_UNAVAILABLE', 'SSH_DEVICE_UNAVAILABLE',
   'SSH_TRANSPORT_UNAVAILABLE', 'SSH_EXECUTION_TIMEOUT', 'SSH_EXECUTION_CANCELLED', 'SMART_EXECUTION_TIMEOUT', 'SMART_EXECUTION_CANCELLED',
-  'SSH_REGISTRATION_CHANGED', 'SSH_CONCURRENCY_LIMIT', 'AUTHENTICATION_REQUIRED', 'ADMIN_REQUIRED']);
+  'SSH_REGISTRATION_CHANGED', 'SSH_CONCURRENCY_LIMIT', 'AUTHENTICATION_REQUIRED', 'ADMIN_REQUIRED',
+  'SMART_BATCH_NO_TARGETS', 'SMART_BATCH_NO_APPROVED_TARGETS', 'SMART_BATCH_TARGET_LIMIT', 'SMART_BATCH_NOT_APPROVED', 'SMART_BATCH_AMBIGUOUS_COMMAND',
+  'SMART_BATCH_SNAPSHOT_CHANGED', 'SMART_BATCH_FORBIDDEN', 'SMART_BATCH_TARGET_UNAVAILABLE', 'SMART_BATCH_CONFLICT', 'SMART_BATCH_DEADLINE',
+  'SMART_BATCH_INTERRUPTED', 'SMART_BATCH_CHILD_UNKNOWN', 'SMART_BATCH_BUSY', 'SMART_BATCH_CAPACITY_EXCEEDED', 'SMART_BATCH_NOT_FOUND',
+  'SMART_BATCH_ACCESS_CHANGED', 'SMART_BATCH_ACCESS_UNAVAILABLE', 'SMART_BATCH_ACCESS_TIMEOUT', 'SMART_COLLECTION_SNAPSHOT_CHANGED']);
 export function createRequestId(crypto) {
   if (typeof crypto?.randomUUID === 'function') return crypto.randomUUID();
   if (typeof crypto?.getRandomValues !== 'function') throw new Error('SMART_COLLECTION_UNAVAILABLE');
@@ -23,7 +27,7 @@ export function collectionCode(error) {
   }
   return 'SMART_COLLECTION_UNKNOWN';
 }
-export const collectionInvalidatesData = code => ['SMART_GENERATION_CHANGED', 'SMART_BINDING_CHANGED', 'SMART_DISK_FORBIDDEN', 'SMART_PLUGIN_DISABLED', 'AUTHENTICATION_REQUIRED'].includes(code);
+export const collectionInvalidatesData = code => ['SMART_GENERATION_CHANGED', 'SMART_BINDING_CHANGED', 'SMART_DISK_FORBIDDEN', 'SMART_PLUGIN_DISABLED', 'AUTHENTICATION_REQUIRED', 'ADMIN_REQUIRED', 'SMART_BATCH_FORBIDDEN', 'SMART_BATCH_ACCESS_CHANGED'].includes(code);
 export function validateOperation(value, expectedId) {
   if (!value || value.schemaVersion !== 1 || !uuid(value.operationId) || expectedId && value.operationId !== expectedId || !statuses.has(value.status)) throw new Error('INVALID_COLLECTION_RESPONSE');
   return { schemaVersion: 1, operationId: value.operationId, status: value.status,
@@ -32,7 +36,7 @@ export function validateOperation(value, expectedId) {
 const cancelled = () => Object.assign(new Error('REQUEST_CANCELLED'), { name: 'AbortError', code: 'REQUEST_CANCELLED' });
 
 // One POST per explicit action. Cancellation stops waiting, not the remote command.
-export async function collectDisk(provider, { identity, requestId, signal, onProgress = () => {}, timeoutMs = 45000, intervalMs = 1500 }) {
+export async function collectDisk(provider, { identity, requestId, signal, onProgress = () => {}, timeoutMs = 45000, intervalMs = 1500, validate = validateOperation }) {
   if (!provider || typeof provider.collect !== 'function' || typeof provider.collection !== 'function' || !uuid(requestId)) throw new Error('SMART_COLLECTION_UNAVAILABLE');
   if (signal.aborted) throw cancelled();
   const controller = new AbortController(); let operation, deadlineTimer, abortListener;
@@ -45,11 +49,11 @@ export async function collectDisk(provider, { identity, requestId, signal, onPro
     controller.signal.addEventListener('abort', stop, { once: true }); if (controller.signal.aborted) stop();
   });
   const work = async () => {
-    operation = validateOperation(await provider.collect({ identity, requestId, signal: controller.signal }));
+    operation = validate(await provider.collect({ identity, requestId, signal: controller.signal }));
     check(); onProgress(operation);
     for (let count = 0; operation.status === 'running' && count < 30; count++) {
       await pause(); check();
-      operation = validateOperation(await provider.collection({ identity, operationId: operation.operationId, signal: controller.signal }), operation.operationId);
+      operation = validate(await provider.collection({ identity, operationId: operation.operationId, signal: controller.signal }), operation.operationId);
       check(); onProgress(operation);
     }
     return operation.status === 'running' ? unknown('SMART_COLLECTION_WAIT_TIMEOUT') : operation;
@@ -64,7 +68,7 @@ export async function collectDisk(provider, { identity, requestId, signal, onPro
     if (signal.aborted) throw cancelled();
     const code = collectionCode(error);
     if (collectionInvalidatesData(code)) throw Object.assign(new Error(code), { code });
-    return { ...unknown(code), status: Number.isInteger(error.status) && error.status >= 400 && error.status < 500 ? 'failed' : 'unknown' };
+    return { ...unknown(code), status: !operation && Number.isInteger(error.status) && error.status >= 400 && error.status < 500 ? 'failed' : 'unknown' };
   } finally {
     clearTimeout(deadlineTimer); signal.removeEventListener('abort', abortListener); controller.abort();
   }

@@ -41,7 +41,7 @@ export function normalizeSmart(raw) {
       const value = exact(nvme, key), n = value === null ? null : BigInt(value);
       const extra = {};
       if (key === 'critical_warning' && n !== null) Object.assign(extra, { risk: n === 0n ? 'normal' : 'darkred', reason: n === 0n ? 'informational' : 'critical' });
-      if (key === 'percentage_used' && n !== null) Object.assign(extra, { direction: 'up', risk: n >= 100n ? 'darkred' : n >= 90n ? 'red' : n >= 80n ? 'yellow' : 'normal', reason: 'endurance' });
+      if (key === 'percentage_used' && n !== null) Object.assign(extra, { direction: 'up', risk: n >= 100n ? 'darkred' : n >= 90n ? 'red' : n >= 80n ? 'yellow' : 'normal', reason: n >= 80n ? 'endurance' : 'informational' });
       if (key === 'available_spare' && n !== null) {
         const threshold = exact(nvme, 'available_spare_threshold');
         Object.assign(extra, { direction: 'down', threshold, risk: threshold !== null && n < BigInt(threshold) ? 'darkred' : 'normal', reason: threshold !== null && n < BigInt(threshold) ? 'threshold' : 'informational' });

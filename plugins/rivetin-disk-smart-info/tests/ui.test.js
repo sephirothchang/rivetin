@@ -218,14 +218,57 @@ test('approval and missing framework capability are diagnostic without fabricate
   assert.match(j.doc.querySelector('.pk-smart-collection').textContent, /配置不可用/); assert.doesNotMatch(j.doc.querySelector('.pk-smart-collection').textContent, /private/);
 });
 
-test('unknown or failed collections never refresh samples or automatically resubmit', async t => {
+test('acknowledged failed collections refresh once while unknown outcomes never refresh or resubmit', async t => {
   for (const state of ['collection-unknown', 'collection-failed']) {
     const provider = createMockProvider({ state: () => state }), latest = provider.readLatest, submit = provider.collect;
     let reads = 0, posts = 0; provider.readLatest = args => { reads++; return latest(args); }; provider.collect = args => { posts++; return submit(args); };
     const f = await fixture(t, { provider }); f.open(); await delay(); f.doc.querySelector('[data-smart-collect]').click(); await delay();
-    assert.equal(posts, 1); assert.equal(reads, 1); assert.ok(f.doc.querySelector('.pk-smart-table'));
+    assert.equal(posts, 1); assert.equal(reads, state === 'collection-failed' ? 2 : 1); assert.ok(f.doc.querySelector('.pk-smart-table'));
     assert.match(f.doc.querySelector('.pk-smart-collection').textContent, state === 'collection-unknown' ? /结果待确认/ : /本次采集失败/);
   }
+});
+
+test('failed terminal task reads its failed sample and history; rejected POST without operation does not read again', async t => {
+  const provider = createMockProvider(), latest = provider.readLatest, history = provider.readHistory;
+  let completed = false, reads = 0, historyReads = 0, posts = 0;
+  provider.readLatest = async args => { reads++; return completed ? { schemaVersion: 1, source: 'mock', identity: args.identity,
+    status: 'unavailable', code: 'SMART_COLLECTION_FAILED', collectedAt: new Date().toISOString() } : latest(args); };
+  provider.readHistory = args => { historyReads++; return history(args); };
+  provider.collect = async args => { posts++; completed = true; return { schemaVersion: 1, operationId: args.requestId, status: 'failed', code: 'SMART_COLLECTION_FAILED' }; };
+  const f = await fixture(t, { provider }); f.open(); await delay(); f.doc.querySelector('[data-smart-collect]').click(); await delay();
+  assert.equal(reads, 2); assert.equal(historyReads, 2); assert.equal(posts, 1);
+  assert.match(f.doc.querySelector('.pk-smart-panel').textContent, /采集尝试时间/);
+  assert.match(f.doc.querySelector('.pk-smart-collection').textContent, /本次采集失败/);
+  assert.match(f.doc.querySelector('.pk-smart-failure-guidance').textContent, /不等于 SSH 认证失败/);
+  assert.match(f.doc.querySelector('.pk-smart-failure-guidance').textContent, /某些 VMware 虚拟盘/);
+  f.locale('en-US'); await delay();
+  assert.match(f.doc.querySelector('.pk-smart-failure-guidance').textContent, /does not establish an SSH authentication failure or a damaged disk/);
+  assert.equal(f.doc.querySelector('tr.pk-smart-risk-darkred'), null);
+  const rejected = createMockProvider({ state: () => 'collection-denied' }), read = rejected.readLatest; let rejectedReads = 0;
+  rejected.readLatest = args => { rejectedReads++; return read(args); };
+  const g = await fixture(t, { provider: rejected }); g.open(); await delay(); g.doc.querySelector('[data-smart-collect]').click(); await delay();
+  assert.equal(rejectedReads, 1);
+});
+
+test('virtual inventory models show bilingual examples with no real reads or collect and clear cleanly on model change', async t => {
+  const provider = createMockProvider(), inventory = provider.readInventory, latest = provider.readLatest, history = provider.readHistory;
+  let model = 'VMware Virtual NVMe Disk', inventoryReads = 0, reads = 0, histories = 0, posts = 0;
+  provider.readInventory = async args => { inventoryReads++; return { ...await inventory(args), disk: { diskId: args.diskId, model } }; };
+  provider.readLatest = args => { reads++; return latest(args); }; provider.readHistory = args => { histories++; return history(args); };
+  provider.collect = async () => { posts++; };
+  const f = await fixture(t, { provider }); f.open(); await delay();
+  assert.match(f.doc.querySelector('.pk-smart-virtual-banner').textContent, /非该盘实际 SMART/);
+  assert.match(f.doc.querySelector('.pk-smart-panel').textContent, /示例生成时间（非采集时间/);
+  assert.ok(f.doc.querySelector('.pk-smart-table')); assert.equal(f.doc.querySelectorAll('[data-sample-time]').length, 0);
+  assert.equal(f.doc.querySelector('[data-smart-collect]').disabled, true);
+  f.doc.querySelector('[data-smart-collect]').dispatchEvent(new f.win.Event('click', { bubbles: true })); assert.equal(posts, 0);
+  [...f.doc.querySelectorAll('button')].find(button => button.textContent === '刷新示例').click(); await delay();
+  assert.equal(inventoryReads, 2); assert.equal(reads, 0); assert.equal(histories, 0);
+  f.locale('en-US'); await delay(); assert.match(f.doc.querySelector('.pk-smart-virtual-banner').textContent, /VIRTUAL DISK EXAMPLE/);
+  assert.match(f.doc.querySelector('.pk-smart-panel').textContent, /not collected/);
+  model = 'Example NVMe SSD'; [...f.doc.querySelectorAll('button')].find(button => button.textContent === 'Refresh example').click(); await delay();
+  assert.equal(f.doc.querySelector('.pk-smart-virtual-banner'), null); assert.equal(reads, 1); assert.equal(histories, 1);
+  assert.equal(f.doc.querySelector('[data-smart-collect]').disabled, false); assert.equal(posts, 0);
 });
 
 test('collection deadline is unknown rather than remote cancellation and never retries POST', async t => {

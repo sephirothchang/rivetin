@@ -38,6 +38,13 @@ test('pending POST times out as unknown; its late response cannot start polling'
   release(result()); await tick(); assert.equal(posts, 1); assert.equal(gets, 0); assert.equal(progress.length, 0);
 });
 
+test('an HTTP polling error after acknowledgement cannot masquerade as a failed terminal operation', async () => {
+  let posts = 0;
+  const outcome = await collectDisk({ collect: async () => { posts++; return result(); },
+    collection: async () => { throw Object.assign(new Error('private query error'), { status: 404 }); } }, options());
+  assert.equal(outcome.status, 'unknown'); assert.equal(outcome.operationId, operationId); assert.equal(posts, 1);
+});
+
 test('polling stops after thirty reads without a second POST', async () => {
   let posts = 0, gets = 0;
   const outcome = await collectDisk({ collect: async () => { posts++; return result(); }, collection: async () => { gets++; return result(); } }, options({ timeoutMs: 2000 }));

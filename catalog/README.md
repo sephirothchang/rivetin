@@ -1,56 +1,54 @@
 # Rivetin 子插件市场目录
 
-`plugins.json` 使用 `schemaVersion: 2`，由框架服务端通过固定 GitHub 仓库 API 读取。目录不是可执行代码，也不能授予主机访问、SSH 命令或管理员权限。运行时校验实现位于 `framework/server/updates.js`；最终安装包仍须通过 manifest、摘要、兼容性和生命周期检查。
+`plugins.json` 是主项目维护的市场目录，使用 `schemaVersion: 3`。客户端固定通过官网 `https://rivetin.dev/catalog/plugins.json` 获取清单，通过同源的版本路径下载插件包，不调用 GitHub REST API，也不需要仓库访问令牌。官网由独立的 `rivetin-website` 仓库构建和发布；主项目负责插件版本准入、包审核、兼容声明和目录内容。
 
-## 条目格式
+## 目录和下载契约
 
-每个插件 ID 在目录中最多出现一次，保存当前候选版本。目录最多 500 项，下载与解析另有大小上限。
+每个插件 ID 最多出现一次，最多 500 项；清单不超过 512 KiB。顶层只包含 `schemaVersion` 和 `plugins`。条目包含：
 
 | 字段 | 约束 |
 |---|---|
-| `id` | `rivetin-` 前缀，小写字母、数字和短横线，最多 100 字符 |
-| `version` | 三段数字版本，不含前导零或预发布后缀 |
-| `frameworkApi` | 当前为 `1`，须与 compatibility 一致 |
+| `id`、`version` | 合法的 `rivetin-` 插件 ID 和三段数字版本 |
+| `frameworkApi` | 当前为 `1` |
 | `status` | `draft` 或 `published` |
-| `assetId` | 已发布 GitHub Release 的真实资产 ID；草稿为 `null` |
-| `sha256` | 最终完整插件包的 64 位小写十六进制 SHA-256；草稿为 `null` |
-| `name`、`description` | 含 `zh-CN` 与 `en-US`；名称各最多 120 字符，说明各最多 500 字符 |
-| `author`、`license` | 作者最多 120 字符；当前许可证为 `MIT` |
-| `permissions` | 最多 20 个不重复的权限名称；最终包还须通过框架支持的能力白名单 |
-| `compatibility` | 下述机器可判定兼容声明 |
+| `downloadPath` | 已发布包必须使用 `/downloads/plugins/<id>/<version>/<id>-<version>.rivetin.json`，草稿为 `null` |
+| `sha256` | 完整原始包字节的 64 位小写 SHA-256，草稿为 `null` |
+| `name`、`description` | 从包描述文件取得的 `zh-CN`、`en-US` 名称和说明 |
+| `author`、`license`、`permissions` | 与最终包一致，当前采用 MIT |
+| `compatibility` | 与包一致的机器可校验声明；已发布条目的 `towerBuilds` 不得为空 |
 
-`published` 必须同时具有真实资产 ID、摘要与非空测试版本列表。`draft` 的资产 ID 和摘要必须均为 `null`。本地构建、测试通过或源码推送不等于已发布，不能据此设置为 `published`。当前随仓库提供的 IPMI 条目仍为草稿，没有可下载安装按钮。
+包名、版本、摘要、展示元数据、权限和兼容声明均从已审核的最终包取得，不手工拼造资产 ID。下载仅允许官网精确 HTTPS 路径；外域、额外路径、查询参数、片段和不受信任的重定向被拒绝。固定版本路径不可覆盖，旧包应保留，确保缓存中的旧清单仍然可以下载对应版本。
+
+框架只列出 `published` 条目；草稿没有安装入口。下载后再次校验包摘要、逐文件摘要、插件 ID、版本、元数据、权限和当前环境兼容性。市场条目不授予 SSH 执行权限，也不改变人工审核和安装后停用的生命周期规则。
 
 ## 兼容性声明
 
-包 manifest 与市场条目使用相同字段：
+`compatibility` 使用 `frameworkApi`、`tower`、`towerBuilds`，以及可选的 `frameworkMinVersion` 和 `frameworkMaxVersionExclusive`。最低框架版本包含边界，最高版本不包含边界。`towerBuilds` 必须精确匹配可信后端报告的版本，不接受通配符，不根据产品名称或说明猜测兼容性。粗粒度的产品版本不能代替 CLI 对精确镜像构建与组件布局的安装检查。
 
-```json
-{
-  "frameworkApi": 1,
-  "tower": "Only explicitly tested Tower versions are supported.",
-  "towerBuilds": ["4.9.0"],
-  "frameworkMinVersion": "0.1.0",
-  "frameworkMaxVersionExclusive": "0.2.0"
-}
+## 发布流程
+
+主项目统一维护目录。子插件开发方交付测试结果、功能边界、兼容范围和不可变包，由维护方审核后执行：
+
+1. 用 `scripts/catalog-update.mjs draft` 登记明确的本地包，保留 `draft` 状态。
+2. 用 `stage` 在被忽略的目录生成候选清单、固定版本下载目录和本地 `stage.json`。此时不将主项目目录标为已发布。
+3. 官网维护方只引入候选清单及登记的包，校验包和路径后构建、发布。`stage.json`、回读证明、原始响应和本地协作资料不得发布。
+4. 从官网实际获取清单和每个包，保存原始实体字节及状态、路径、大小、SHA-256、核验时间组成的最小回读证明。
+5. 用 `verify` 将回读内容与候选逐字节比较，通过后才更新主项目中的已发布条目。提交前执行公开内容扫描并人工审查。
+
+```sh
+node scripts/catalog-update.mjs draft --package plugins/rivetin-example/release/rivetin-example-0.1.0.rivetin.json
+node scripts/catalog-update.mjs stage --package plugins/rivetin-example/release/rivetin-example-0.1.0.rivetin.json --stage-output .local/site-drops/example
+node scripts/catalog-update.mjs verify --stage-output .local/site-drops/example --proof-directory .local/site-readback/example
 ```
 
-此处版本仅用于说明格式，不替代插件自己的验收记录。`towerBuilds` 保存后端可信探测所使用的 **CloudTower 报告版本或构建标识**，最多 20 个，必须精确匹配。`4.9.0` 不能解释成某个已确认的镜像 RC 构建，也不表示所有内部实现相同。检测来源报告粗粒度版本时，应如实保留其粒度；CLI 对镜像构建的安装兼容检查是另一道独立限制。
+上述命令使用示例插件，执行时需替换为实际已审核包。`draft` 和 `verify` 支持 `--check`，只核对是否需要变更，不写目录。离线回读证明是发布流程的证据，不构成对网络来源的密码学证明；维护方仍需实际完成 HTTPS 回读与审核。
 
-不接受通配符、URL、镜像路径、`v` 前缀或按描述文字猜测版本。框架最低版本包含边界，最高版本不包含边界；比较按数字版本进行。最低与最高版本为可选项，填写时必须形成有效范围。
+框架合并并发清单请求，仅缓存校验成功的清单 60 秒；可达性探测缓存 30 秒，到期重新探测，失败不会用旧成功结果冒充可达。官网还可能具有 CDN 缓存，更新后应验明实际返回字节，不保证推送即刻在所有客户端可见。
 
-未知 Tower 版本返回 `TOWER_BUILD_UNKNOWN`；缺少或留空测试版本列表返回 `PLUGIN_COMPATIBILITY_UNDECLARED`；版本、框架 API 或框架范围不符返回 `PLUGIN_INCOMPATIBLE`。这些限制必须在服务端安装、启用等执行边界检查，不能只依赖浏览器禁用按钮。
+## 插件包格式
 
-## 发布和下载核验
+子插件制品为 `.rivetin.json`，格式标识 `rivetin-package-v1`，包含 `format`、`manifest` 和 `files`。`manifest` 声明身份、展示信息、兼容性、前端入口、权限、配置和可选 SSH 注册；`files` 使用 `path`、`sha256`、Base64 `data` 承载前端资源及许可证。包不携带服务器可执行代码、安装脚本、凭据或运行配置。文件路径白名单、体积和摘要规则由 `framework/server/manifest.js` 校验。
 
-先在目标 Tower 与框架版本上完成验收，再更新包的机器兼容声明并构建最终包。创建真正的 Release 资产、取得其资产 ID 与摘要后，才可将目录标为 `published`。不要覆盖旧版制品来伪装同一版本；版本变化应遵循项目升级规则。
+## 格式迁移
 
-市场只返回校验通过且 `published` 的条目。下载没有“必须已安装”的前提，因此同一机制可供首次市场安装使用。服务端校验最终包的完整摘要、插件 ID 和版本，还会核对其名称、说明、作者、许可证、权限及兼容声明是否与市场展示一致；不一致返回 `UPDATE_METADATA_MISMATCH`。目录中的兼容信息不是最终权限依据，下载后的包仍须通过当前环境的兼容性检查。
-
-仓库访问凭据只在服务端使用；下载重定向仅允许既定的 GitHub API 和资产域，跨到资产域时移除 API 凭据。读取与重定向次数、下载大小和超时均有限制。
-
-## 从目录 v1 迁移
-
-旧 `schemaVersion: 1` 缺少发布状态和机器兼容元数据，新市场读取器会明确拒绝并返回 `UPDATE_CATALOG_INVALID`，不会把有版本号的本地包自动列为可安装产品。应将条目升级为 v2，未发布项目保留为草稿。
-
-旧插件 manifest 的文字兼容说明仍可被解析，供管理员查看或受控迁移；缺机器字段不会自动获得兼容资格，也不会依据名称、描述或以前的安装状态放行。如何迁移既有安装由框架统一处理，市场读取器不改写已存安装包或配置。
+官网源使用 v3 的固定同源 `downloadPath`，不使用 v2 的 GitHub Release `assetId`。旧 GitHub 清单不会被静默解释为官网目录；框架需升级到支持官网源的版本。升级不改写既有插件配置，不重新授予 SSH 审批。

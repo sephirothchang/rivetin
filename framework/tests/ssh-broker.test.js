@@ -54,6 +54,17 @@ test('manual SMART selection rejects multiple matching commands and cancelled ex
   await assert.rejects(f.broker.runTarget(selected, actor, { signal: controller.signal }), /SSH_EXECUTION_CANCELLED/);
   await assert.rejects(f.broker.selectSmartTarget(id, { hostId: 'example-host', deviceId: 'example-disk' }, { ...actor, admin: false }), /SSH_ADMIN_REQUIRED/); assert.equal(f.calls(), 0);
 });
+
+test('private SMART batch snapshot shares one approval identity and isolates ambiguous command targets', async t => {
+  const f = await fixture(t, { run: async () => ({ stdout: JSON.stringify({ serial_number: 'EXAMPLE_SERIAL_B', smart_status: { passed: true } }), exitCode: 0 }) });
+  await f.vault.put({ ...host(), devices: [...host().devices, { deviceId: 'second-disk', path: '/dev/sdb', serial: 'EXAMPLE_SERIAL_B' }] });
+  f.status.plugins[0].manifest.ssh.commands = [{ ...command(), id: 'smart.daily', operation: 'disk.smart.read', deviceScope: 'configured' }, { ...command(), id: 'another-smart', operation: 'disk.smart.read', deviceIds: ['example-disk'] }];
+  await assert.rejects(f.broker.snapshotSmartSelections(id, actor), /SSH_APPROVAL_REQUIRED/); await f.approve();
+  const snapshot = await f.broker.snapshotSmartSelections(id, actor); assert.equal(snapshot.items.length, 1); assert.equal(snapshot.items[0].deviceId, 'second-disk'); assert.equal(snapshot.items[0].commandId, 'smart.daily'); assert.equal(snapshot.rejected[0].code, 'SSH_SMART_COMMAND_AMBIGUOUS');
+  assert.equal((await f.broker.runTarget(snapshot.items[0], actor)).items[0].result, 'success');
+  for (const commandId of ['../smart', 'smart;reboot', '.smart', 'smart\nreboot']) await assert.rejects(f.broker.runTarget({ ...snapshot.items[0], commandId }, actor), /SSH_TARGET_NOT_APPROVED/);
+  assert.equal(f.calls(), 1); await assert.rejects(f.broker.snapshotSmartSelections(id, { ...actor, admin: false }), /SSH_ADMIN_REQUIRED/);
+});
 test('SSH review is actor-bound, expires and cannot be replayed or accepted without acknowledgment', async t => {
   const f = await fixture(t), review = await f.broker.review(id, actor), body = { pluginId: id, challenge: review.challenge, digest: review.digest, acknowledged: true };
   await assert.rejects(f.broker.approve(body, { ...actor, id: 'other-admin' }), /SSH_REVIEW_CONFIRMATION_REQUIRED/);

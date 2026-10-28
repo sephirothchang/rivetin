@@ -160,7 +160,7 @@ test('online upgrade failure stays in its method dialog and cancel clears it wit
   await f.click('.c89-plugin-fab'); await f.click('.pk-upgrade');
   await f.click('.c89-confirm-actions .c89-save-exit');
   const modal = document.querySelector('[role="alertdialog"]');
-  assert.match(modal.querySelector('.pk-upgrade-error').textContent, /更新仓库为私有仓库或访问受限/);
+  assert.match(modal.querySelector('.pk-upgrade-error').textContent, /官网更新源拒绝访问/);
   assert.equal(document.querySelector('.c89-config-error'), null);
   assert.equal(document.querySelectorAll('[role="alert"]').length, 1);
   assert.ok(modal.querySelector('.pk-manual-upgrade input'));

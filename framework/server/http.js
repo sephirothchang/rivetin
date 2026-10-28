@@ -36,6 +36,16 @@ export function createApi(service, { authenticate, origins = [] } = {}) {
         };
         if (route.startsWith('/data/disk-smart/')) {
           const operation = route.slice('/data/disk-smart/'.length);
+          if (operation === 'inventory') {
+            const values = parameters(['pluginId', 'diskId']);
+            if (Object.keys(values).sort().join() !== 'diskId,pluginId') throw new Error('INVALID_REQUEST');
+            return send(res, 200, await service.smartData.readInventory({ ...values, actor }));
+          }
+          if (operation === 'collection-all') {
+            const values = parameters(['pluginId', 'operationId']);
+            if (Object.keys(values).sort().join() !== 'operationId,pluginId') throw new Error('INVALID_REQUEST');
+            return send(res, 200, await service.smartData.collectionAll({ ...values, actor }));
+          }
           if (!['identity', 'latest', 'history', 'collection'].includes(operation)) return send(res, 404, { error: 'NOT_FOUND' });
           const values = parameters(operation === 'identity' ? ['pluginId', 'diskId'] : operation === 'latest' ? ['pluginId', 'diskId', 'generation'] : operation === 'collection' ? ['pluginId', 'diskId', 'generation', 'operationId'] : ['pluginId', 'diskId', 'generation', 'limit', 'cursor']);
           if (Object.hasOwn(values, 'limit')) { if (!/^[1-9][0-9]?$/.test(values.limit)) throw new Error('INVALID_REQUEST'); values.limit = Number(values.limit); }
@@ -85,6 +95,12 @@ export function createApi(service, { authenticate, origins = [] } = {}) {
         if (action === 'confirm' && fields === 'acknowledged,action,address,challenge,hostId,port') return send(res, 200, await service.sshPreflight.confirm({ ...input, actor }));
         if (action === 'verify' && fields === 'action,hostId') return send(res, 200, await service.sshPreflight.verify({ ...input, actor }));
         throw new Error('INVALID_REQUEST');
+      }
+      if (req.method === 'POST' && route === '/data/disk-smart/collect-all') {
+        const value = JSON.parse(await body(req, 4096));
+        if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join() !== 'pluginId,requestId') throw new Error('INVALID_REQUEST');
+        const result = await service.smartData.collectAll({ ...value, actor });
+        return send(res, result.status === 'running' ? 202 : 200, result);
       }
       if (req.method === 'POST' && route === '/data/disk-smart/collect') {
         const value = JSON.parse(await body(req, 8192));

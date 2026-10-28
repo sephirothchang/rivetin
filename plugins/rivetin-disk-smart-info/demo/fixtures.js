@@ -2,7 +2,9 @@
 const identity = { diskId: 'disk-demo-nvme', hostId: 'host-demo', deviceId: '1'.repeat(64), generation: '1'.repeat(64), path: '/dev/nvme0n1', model: 'Example NVMe SSD' };
 const ata = { diskId: 'disk-demo-ata', hostId: 'host-demo', deviceId: '2'.repeat(64), generation: '2'.repeat(64), path: '/dev/sdb', model: 'Example SATA HDD' };
 const unsupported = { diskId: 'disk-demo-virtual', hostId: 'host-demo', deviceId: '3'.repeat(64), generation: '3'.repeat(64), path: '/dev/sdc', model: 'Example Virtual Disk' };
-export const disks = [identity, ata, unsupported];
+const vmware = { diskId: 'disk-demo-vmware', hostId: 'host-demo', deviceId: '4'.repeat(64), generation: '4'.repeat(64), path: '/dev/nvme1n1', model: 'VMware Virtual NVMe Disk' };
+const virtualDisk = { diskId: 'disk-demo-virtual-disk', hostId: 'host-demo', deviceId: '5'.repeat(64), generation: '5'.repeat(64), path: '/dev/sdd', model: 'Virtual_disk_example' };
+export const disks = [identity, ata, unsupported, vmware, virtualDisk];
 export const mockIdentity = disk => ({ ...disk, path: '' });
 export function sample(disk, offset = 0, now = Date.now()) {
   const collectedAt = new Date(now - offset * 86400000).toISOString();
@@ -27,6 +29,7 @@ export function sample(disk, offset = 0, now = Date.now()) {
 export function createMockProvider({ now = Date.now(), state = () => 'ok' } = {}) {
   const operations = new Map(), collected = new Map();
   return {
+    async readInventory({ diskId, signal }) { if (signal.aborted) throw new Error('ABORTED'); const disk = disks.find(item => item.diskId === diskId); return { schemaVersion: 1, disk: { diskId: disk.diskId, model: disk.model } }; },
     async resolveDisk({ diskId, signal }) { if (signal.aborted) throw new Error('ABORTED'); return mockIdentity(disks.find(disk => disk.diskId === diskId)); },
     async readLatest({ identity: disk, signal }) {
       if (signal.aborted) throw new Error('ABORTED');

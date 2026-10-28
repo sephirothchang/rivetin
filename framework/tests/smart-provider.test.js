@@ -40,6 +40,13 @@ test('private collection target requires administrator and exact current binding
   await assert.rejects(f.provider.collectionTarget({ ...args, generation: 'b'.repeat(64), actor }), { message: 'SMART_GENERATION_CHANGED', status: 409 });
 });
 
+test('private batch candidates require administrator plus plugin capabilities and return complete frozen binding metadata', async t => {
+  const f = await fixture(t); await f.bind();
+  await assert.rejects(f.provider.collectionCandidates({ pluginId, actor: reader }), { status: 403 });
+  const candidate = await f.provider.collectionCandidates({ pluginId, actor }); assert.equal(candidate.items.length, 1); assert.deepEqual(Object.keys(candidate.items[0]).sort(), ['bindingToken', 'deviceId', 'diskId', 'generation', 'profileHostId']); assert.match(candidate.items[0].bindingToken, /^[a-f0-9]{64}$/);
+  assert.ok(!JSON.stringify(candidate).includes('EXAMPLE_SERIAL')); f.state.active = false; await assert.rejects(f.provider.collectionCandidates({ pluginId, actor }), { status: 403 });
+});
+
 test('every read independently verifies exact caller disk permissions and plugin active capability', async t => {
   const f = await fixture(t); await f.bind(); const identity = await f.resolve(); const count = f.state.calls.length;
   await f.provider.readLatest({ pluginId, diskId: identity.diskId, generation: identity.generation, actor: reader });

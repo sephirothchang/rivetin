@@ -26,7 +26,7 @@ func payloadFixture(t *testing.T, version string) (fstest.MapFS, Bundle) {
 }
 
 func TestPayloadAcceptsCanonicalReleaseVersionsIncludingPatchUpgrade(t *testing.T) {
-	for _, version := range []string{"0.1.0", "0.1.1", "1.2.3"} {
+	for _, version := range []string{"0.1.0", "0.1.1", "0.1.2", "0.1.3", "0.1.4", "1.2.3"} {
 		t.Run(version, func(t *testing.T) {
 			files, expected := payloadFixture(t, version)
 			bundle, content, err := readPayload(files)

@@ -165,7 +165,9 @@ function createHostPreflight(React) {
         h('label', { className: 'pk-ssh-pin-ack' }, h('input', { type: 'checkbox', checked: current.acknowledged, disabled: current.busy, onChange: event => { const acknowledged = event.target.checked; setResult(previous => ({ ...previous, acknowledged })); } }), t(' 我已通过独立可信渠道核对该主机、地址、端口和完整指纹一致。', ' I independently verified this host, address, port and complete fingerprint through a trusted channel.')),
         h('button', { type: 'button', className: 'c89-text-button', disabled: disabled || !current.acknowledged, onClick: () => run('confirm') }, t('二次确认并写入指纹草稿', 'Confirm again and put pin in draft'))),
       current.confirmed && h('p', { className: 'pk-ssh-notice', role: 'status' }, t('指纹已写入连接草稿，尚未保存。保存后才可用于 SSH 验证。', 'The pin is in the connection draft and is not saved yet. Save before using it for SSH verification.')),
-      current.verified && h('p', { className: 'pk-ssh-verified', role: 'status' }, t('SSH 认证验证成功，未执行命令。核验时间：', 'SSH authentication verified; no commands executed. Checked at: ') + new Date(current.verified).toLocaleString(locale)));
+      current.verified && h('div', { className: 'pk-ssh-verified', role: 'status' },
+        h('div', null, t('SSH 认证验证成功，未执行命令。核验时间：', 'SSH authentication verified; no commands executed. Checked at: ') + new Date(current.verified).toLocaleString(locale)),
+        h('div', { className: 'pk-ssh-muted' }, t('仅确认本次 SSH 认证成功；命令执行权限、设备 SMART 支持和磁盘健康均未验证。', 'Only this SSH authentication was verified. Command permissions, device SMART support and disk health were not verified.'))));
   };
 }
 

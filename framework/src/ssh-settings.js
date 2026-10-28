@@ -21,6 +21,31 @@ const commandReady = item => commandIdentifier(item?.id) && supportedOperations.
 const ready = registration => identity(registration?.pluginId) && digest(registration?.digest) && registration.enabled !== false && !registration.reason && commands(registration).length > 0 && commands(registration).every(commandReady);
 const expiry = value => typeof value === 'number' ? value : Date.parse(value);
 
+function executionText(run, locale) {
+  const t = (zh, en) => locale === 'en-US' ? en : zh;
+  if (run.result === 'success' && !run.code) return {
+    label: t('远程命令已完成', 'Remote command completed'),
+    detail: t('命令完成不等于磁盘健康；请以有效的 SMART 数据及其健康评估为准。', 'Command completion does not establish disk health. Review valid SMART data and its health assessment.'),
+  };
+  // The broker emits this code only after the transport returns a remote exit status.
+  if (run.result === 'failed' && run.code === 'SSH_REMOTE_COMMAND_FAILED') return {
+    label: t('SSH 认证已完成 · 远程命令失败', 'SSH authenticated · Remote command failed'),
+    detail: t('远程命令返回失败状态，未取得有效采集结果。设备健康状态未知，不能据此判定磁盘损坏。', 'The remote command returned a failure status without a valid collection result. Device health is unknown; this does not establish disk damage.'),
+  };
+  if (run.result === 'failed' && run.code === 'SSH_AUTHENTICATION_FAILED') return {
+    label: t('SSH 认证失败', 'SSH authentication failed'),
+    detail: t('未取得远程命令结果，设备健康状态未知。', 'No remote command result is available; device health is unknown.'),
+  };
+  if (run.result === 'failed' && run.code === 'SSH_HOST_KEY_MISMATCH') return {
+    label: t('主机指纹不匹配', 'Host key mismatch'),
+    detail: t('主机身份核验未通过，设备健康状态未知。', 'Host identity verification failed; device health is unknown.'),
+  };
+  return {
+    label: t('执行结果未完成或待确认', 'Execution incomplete or unconfirmed'),
+    detail: t('未确认本次 SSH 认证及远程命令是否完成；此记录不能用于判定设备健康。', 'Completion of SSH authentication and the remote command is unconfirmed. This record cannot establish device health.'),
+  };
+}
+
 export function createSshSettings(React) {
   const h = React.createElement, { useState, useEffect, useRef } = React, ConnectionSettings = createSshConnectionSettings(React);
   return function SshSettings({ client, locale = 'zh-CN', onError, connectionStore, preflightEnabled = false }) {
@@ -141,7 +166,11 @@ export function createSshSettings(React) {
           h('table', null, h('thead', null, h('tr', null, h('th', null, t('示例', 'Example')), h('th', null, t('风险影响', 'Impact')))), h('tbody', null, ...[...examples].map(([example, impact]) => h('tr', { key: example }, h('td', null, h('code', null, example)), h('td', null, bounded(impact[locale] || impact['en-US']))))))),
         h('h4', null, t('最近执行记录', 'Recent executions')),
         state.recentRuns?.length ? h('table', null, h('thead', null, h('tr', null, ...[t('插件 / 命令', 'Plugin / command'), t('时间', 'Time'), t('结果', 'Result')].map(label => h('th', { key: label }, label)))),
-          h('tbody', null, ...state.recentRuns.slice(0, 30).map((run, index) => h('tr', { key: run.id || index }, h('td', null, bounded(run.pluginId), h('br'), bounded(run.commandId)), h('td', null, bounded(run.finishedAt || run.completedAt || run.startedAt)), h('td', null, bounded(run.code || run.result || run.status)))))) : h('p', { className: 'pk-ssh-empty' }, t('暂无执行记录。', 'No execution history.'))),
+          h('tbody', null, ...state.recentRuns.slice(0, 30).map((run, index) => {
+            const result = executionText(run, locale);
+            return h('tr', { key: run.id || index }, h('td', null, bounded(run.pluginId), h('br'), bounded(run.commandId)), h('td', null, bounded(run.finishedAt || run.completedAt || run.startedAt)),
+              h('td', { className: 'pk-ssh-run-result' }, h('strong', null, result.label), h('div', { className: 'pk-ssh-muted' }, result.detail), h('code', null, bounded(run.code || run.result || run.status))));
+          }))) : h('p', { className: 'pk-ssh-empty' }, t('暂无执行记录。', 'No execution history.'))),
       review && h('div', { className: 'pk-ssh-review-backdrop' }, h('section', { ref: reviewElement, tabIndex: -1, className: 'pk-ssh-review', role: 'alertdialog', 'aria-modal': true, 'aria-labelledby': 'pk-ssh-review-title' },
         h('h3', { id: 'pk-ssh-review-title' }, t('确认启用子插件 SSH 权限', 'Confirm plugin SSH access')),
         error && h('p', { className: 'pk-ssh-error', role: 'alert' }, t('操作未完成：', 'Operation incomplete: ') + error),

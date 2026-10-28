@@ -318,9 +318,12 @@ test('SSH authentication verification sends only the saved host ID and never cre
   const ui = await mount(t, f, 'zh-CN', { preflightEnabled: true }), before = f.store.getDraft(); await clickButton(verifyText);
   assert.deepEqual(preflightCalls(f)[0].body, { action: 'verify', hostId: 'example-host' }); assert.deepEqual(f.store.getDraft(), before);
   assert.match(document.querySelector('.pk-ssh-verified').textContent, /认证验证成功，未执行命令/);
+  assert.match(document.querySelector('.pk-ssh-verified').textContent, /仅确认本次 SSH 认证成功；命令执行权限、设备 SMART 支持和磁盘健康均未验证/);
   assert.equal(f.calls.filter(call => call.method === 'PUT').length, 0);
   assert.ok(f.calls.every(call => !['approve', 'run', 'schedule'].includes(call.body?.action)));
   await ui.render('en-US'); assert.match(document.querySelector('.pk-ssh-verified').textContent, /no commands executed/);
+  assert.match(document.querySelector('.pk-ssh-verified').textContent, /Only this SSH authentication was verified/);
+  assert.match(document.querySelector('.pk-ssh-verified').textContent, /Command permissions, device SMART support and disk health were not verified/);
 });
 
 test('SSH preflight never sends unsaved secrets and verification stays disabled for a dirty draft', async t => {

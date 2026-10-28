@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { createService } from '../../../framework/server/service.js';
 import { createApi } from '../../../framework/server/http.js';
-import { createTowerDiskReader } from '../../../framework/server/tower-disks.js';
+import { createTowerDiskReader, createTowerDiskInventoryReader } from '../../../framework/server/tower-disks.js';
 import { createSmartHistory } from '../../../framework/server/smart-history.js';
 import { sanitizeSmartOutput } from '../../../framework/server/smart-data.js';
 import { hash } from '../../../framework/server/manifest.js';
@@ -20,6 +20,7 @@ import createPlugin from '../src/definition.js';
 import { PLUGIN_ID } from '../src/configuration.js';
 import { loadDiskData, readHistoryPage } from '../src/provider.js';
 import { collectDisk, createRequestId } from '../src/collection.js';
+import { collectAll } from '../src/batch-collection.js';
 import { sample, disks } from '../demo/fixtures.js';
 
 const requireFramework = createRequire(new URL('../../../framework/package.json', import.meta.url));
@@ -45,7 +46,7 @@ async function setup(t) {
     state.afterRead?.(); return [structuredClone(state.disk)];
   };
   const service = createService(directory, {
-    towerBuild: '4.9.0', readDisk: createTowerDiskReader({ request: towerRequest }),
+    towerBuild: '4.9.0', readDisk: createTowerDiskReader({ request: towerRequest }), readDiskInventory: createTowerDiskInventoryReader({ request: towerRequest }),
     builtinPackages: [bundle(channel, '0.1.0', pkg => { pkg.manifest.configuration.defaults.enabled = false; return pkg; })],
     sshRun: async ({ host, command, signal }) => {
       state.runs++; assert.equal(host.hostId, 'ssh-profile-example'); assert.equal(signal.aborted, false);
@@ -55,6 +56,7 @@ async function setup(t) {
     },
   });
   t.after(async () => {
+    await service.smartBatch?.stop();
     await Promise.all([service.smartCollection.stop(), service.sshChannel.stop()]);
     const target = path.resolve(directory); if (!target.startsWith(base + path.sep)) throw new Error('TEST_PATH_OUTSIDE_WORKSPACE');
     await rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
@@ -129,8 +131,8 @@ test('real provider rechecks reader access and fails closed when access changes 
   const f = await setup(t); await f.bind(); await f.collect(); f.state.token = readerToken;
   const before = f.state.reads.length;
   await loadDiskData(f.provider, f.state.disk.id, abort());
-  assert.deepEqual(f.state.reads.slice(before), [readerToken, readerToken, readerToken]);
-  let reads = 0; f.state.afterRead = () => { if (++reads === 2) f.state.denied = true; };
+  assert.deepEqual(f.state.reads.slice(before), [readerToken, readerToken, readerToken, readerToken]);
+  let reads = 0; f.state.afterRead = () => { if (++reads === 3) f.state.denied = true; };
   await assert.rejects(loadDiskData(f.provider, f.state.disk.id, abort()), { status: 403 });
 });
 
@@ -197,12 +199,12 @@ test('collect now crosses the real shared HTTP adapter and executes only the sel
   const f = await smartFixture(t, { twoDevices: true }), before = await loadDiskData(f.provider, 'example-disk', abort());
   await f.approve(); let posts = 0, gets = 0;
   const provider = { ...f.provider, collect: args => { posts++; return f.provider.collect(args); }, collection: args => { gets++; return f.provider.collection(args); } };
-  const outcome = await collectDisk(provider, { identity: before.identity, requestId: createRequestId(globalThis.crypto), signal: abort(), intervalMs: 1, timeoutMs: 5000 });
+  const outcome = await collectDisk(provider, { identity: before.identity, requestId: createRequestId(globalThis.crypto), signal: abort(), intervalMs: 50, timeoutMs: 5000 });
   assert.equal(outcome.status, 'succeeded'); assert.equal(posts, 1); assert.ok(gets >= 1); assert.equal(f.runs(), 1);
   assert.deepEqual(f.commands, ['sudo -n -- /usr/sbin/smartctl --json=c --all /dev/sda']);
   const refreshed = await loadDiskData(f.provider, 'example-disk', abort());
   assert.equal(refreshed.latest.status, 'ok'); assert.equal(refreshed.latest.metrics.find(metric => metric.id === 'power_on_hours').value, '123'); assert.equal(refreshed.history.length, 1);
-  const repeated = await collectDisk(provider, { identity: refreshed.identity, requestId: createRequestId(globalThis.crypto), signal: abort(), intervalMs: 1, timeoutMs: 5000 });
+  const repeated = await collectDisk(provider, { identity: refreshed.identity, requestId: createRequestId(globalThis.crypto), signal: abort(), intervalMs: 50, timeoutMs: 5000 });
   assert.equal(repeated.status, 'succeeded');
   const newer = await loadDiskData(f.provider, 'example-disk', abort());
   assert.ok(Date.parse(newer.latest.collectedAt) > Date.parse(refreshed.latest.collectedAt)); assert.equal(newer.history.length, 1);
@@ -211,7 +213,7 @@ test('collect now crosses the real shared HTTP adapter and executes only the sel
 
 test('shared collection without approval is diagnostic and executes no mock SSH command', async t => {
   const f = await smartFixture(t), before = await loadDiskData(f.provider, 'example-disk', abort());
-  const outcome = await collectDisk(f.provider, { identity: before.identity, requestId: createRequestId(globalThis.crypto), signal: abort(), intervalMs: 1, timeoutMs: 5000 });
+  const outcome = await collectDisk(f.provider, { identity: before.identity, requestId: createRequestId(globalThis.crypto), signal: abort(), intervalMs: 50, timeoutMs: 5000 });
   assert.equal(outcome.status, 'failed'); assert.equal(outcome.code, 'SSH_APPROVAL_REQUIRED'); assert.equal(f.runs(), 0);
   assert.equal((await loadDiskData(f.provider, 'example-disk', abort())).latest.code, 'SMART_NO_SAMPLE');
 });
@@ -219,7 +221,7 @@ test('shared collection without approval is diagnostic and executes no mock SSH 
 test('shared polling rechecks authorization for the pinned identity', async t => {
   const f = await smartFixture(t), before = await loadDiskData(f.provider, 'example-disk', abort()); await f.approve();
   const provider = { ...f.provider, collection: args => { f.deny(); return f.provider.collection(args); } };
-  await assert.rejects(collectDisk(provider, { identity: before.identity, requestId: createRequestId(globalThis.crypto), signal: abort(), intervalMs: 1, timeoutMs: 5000 }), { code: 'SMART_DISK_FORBIDDEN' });
+  await assert.rejects(collectDisk(provider, { identity: before.identity, requestId: createRequestId(globalThis.crypto), signal: abort(), intervalMs: 50, timeoutMs: 5000 }), { code: 'SMART_DISK_FORBIDDEN' });
 });
 
 test('actual plugin button rejects unapproved execution then refreshes through shared HTTP after local approval', async t => {
@@ -235,4 +237,99 @@ test('actual plugin button rejects unapproved execution then refreshes through s
   await waitFor(() => f.win.document.querySelector('.pk-smart-table') && f.win.document.querySelector('.pk-smart-collection')?.textContent.includes('已完成'));
   assert.equal(f.state.runs, 1); assert.match(f.win.document.querySelector('[data-pk-smart-panel]').textContent, /host-smartctl/);
   assert.doesNotMatch(f.win.document.querySelector('[data-pk-smart-panel]').textContent, /本地模拟数据/);
+});
+
+test('acknowledged failed task refreshes the real shared failed history without a second collect POST', async t => {
+  const f = await setup(t); await f.bind(); f.state.mode = 'failed';
+  const review = await f.service.sshChannel.review(PLUGIN_ID, admin);
+  await f.service.sshChannel.approve({ pluginId: PLUGIN_ID, challenge: review.challenge, digest: review.digest, acknowledged: true }, admin);
+  let posts = 0, reads = 0;
+  const provider = { ...f.provider, collect: args => { posts++; return f.provider.collect(args); }, readLatest: args => { reads++; return f.provider.readLatest(args); } };
+  const plugin = createPlugin({ React: requireFramework('react'), win: f.win, options: { diskSmartInfo: { provider } } });
+  let stop; t.after(() => { stop?.(); plugin.store.dispose(); }); await plugin.store.load(); stop = plugin.activate();
+  const wait = async predicate => { const end = Date.now() + 5000; while (!predicate() && Date.now() < end) await new Promise(resolve => setTimeout(resolve, 20)); assert.ok(predicate()); };
+  f.win.document.querySelector('[data-pk-smart-tab]').click(); await wait(() => f.win.document.querySelector('[data-smart-collect]')?.disabled === false);
+  assert.match(f.win.document.querySelector('[data-pk-smart-panel]').textContent, /尚无采样/);
+  f.win.document.querySelector('[data-smart-collect]').click();
+  await wait(() => f.win.document.querySelector('[data-pk-smart-panel]')?.textContent.includes('采集尝试时间'));
+  assert.equal(f.state.runs, 1); assert.equal(posts, 1); assert.equal(reads, 2);
+  assert.equal(f.win.document.querySelectorAll('[data-sample-time]').length, 1);
+  assert.match(f.win.document.querySelector('.pk-smart-collection').textContent, /采集超时/);
+});
+
+test('global batch uses the real shared HTTP provider and publishes per-disk history with one POST', async t => {
+  const f = await setup(t); await f.bind();
+  const review = await f.service.sshChannel.review(PLUGIN_ID, admin);
+  await f.service.sshChannel.approve({ pluginId: PLUGIN_ID, challenge: review.challenge, digest: review.digest, acknowledged: true }, admin);
+  let posts = 0, gets = 0;
+  const provider = { collectAll: args => { posts++; return f.provider.collectAll(args); }, collectionAll: args => { gets++; return f.provider.collectionAll(args); } };
+  const requestId = createRequestId(globalThis.crypto);
+  const outcome = await collectAll(provider, { requestId, signal: abort(), intervalMs: 50, timeoutMs: 5000 });
+  assert.equal(outcome.status, 'succeeded'); assert.equal(outcome.summary.total, 1); assert.equal(outcome.summary.succeeded, 1);
+  assert.equal(outcome.items[0].diskId, f.state.disk.id); assert.equal(f.state.runs, 1); assert.equal(posts, 1); assert.ok(gets >= 1);
+  const data = await loadDiskData(f.provider, f.state.disk.id, abort()); assert.equal(data.latest.status, 'ok'); assert.equal(data.history.length, 1);
+  const repeated = await f.provider.collectAll({ requestId, signal: abort() }); assert.equal(repeated.operationId, outcome.operationId); assert.equal(f.state.runs, 1);
+});
+
+test('global shared missing bindings and absent approval remain diagnostic and never execute', async t => {
+  const f = await setup(t);
+  const first = await collectAll(f.provider, { requestId: createRequestId(globalThis.crypto), signal: abort(), intervalMs: 50, timeoutMs: 5000 });
+  assert.equal(first.status, 'failed'); assert.equal(first.code, 'SMART_BATCH_NO_TARGETS'); assert.equal(first.operationId, null); assert.equal(f.state.runs, 0);
+  await f.bind();
+  const unapproved = await collectAll(f.provider, { requestId: createRequestId(globalThis.crypto), signal: abort(), intervalMs: 50, timeoutMs: 5000 });
+  assert.equal(unapproved.status, 'failed'); assert.equal(unapproved.code, 'SMART_BATCH_NO_APPROVED_TARGETS'); assert.equal(f.state.runs, 0);
+});
+
+test('global shared failed collection retains unknown health and fresh history instead of false batch success', async t => {
+  const f = await setup(t); await f.bind(); f.state.mode = 'failed';
+  const review = await f.service.sshChannel.review(PLUGIN_ID, admin);
+  await f.service.sshChannel.approve({ pluginId: PLUGIN_ID, challenge: review.challenge, digest: review.digest, acknowledged: true }, admin);
+  const outcome = await collectAll(f.provider, { requestId: createRequestId(globalThis.crypto), signal: abort(), intervalMs: 50, timeoutMs: 5000 });
+  assert.equal(outcome.status, 'failed'); assert.equal(outcome.summary.failed, 1); assert.equal(f.state.runs, 1);
+  const data = await loadDiskData(f.provider, f.state.disk.id, abort()); assert.equal(data.latest.risk, 'unknown'); assert.equal(data.history.length, 1);
+  assert.equal(data.latest.code, 'SMART_EXECUTION_TIMEOUT'); assert.ok(data.latest.collectedAt);
+});
+
+test('real shared batch permission revocation clears the consumer rather than keeping protected identities', async t => {
+  const f = await setup(t); await f.bind();
+  const review = await f.service.sshChannel.review(PLUGIN_ID, admin);
+  await f.service.sshChannel.approve({ pluginId: PLUGIN_ID, challenge: review.challenge, digest: review.digest, acknowledged: true }, admin);
+  const provider = { collectAll: args => f.provider.collectAll(args), collectionAll: args => { f.state.denied = true; return f.provider.collectionAll(args); } };
+  await assert.rejects(collectAll(provider, { requestId: createRequestId(globalThis.crypto), signal: abort(), intervalMs: 50, timeoutMs: 5000 }), { code: 'SMART_BATCH_FORBIDDEN' });
+});
+
+test('actual Settings global button crosses shared HTTP once without making configuration dirty', async t => {
+  const f = await setup(t); await f.bind();
+  const review = await f.service.sshChannel.review(PLUGIN_ID, admin);
+  await f.service.sshChannel.approve({ pluginId: PLUGIN_ID, challenge: review.challenge, digest: review.digest, acknowledged: true }, admin);
+  const React = requireFramework('react'), ReactDOM = requireFramework('react-dom');
+  const previous = { window: globalThis.window, document: globalThis.document }; globalThis.window = f.win; globalThis.document = f.win.document;
+  const plugin = createPlugin({ React, win: f.win, options: { diskSmartInfo: { provider: f.provider } } }); let stop;
+  const root = f.win.document.createElement('div'); f.win.document.body.append(root);
+  try {
+    await plugin.store.load(); stop = plugin.activate();
+    ReactDOM.render(React.createElement(plugin.Settings, { locale: 'zh-CN', preferences: plugin.store.getDraft() }), root);
+    await new Promise(resolve => setTimeout(resolve, 30)); assert.equal(f.state.runs, 0);
+    root.querySelector('[data-smart-collect-all]').click(); root.querySelector('[data-smart-collect-all]').click();
+    assert.equal(root.querySelector('[data-smart-collect-all]').disabled, true);
+    const end = Date.now() + 5000;
+    while (!root.querySelector('.pk-smart-global').textContent.includes('批次采集已完成') && Date.now() < end) await new Promise(resolve => setTimeout(resolve, 30));
+    assert.match(root.querySelector('.pk-smart-global').textContent, /批次采集已完成/); assert.equal(f.state.runs, 1);
+    assert.equal(root.querySelectorAll('.pk-smart-global tbody tr').length, 1); assert.equal(plugin.store.status().dirty, false);
+    stop(); stop = null; assert.equal(root.querySelector('[data-smart-collect-all]').disabled, true);
+  } finally { stop?.(); ReactDOM.unmountComponentAtNode(root); plugin.store.dispose(); globalThis.window = previous.window; globalThis.document = previous.document; }
+});
+
+test('real shared inventory permits unbound virtual examples but revoked Tower access removes the example', async t => {
+  const f = await setup(t); f.state.disk.model = 'VMware_Virtual_SATA_Hard_Drive';
+  f.state.disk.serial = null; f.state.disk.path = null; f.state.disk.host = null;
+  let resolved = 0, latest = 0, history = 0;
+  const provider = { ...f.provider, resolveDisk: args => { resolved++; return f.provider.resolveDisk(args); },
+    readLatest: args => { latest++; return f.provider.readLatest(args); }, readHistory: args => { history++; return f.provider.readHistory(args); } };
+  const result = await loadDiskData(provider, f.state.disk.id, abort());
+  assert.equal(result.virtualDemo, true); assert.equal(result.inventory.model, f.state.disk.model);
+  assert.equal(result.identity, undefined); assert.equal(result.example.collectedAt, undefined);
+  assert.equal(resolved, 0); assert.equal(latest, 0); assert.equal(history, 0); assert.equal(f.state.runs, 0);
+  f.state.denied = true; await assert.rejects(loadDiskData(provider, f.state.disk.id, abort()), error => error.status === 403);
+  assert.equal(f.state.runs, 0);
 });

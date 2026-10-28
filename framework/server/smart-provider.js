@@ -19,8 +19,8 @@ const actorCheck = actor => { if (!actor || !text(actor.id, 128) || !['tower', '
 const admin = actor => { actorCheck(actor); if (actor.admin !== true) throw failure('ADMIN_REQUIRED', 403); };
 const cancelled = signal => { if (signal?.aborted) throw failure('SMART_EXECUTION_CANCELLED', 409); };
 
-export function createSmartProvider(directory, { readDisk, vault, history = createSmartHistory(directory), pluginStatus } = {}) {
-  if (typeof readDisk !== 'function' || typeof pluginStatus !== 'function' || !vault || typeof vault.get !== 'function' || !history || !['append', 'latest', 'page'].every(name => typeof history[name] === 'function')) throw failure('SMART_PROVIDER_REQUIRED');
+export function createSmartProvider(directory, { readDisk, readDiskInventory = readDisk, vault, history = createSmartHistory(directory), pluginStatus } = {}) {
+  if (typeof readDisk !== 'function' || typeof readDiskInventory !== 'function' || typeof pluginStatus !== 'function' || !vault || typeof vault.get !== 'function' || !history || !['append', 'latest', 'page'].every(name => typeof history[name] === 'function')) throw failure('SMART_PROVIDER_REQUIRED');
   const root = path.join(path.resolve(directory), 'smart-provider'), disk = storage(root), keyFile = path.join(root, 'key.json'), bindingsFile = path.join(root, 'bindings.json');
   async function readJson(file, max, fallback) {
     try {
@@ -57,17 +57,17 @@ export function createSmartProvider(directory, { readDisk, vault, history = crea
     let plugin; try { plugin = await pluginStatus(pluginId); } catch { throw failure('SMART_PLUGIN_STATUS_UNAVAILABLE'); }
     if (!plugin?.installed || !plugin.active || !['ssh.channel.use', 'disk.smart.read', 'inventory.read'].every(permission => plugin.manifest?.permissions?.includes(permission)) || !plugin.manifest.ssh?.commands?.some(command => command.operation === operation)) throw failure('SMART_PLUGIN_DISABLED', 403);
   }
-  async function authorized(diskId, actor, signal) {
+  async function authorized(diskId, actor, signal, inventoryOnly = false) {
     actorCheck(actor); if (!identifier(diskId)) throw failure('SMART_DISK_REQUEST_INVALID', 400); cancelled(signal);
     let timer, abort;
     try {
       const tower = await Promise.race([
-        Promise.resolve().then(() => readDisk({ diskId, actor, ...(signal ? { signal } : {}) })),
+        Promise.resolve().then(() => (inventoryOnly ? readDiskInventory : readDisk)({ diskId, actor, ...(signal ? { signal } : {}) })),
         new Promise((_, reject) => { timer = setTimeout(() => reject(failure('SMART_DISK_READ_TIMEOUT')), 8000); timer.unref?.(); }),
         new Promise((_, reject) => { if (signal) { abort = () => reject(failure('SMART_EXECUTION_CANCELLED', 409)); signal.addEventListener('abort', abort, { once: true }); if (signal.aborted) abort(); } }),
       ]);
       cancelled(signal);
-      if (!tower || tower.id !== diskId || !identifier(tower.hostId) || !text(tower.serial, 256) || !text(tower.path, 256) || !text(tower.model, 512)) throw failure('SMART_DISK_RESPONSE_INVALID');
+      if (!tower || tower.id !== diskId || !text(tower.model, 512) || !inventoryOnly && (!identifier(tower.hostId) || !text(tower.serial, 256) || !text(tower.path, 256))) throw failure('SMART_DISK_RESPONSE_INVALID');
       return tower;
     } catch (error) {
       if (error.message === 'AUTHENTICATION_REQUIRED' || error.status === 401) throw failure('AUTHENTICATION_REQUIRED', 401);
@@ -116,11 +116,26 @@ export function createSmartProvider(directory, { readDisk, vault, history = crea
     }
   }
   return {
+    async readInventory(input) {
+      if (!exact(input, ['pluginId', 'diskId', 'actor', 'signal'])) throw failure('SMART_DISK_REQUEST_INVALID', 400);
+      actorCheck(input.actor); await allowed(input.pluginId);
+      const tower = await authorized(input.diskId, input.actor, input.signal, true);
+      return { schemaVersion: 1, disk: { diskId: tower.id, model: tower.model } };
+    },
     async resolveDisk(input) { const { identity } = await readContext(input, false); return identity; },
     async collectionTarget(input) {
       admin(input?.actor);
       const { row } = await readContext(input);
       return { profileHostId: row.profileHostId, deviceId: row.deviceId, generation: row.generation, bindingToken: row.bindingToken };
+    },
+    async collectionCandidates(input) {
+      if (!exact(input, ['pluginId', 'actor'])) throw failure('SMART_DISK_REQUEST_INVALID', 400);
+      admin(input.actor); await allowed(input.pluginId);
+      return disk.locked(async () => {
+        const secret = await key(), rows = Object.values((await bindingsData(secret)).items);
+        if (rows.length > 100) throw failure('SMART_BATCH_TARGET_LIMIT', 409);
+        return { items: rows.map(row => ({ diskId: row.diskId, generation: row.generation, profileHostId: row.profileHostId, deviceId: row.deviceId, bindingToken: row.bindingToken })) };
+      });
     },
     async readLatest(input) {
       const { identity } = await readContext(input);

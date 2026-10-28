@@ -188,3 +188,29 @@ test('target-limit and unavailable registration reasons block approval even with
   assert.match(document.body.textContent, /SSH_TARGET_LIMIT/); assert.match(document.body.textContent, /SSH_TARGET_UNAVAILABLE/);
   assert.equal(calls.filter(call => call.method === 'POST').length, 0);
 });
+
+const executionCases = [
+  { result: 'failed', code: 'SSH_REMOTE_COMMAND_FAILED', zh: /SSH 认证已完成 · 远程命令失败/, en: /SSH authenticated · Remote command failed/, health: /不能据此判定磁盘损坏/, healthEn: /does not establish disk damage/ },
+  { result: 'failed', code: 'SSH_AUTHENTICATION_FAILED', zh: /SSH 认证失败/, en: /SSH authentication failed/ },
+  { result: 'failed', code: 'SSH_HOST_KEY_MISMATCH', zh: /主机指纹不匹配/, en: /Host key mismatch/ },
+  { result: 'failed', code: 'SSH_CONNECTION_FAILED', zh: /执行结果未完成或待确认/, en: /Execution incomplete or unconfirmed/ },
+  { result: 'failed', code: 'SSH_EXECUTION_TIMEOUT', zh: /执行结果未完成或待确认/, en: /Execution incomplete or unconfirmed/ },
+  { result: 'success', zh: /远程命令已完成/, en: /Remote command completed/, health: /命令完成不等于磁盘健康/, healthEn: /Command completion does not establish disk health/ },
+  { code: 'SSH_REMOTE_COMMAND_FAILED', zh: /执行结果未完成或待确认/, en: /Execution incomplete or unconfirmed/ },
+  { result: 'success', code: 'SSH_REMOTE_COMMAND_FAILED', zh: /执行结果未完成或待确认/, en: /Execution incomplete or unconfirmed/ },
+];
+for (const [index, item] of executionCases.entries()) test(`execution stage ${index + 1} distinguishes authentication, command outcome and health in both languages without requests`, async t => {
+  const { calls, render } = await mount(t, { state: snapshot({ recentRuns: [{ id: 'example-run', pluginId: id, commandId: 'read.smart', finishedAt: '2026-01-01T00:00:00.000Z', result: item.result, code: item.code }] }) });
+  const result = () => document.querySelector('.pk-ssh-run-result');
+  assert.match(result().textContent, item.zh);
+  if (item.health) assert.match(result().textContent, item.health);
+  else assert.match(result().textContent, /设备健康/);
+  if (index !== 0) assert.doesNotMatch(result().textContent, /SSH 认证已完成/);
+  assert.equal(result().querySelector('code').textContent, item.code || item.result);
+  assert.equal(document.querySelector('.pk-ssh-verified'), null);
+  await render('en-US'); assert.match(result().textContent, item.en);
+  if (item.healthEn) assert.match(result().textContent, item.healthEn);
+  else assert.match(result().textContent, /device health/);
+  if (index !== 0) assert.doesNotMatch(result().textContent, /SSH authenticated/);
+  assert.deepEqual(calls.map(call => [call.route, call.method]), [['/ssh-channel', 'GET']]);
+});

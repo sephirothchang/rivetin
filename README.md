@@ -12,7 +12,7 @@ smartx-extensions/
 ├── LICENSE
 ├── docs/                     # 共享开发规范与配置 API
 ├── cli/                      # 三平台自包含 CLI、版本适配与安装恢复
-├── catalog/                  # GitHub 子插件版本及发布包清单
+├── catalog/                  # 官网子插件版本及发布包清单
 ├── framework/                # Rivetin 框架、管理服务、CLI 与部署
 └── plugins/
     ├── README.md

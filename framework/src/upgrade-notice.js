@@ -20,7 +20,7 @@ export function installUpgradeNotice({ win, getState, getLocale = () => win.docu
     if (stopped) return false;
     let state;
     try { state = getState(); } catch { remove(); return false; }
-    const route = /^#\/upgrade-center\/?(?:\?|$)/.test(win.location.hash);
+    const route = /^#\/(?:upgrade-center|settings\/upgrade-management)\/?(?:\?|$)/.test(win.location.hash);
     if (!route || state?.enabled !== true || !Array.isArray(state.plugins) || !state.plugins.some(plugin => plugin?.installed === true && (plugin.enabled === true || plugin.active === true))) { remove(); return false; }
     const title = heading(document);
     if (!title) { remove(); return false; }

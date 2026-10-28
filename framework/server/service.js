@@ -10,12 +10,13 @@ import { createSshBroker } from './ssh-broker.js';
 import { checkCompatibility, assertCompatible } from './compatibility.js';
 import { createSmartProvider } from './smart-provider.js';
 import { createSmartCollection } from './smart-collection.js';
+import { createSmartBatch } from './smart-batch.js';
 import { createResourceActions } from './resource-actions.js';
 import { createSshInventory } from './tower-inventory.js';
 import { createSshPreflight } from './ssh-preflight.js';
 
 const missing = { installed: false, enabled: false, version: null, packageId: null, previous: null };
-export function createService(directory, { towerSink, updateSource, builtinPackages = [], sshRun, sshPreflightTransport, towerBuild, towerVersionProvider, readDisk, towerRequest } = {}) {
+export function createService(directory, { towerSink, updateSource, builtinPackages = [], sshRun, sshPreflightTransport, towerBuild, towerVersionProvider, readDisk, readDiskInventory, towerRequest } = {}) {
   const disk = storage(directory), runtimeDisk = storage(path.join(disk.root, 'framework'));
   const frameworkFile = path.join(disk.root, 'framework', 'settings.json'), disabledFile = path.join(disk.root, 'framework', 'disabled.json');
   const sshRevocationFile = path.join(disk.root, 'framework', 'ssh-revocation.json');
@@ -45,8 +46,9 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
     prepareResultContext: async input => smart && input.operation === 'disk.smart.read' ? (await smartReady()).prepareResultContext(input) : undefined,
     onResult: async (item, context, options) => smart && context ? (await smartReady()).onResult(item, context, options) : undefined,
   });
-  if (readDisk) smart = createSmartProvider(disk.root, { readDisk, vault, pluginStatus });
+  if (readDisk) smart = createSmartProvider(disk.root, { readDisk, readDiskInventory, vault, pluginStatus });
   const collection = smart ? createSmartCollection(disk.root, { provider: smart, broker: ssh }) : null;
+  const batch = smart ? createSmartBatch(disk.root, { provider: smart, broker: ssh, collection }) : null;
   async function smartReady() {
     if (!smart) throw Object.assign(new Error('SMART_PROVIDER_UNAVAILABLE'), { status: 503 });
     if ((await compatibilityContext({ fresh: true })).towerBuild !== '4.9.0') throw Object.assign(new Error('SMART_TOWER_UNSUPPORTED'), { status: 503 });
@@ -123,6 +125,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
     root: disk.root,
     sshChannel: ssh,
     smartCollection: { stop: () => collection?.stop(), drain: () => collection?.drain() },
+    smartBatch: { stop: () => batch?.stop(), drain: () => batch?.drain() },
     sshPreflight: {
       discover(input) { if (!preflight) throw Object.assign(new Error('SSH_PREFLIGHT_UNAVAILABLE'), { status: 503 }); return preflight.discover(input); },
       confirm(input) { if (!preflight) throw Object.assign(new Error('SSH_PREFLIGHT_UNAVAILABLE'), { status: 503 }); return preflight.confirm(input); },
@@ -147,11 +150,14 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
       });
     },
     smartData: {
+      async readInventory(input) { return (await smartReady()).readInventory(input); },
       async resolveDisk(input) { return (await smartReady()).resolveDisk(input); },
       async readLatest(input) { return (await smartReady()).readLatest(input); },
       async readHistory(input) { return (await smartReady()).readHistory(input); },
       async collect(input) { await smartReady(); return collection.submit(input); },
       async collection(input) { await smartReady(); return collection.get(input); },
+      async collectAll(input) { await smartReady(); return batch.submit(input); },
+      async collectionAll(input) { await smartReady(); return batch.get(input); },
       async bindings(actor) { if (!actor?.admin) throw Object.assign(new Error('ADMIN_REQUIRED'), { status: 403 }); return (await smartReady()).bindings(actor); },
     },
     resourceActions: {
@@ -192,7 +198,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
     },
     async initialize(actor, { upgradeFrom } = {}) {
       actorCheck(actor);
-      if (upgradeFrom !== undefined && (upgradeFrom !== '0.1.0' || FRAMEWORK_VERSION !== '0.1.1')) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
+      if (upgradeFrom !== undefined && (!['0.1.0', '0.1.1', '0.1.2', '0.1.3'].includes(upgradeFrom) || FRAMEWORK_VERSION !== '0.1.4')) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
       return disk.locked(() => runtimeDisk.locked(async () => {
         await mkdir(path.dirname(frameworkFile), { recursive: true });
         const created = !(await exists(frameworkFile));
@@ -200,7 +206,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
         if (created && upgradeFrom !== undefined) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
         if (!created) {
           const stored = await json(frameworkFile);
-          if (stored.apiVersion !== 1 || !['0.1.0', FRAMEWORK_VERSION].includes(stored.version)) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
+          if (stored.apiVersion !== 1 || !['0.1.0', '0.1.1', '0.1.2', '0.1.3', FRAMEWORK_VERSION].includes(stored.version)) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
           if (upgradeFrom !== undefined && !(await exists(disabledFile))) throw new Error('FRAMEWORK_DISABLE_BEFORE_UPGRADE');
           if (stored.version !== FRAMEWORK_VERSION) {
             if (upgradeFrom !== stored.version) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
@@ -271,7 +277,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
         const catalog = updateSource.market ? await updateSource.market() : (await updateSource.catalog()).filter(item => item.status === 'published'), items = [];
         for (const id of await pluginIds()) {
           const installed = await state(id), candidate = catalog.find(item => item.id === id);
-          if (installed.installed && candidate) items.push({ id: id, version: candidate.version, available: newer(candidate.version, installed.version), downloadable: Boolean(candidate.assetId) });
+          if (installed.installed && candidate) items.push({ id: id, version: candidate.version, available: newer(candidate.version, installed.version), downloadable: Boolean(candidate.downloadPath) });
         }
         return { items, checkedAt: new Date().toISOString() };
       });

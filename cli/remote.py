@@ -29,6 +29,8 @@ IMAGE = 'registry.smtx.io/cloudtower/tower:v4.9.0-rc-20260517114030'
 # thirty seconds after a successful Pod rollout for init and ingress readback.
 APPLY_ROLLOUT_SECONDS = 270
 APPLY_ROLLOUT_PROCESS_SECONDS = 280
+KNOWN_METADATA_VERSIONS = ('0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4')
+METADATA_UPGRADES = {('0.1.0', '0.1.1'), ('0.1.0', '0.1.2'), ('0.1.1', '0.1.2'), ('0.1.0', '0.1.3'), ('0.1.1', '0.1.3'), ('0.1.2', '0.1.3'), ('0.1.0', '0.1.4'), ('0.1.1', '0.1.4'), ('0.1.2', '0.1.4'), ('0.1.3', '0.1.4')}
 
 def fail(code):
     raise RuntimeError(code)
@@ -271,7 +273,7 @@ def framework_metadata():
     if not file.exists():
         return None
     stored = json.loads(file.read_text())
-    if not isinstance(stored, dict) or type(stored.get('apiVersion')) is not int or stored['apiVersion'] != 1 or stored.get('version') not in ['0.1.0', '0.1.1']:
+    if not isinstance(stored, dict) or type(stored.get('apiVersion')) is not int or stored['apiVersion'] != 1 or stored.get('version') not in KNOWN_METADATA_VERSIONS:
         fail('FRAMEWORK_MIGRATION_REQUIRED')
     return dict(apiVersion=1, version=stored['version'])
 
@@ -280,7 +282,7 @@ def saved_framework_metadata(backup):
     if not file.exists():
         return None  # Legacy recovery records never authorize a metadata change.
     stored = json.loads(file.read_text())
-    if stored is not None and (not isinstance(stored, dict) or set(stored) != {'apiVersion', 'version'} or type(stored['apiVersion']) is not int or stored['apiVersion'] != 1 or stored['version'] not in ['0.1.0', '0.1.1']):
+    if stored is not None and (not isinstance(stored, dict) or set(stored) != {'apiVersion', 'version'} or type(stored['apiVersion']) is not int or stored['apiVersion'] != 1 or stored['version'] not in KNOWN_METADATA_VERSIONS):
         fail('FRAMEWORK_MIGRATION_REQUIRED')
     return stored
 
@@ -433,9 +435,9 @@ def apply(req, backup):
     if not (backup / 'framework-version-before.json').is_file():
         fail('FRAMEWORK_MIGRATION_REQUIRED')
     before_version = saved_framework_metadata(backup)
-    if package.get('name') != 'rivetin' or target_version not in ['0.1.0', '0.1.1']:
+    if package.get('name') != 'rivetin' or target_version not in KNOWN_METADATA_VERSIONS:
         fail('FRAMEWORK_MIGRATION_REQUIRED')
-    if before_version and before_version['version'] != target_version and (before_version['version'], target_version) != ('0.1.0', '0.1.1'):
+    if before_version and before_version['version'] != target_version and (before_version['version'], target_version) not in METADATA_UPGRADES:
         fail('FRAMEWORK_MIGRATION_REQUIRED')
     if target.exists():
         # Compare with the shipped archive, not a mutable on-disk inventory.
@@ -477,7 +479,7 @@ def rollback(backup):
     with snapshot_locks():
         current = framework_metadata()
         if previous and current and previous != current:
-            if (previous['version'], current['version']) != ('0.1.0', '0.1.1'):
+            if (previous['version'], current['version']) not in METADATA_UPGRADES:
                 fail('FRAMEWORK_MIGRATION_REQUIRED')
             file = BASE / 'data' / 'framework' / 'settings.json'
             stored = json.loads(file.read_text())

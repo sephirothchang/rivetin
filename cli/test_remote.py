@@ -112,7 +112,7 @@ class KubernetesFixture:
             else:
                 stored = json.loads(settings.read_text())
                 if stored['version'] != version:
-                    if args[-2:] != ('--upgrade-from', '0.1.0') or stored['version'] != '0.1.0' or version != '0.1.1':
+                    if args[-2:] != ('--upgrade-from', stored['version']) or (stored['version'], version) not in {('0.1.0', '0.1.1'), ('0.1.0', '0.1.2'), ('0.1.1', '0.1.2'), ('0.1.0', '0.1.3'), ('0.1.1', '0.1.3'), ('0.1.2', '0.1.3'), ('0.1.0', '0.1.4'), ('0.1.1', '0.1.4'), ('0.1.2', '0.1.4'), ('0.1.3', '0.1.4')}:
                         raise RuntimeError('FRAMEWORK_MIGRATION_REQUIRED')
                     stored['version'] = version
                     settings.write_text(json.dumps(stored))
@@ -356,17 +356,153 @@ class RemoteTests(unittest.TestCase):
                 raise RuntimeError('EXAMPLE_POST_INIT_TRANSPORT_FAILURE')
             return self.kube(*args, **kw)
 
-        data = archive([('server/main.js', b'// NEXT'), ('package.json', b'{"name":"rivetin","version":"0.1.1"}')])
+        data = archive([('server/main.js', b'// NEXT'), ('package.json', b'{"name":"rivetin","version":"0.1.4"}')])
         with patch.object(remote, 'kube', execute):
             with self.assertRaisesRegex(RuntimeError, 'EXAMPLE_POST_INIT_TRANSPORT_FAILURE'):
                 self.apply('update', service=data)
-        self.assertEqual(json.loads(settings.read_text())['version'], '0.1.1')
+        self.assertEqual(json.loads(settings.read_text())['version'], '0.1.4')
         self.assertEqual(json.loads((self.base / 'backups' / self.op / 'state.json').read_text())['phase'], 'applying')
         remote.handle({'action': 'rollback', 'operation': self.op})
         self.assertEqual(json.loads(settings.read_text()), dict(apiVersion=1, version='0.1.0', initializedAt='EXAMPLE_TIME', towerBuild='4.9.0'))
         self.assertEqual(config.read_bytes(), before)
         self.assertFalse(remote.pending())
         self.assertTrue((settings.parent / 'disabled.json').exists())
+
+    def test_both_known_sources_upgrade_to_012_and_rollback_preserves_current_approval_bytes(self):
+        config = self.installed()
+        settings = self.base / 'data/framework/settings.json'
+        approvals = self.base / 'data/ssh-channel/approvals.json'
+        approvals.parent.mkdir(exist_ok=True)
+        for source, operation in [('0.1.0', 'b' * 32), ('0.1.1', 'c' * 32)]:
+            with self.subTest(source=source):
+                original = dict(apiVersion=1, version=source, initializedAt='EXAMPLE_TIME', towerBuild='4.9.0')
+                settings.write_text(json.dumps(original))
+                before_config = config.read_bytes()
+                approvals.write_text('{"EXAMPLE_APPROVAL_STATE":"before-upgrade"}')
+                self.op = operation
+                self.begin('update')
+                data = archive([('server/main.js', b'// NEXT_012'), ('package.json', b'{"name":"rivetin","version":"0.1.2"}')])
+                self.apply('update', service=data)
+                self.assertIn(('--upgrade-from', source), [args[-2:] for args, _ in self.kube.calls])
+                self.assertEqual(json.loads(settings.read_text()), dict(original, version='0.1.2'))
+                approvals.write_text('{"EXAMPLE_APPROVAL_STATE":"revoked-during-update"}')
+                remote.handle({'action': 'rollback', 'operation': self.op})
+                self.assertEqual(json.loads(settings.read_text()), original)
+                self.assertEqual(config.read_bytes(), before_config)
+                self.assertIn('revoked-during-update', approvals.read_text())
+                self.assertTrue((settings.parent / 'disabled.json').exists())
+
+    def test_012_same_version_is_idempotent_and_future_version_refused(self):
+        self.installed()
+        settings = self.base / 'data/framework/settings.json'
+        settings.write_text('{"apiVersion":1,"version":"0.1.2"}')
+        self.op = 'b' * 32
+        self.begin('update')
+        data = archive([('server/main.js', b'// SAME_012'), ('package.json', b'{"name":"rivetin","version":"0.1.2"}')])
+        self.apply('update', service=data)
+        self.assertNotIn('--upgrade-from', self.kube.calls[-1][0])
+        self.finish()
+        self.op = 'c' * 32
+        self.begin('update')
+        self.kube.calls.clear()
+        downgrade = archive([('server/main.js', b'// DOWNGRADE_011'), ('package.json', b'{"name":"rivetin","version":"0.1.1"}')])
+        with self.assertRaisesRegex(RuntimeError, 'FRAMEWORK_MIGRATION_REQUIRED'):
+            self.apply('update', service=downgrade)
+        self.assertFalse(self.kube.writes)
+        remote.handle({'action': 'rollback', 'operation': self.op})
+        settings.write_text('{"apiVersion":1,"version":"0.1.5"}')
+        self.op = 'd' * 32
+        self.kube.calls.clear()
+        with self.assertRaisesRegex(RuntimeError, 'FRAMEWORK_MIGRATION_REQUIRED'):
+            self.begin('update')
+        self.assertFalse(remote.pending())
+        self.assertFalse(self.kube.writes)
+
+    def test_all_known_sources_upgrade_to_013_with_metadata_only_rollback(self):
+        config = self.installed()
+        settings = self.base / 'data/framework/settings.json'
+        approvals = self.base / 'data/ssh-channel/approvals.json'
+        approvals.parent.mkdir(exist_ok=True)
+        for source, operation in [('0.1.0', 'b' * 32), ('0.1.1', 'c' * 32), ('0.1.2', 'd' * 32)]:
+            with self.subTest(source=source):
+                original = dict(apiVersion=1, version=source, initializedAt='EXAMPLE_TIME', towerBuild='4.9.0')
+                settings.write_text(json.dumps(original))
+                before_config = config.read_bytes()
+                approvals.write_text('{"approvals":{},"schedules":{},"EXAMPLE_REVOKED_STATE":true}')
+                self.op = operation
+                self.begin('update')
+                data = archive([('server/main.js', b'// NEXT_013'), ('package.json', b'{"name":"rivetin","version":"0.1.3"}')])
+                self.apply('update', service=data)
+                self.assertIn(('--upgrade-from', source), [args[-2:] for args, _ in self.kube.calls])
+                self.assertEqual(json.loads(settings.read_text()), dict(original, version='0.1.3'))
+                approvals.write_text('{"approvals":{},"schedules":{},"EXAMPLE_REVOKED_DURING_UPDATE":true}')
+                remote.handle({'action': 'rollback', 'operation': self.op})
+                self.assertEqual(json.loads(settings.read_text()), original)
+                self.assertEqual(config.read_bytes(), before_config)
+                self.assertIn('EXAMPLE_REVOKED_DURING_UPDATE', approvals.read_text())
+                self.assertTrue((settings.parent / 'disabled.json').exists())
+
+    def test_013_same_version_needs_no_migration_and_downgrade_is_rejected(self):
+        self.installed()
+        settings = self.base / 'data/framework/settings.json'
+        settings.write_text('{"apiVersion":1,"version":"0.1.3"}')
+        self.op = 'b' * 32
+        self.begin('update')
+        data = archive([('server/main.js', b'// SAME_013'), ('package.json', b'{"name":"rivetin","version":"0.1.3"}')])
+        self.apply('update', service=data)
+        self.assertNotIn('--upgrade-from', self.kube.calls[-1][0])
+        self.finish()
+        self.op = 'c' * 32
+        self.begin('update')
+        self.kube.calls.clear()
+        downgrade = archive([('server/main.js', b'// OLD_012'), ('package.json', b'{"name":"rivetin","version":"0.1.2"}')])
+        with self.assertRaisesRegex(RuntimeError, 'FRAMEWORK_MIGRATION_REQUIRED'):
+            self.apply('update', service=downgrade)
+        self.assertFalse(self.kube.writes)
+        remote.handle({'action': 'rollback', 'operation': self.op})
+
+    def test_all_known_sources_upgrade_to_014_with_metadata_only_rollback(self):
+        config = self.installed()
+        settings = self.base / 'data/framework/settings.json'
+        approvals = self.base / 'data/ssh-channel/approvals.json'
+        approvals.parent.mkdir(exist_ok=True)
+        for source, operation in [('0.1.0', 'b' * 32), ('0.1.1', 'c' * 32), ('0.1.2', 'd' * 32), ('0.1.3', 'e' * 32)]:
+            with self.subTest(source=source):
+                original = dict(apiVersion=1, version=source, initializedAt='EXAMPLE_TIME', towerBuild='4.9.0')
+                settings.write_text(json.dumps(original))
+                before_config = config.read_bytes()
+                approvals.write_text('{"approvals":{},"schedules":{},"EXAMPLE_REVOKED_STATE":true}')
+                self.op = operation
+                self.begin('update')
+                data = archive([('server/main.js', b'// NEXT_014'), ('package.json', b'{"name":"rivetin","version":"0.1.4"}')])
+                self.apply('update', service=data)
+                self.assertIn(('--upgrade-from', source), [args[-2:] for args, _ in self.kube.calls])
+                self.assertEqual(json.loads(settings.read_text()), dict(original, version='0.1.4'))
+                approvals.write_text('{"approvals":{},"schedules":{},"EXAMPLE_REVOKED_DURING_UPDATE":true}')
+                remote.handle({'action': 'rollback', 'operation': self.op})
+                self.assertEqual(json.loads(settings.read_text()), original)
+                self.assertEqual(config.read_bytes(), before_config)
+                self.assertIn('EXAMPLE_REVOKED_DURING_UPDATE', approvals.read_text())
+                self.assertTrue((settings.parent / 'disabled.json').exists())
+
+    def test_014_same_version_needs_no_migration_and_downgrade_is_rejected(self):
+        self.installed()
+        settings = self.base / 'data/framework/settings.json'
+        settings.write_text('{"apiVersion":1,"version":"0.1.4"}')
+        self.op = 'b' * 32
+        self.begin('update')
+        data = archive([('server/main.js', b'// SAME_014'), ('package.json', b'{"name":"rivetin","version":"0.1.4"}')])
+        self.apply('update', service=data)
+        self.assertNotIn('--upgrade-from', self.kube.calls[-1][0])
+        self.finish()
+        self.op = 'c' * 32
+        self.begin('update')
+        self.kube.calls.clear()
+        downgrade = archive([('server/main.js', b'// OLD_012'), ('package.json', b'{"name":"rivetin","version":"0.1.2"}')])
+        with self.assertRaisesRegex(RuntimeError, 'FRAMEWORK_MIGRATION_REQUIRED'):
+            self.apply('update', service=downgrade)
+        self.assertFalse(self.kube.writes)
+        remote.handle({'action': 'rollback', 'operation': self.op})
 
     def test_unmanaged_resources_and_owner_marker_refused(self):
         item = manifest('0' * 64)['items'][1]

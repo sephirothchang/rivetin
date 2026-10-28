@@ -4,6 +4,23 @@ export function collectionText(value, locale) {
   if (value.status === 'succeeded') return text(locale, '采集任务已完成。', 'Collection completed.');
   if (value.code === 'SMART_COLLECTION_WAIT_CANCELLED') return text(locale, '已停止页面等待，后台采集可能继续；请重新读取或联系管理员核实。', 'Stopped waiting. Collection may continue in the background; reload or ask an administrator to verify.');
   const reasons = {
+    SMART_BATCH_NO_TARGETS: ['没有已绑定的磁盘，未发起全局采集。请配置可信设备绑定。', 'No disks are bound. Global collection was not started. Configure trusted device bindings.'],
+    SMART_BATCH_NO_APPROVED_TARGETS: ['没有获批的采集目标，未发起全局采集。请联系管理员审核。', 'No collection targets are approved. Global collection was not started. Ask an administrator to review approvals.'],
+    SMART_BATCH_TARGET_LIMIT: ['采集目标超过 100 个，未发起批次；不会静默忽略超出部分。请联系管理员调整范围。', 'There are more than 100 targets. No batch was started or silently truncated. Ask an administrator to adjust the scope.'],
+    SMART_BATCH_NOT_APPROVED: ['该目标未获得有效采集授权，未执行。', 'This target lacks a valid collection approval and was skipped.'],
+    SMART_BATCH_AMBIGUOUS_COMMAND: ['该目标没有唯一的已批准采集声明，未执行。', 'This target has no unique approved collection declaration and was skipped.'],
+    SMART_BATCH_SNAPSHOT_CHANGED: ['目标绑定或审批已变化，未跟随新目标执行。', 'The binding or approval changed. Execution did not follow a new target.'],
+    SMART_COLLECTION_SNAPSHOT_CHANGED: ['目标绑定或审批已变化，本次采集未继续。', 'The binding or approval changed. This collection did not continue.'],
+    SMART_BATCH_FORBIDDEN: ['没有读取该磁盘或批次的权限，请联系管理员。', 'Access to this disk or batch is denied. Contact an administrator.'],
+    SMART_BATCH_ACCESS_CHANGED: ['磁盘绑定或读取权限已变化，已清空批次展示。请核实。', 'The disk binding or read access changed. Batch details were cleared. Verify access.'],
+    SMART_BATCH_TARGET_UNAVAILABLE: ['采集目标暂不可用，未执行。', 'The collection target is unavailable and was skipped.'],
+    SMART_BATCH_CONFLICT: ['与已有采集任务冲突，未自动重试。请先核实运行状态。', 'Another collection conflicts with this target. It was not retried. Check the active task.'],
+    SMART_BATCH_BUSY: ['已有全局批次运行中，未发起新批次。请先核实运行状态。', 'A global batch is already running. No new batch was started. Check its status.'],
+    SMART_BATCH_DEADLINE: ['批次达到后台等待时限，尚未开始的目标未执行。', 'The batch reached its background deadline. Targets that had not started were skipped.'],
+    SMART_BATCH_INTERRUPTED: ['批次被中断，结果待确认。未自动重发命令。', 'The batch was interrupted and its outcome is unknown. Commands were not resent.'],
+    SMART_BATCH_CHILD_UNKNOWN: ['该磁盘的采集结果待确认，未自动重发命令。', 'This disk’s collection outcome is unknown. The command was not resent.'],
+    SMART_BATCH_CAPACITY_EXCEEDED: ['批次记录容量已满，未发起新批次。请联系管理员处理。', 'Batch record capacity is full. No new batch was started. Contact an administrator.'],
+    SMART_BATCH_NOT_FOUND: ['批次记录不可用，未重新发起采集。请联系管理员核实。', 'The batch record is unavailable. Collection was not resubmitted. Contact an administrator.'],
     SSH_APPROVAL_REQUIRED: ['采集命令尚未审核或授权已失效，请联系管理员审核。', 'The collection command is not approved, or approval expired. Ask an administrator to review it.'],
     SSH_REGISTRATION_CHANGED: ['采集声明已变化，需要管理员重新审核授权。', 'The collection declaration changed and requires administrator approval again.'],
     SSH_CHANNEL_DISABLED: ['统一 SSH 通道未启用或未配置，请联系管理员。', 'The shared SSH channel is disabled or unconfigured. Contact an administrator.'],
@@ -41,7 +58,7 @@ export function errorText(code, locale) {
     SMART_HISTORY_CURSOR_STALE: ['历史记录已更新，请重新读取首页后继续翻页。', 'History changed. Reload the first page before continuing.'],
     SMART_DISK_UNBOUND: ['该磁盘尚未绑定可信采集设备，请联系管理员。', 'This disk has no trusted collection binding. Contact an administrator.'],
     SMART_NO_SAMPLE: ['尚无采样，等待已授权的后台采集。', 'No sample yet. Await authorized background collection.'],
-    SMART_COLLECTION_FAILED: ['本次采集失败，健康状态未知。', 'Collection failed; health is unknown.'],
+    SMART_COLLECTION_FAILED: ['本次采集失败：SMART 数据不可用，健康状态未知。', 'Collection failed: SMART data is unavailable; health is unknown.'],
     SMART_EXECUTION_TIMEOUT: ['采集超时，健康状态未知。', 'Collection timed out; health is unknown.'],
     SMART_EXECUTION_CANCELLED: ['采集已取消，健康状态未知。', 'Collection was cancelled; health is unknown.'],
     SMART_IDENTITY_MISMATCH: ['采集设备身份不符，未使用该结果，健康状态未知。', 'Collected device identity did not match. The result was discarded; health is unknown.'],
@@ -51,6 +68,11 @@ export function errorText(code, locale) {
     SMART_UNAVAILABLE: ['没有可用采样，健康状态未知。', 'No sample is available; health is unknown.'],
   };
   return text(locale, ...(messages[code] || ['SMART 信息暂不可用。请联系管理员检查采集服务和对象权限后重试。', 'SMART information is unavailable. Ask an administrator to check collection and object access, then retry.']));
+}
+export function smartFailureGuidance(locale) {
+  return text(locale,
+    'SMART 读取失败不等于 SSH 认证失败，也不能据此判定坏盘。认证结果请查看 SSH 通道的独立检查。可能原因包括工具或命令问题、设备不提供 SMART，或虚拟化层未透传（例如某些 VMware 虚拟盘）；本页未确认具体原因。',
+    'A SMART read failure does not establish an SSH authentication failure or a damaged disk. See the SSH channel’s separate authentication check. Possible causes include tool or command issues, a device without SMART, or missing virtualization passthrough (for example, some VMware virtual disks). This page has not confirmed the cause.');
 }
 const names = {
   health: ['SMART 健康自检', 'SMART health assessment'],

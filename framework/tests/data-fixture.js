@@ -22,11 +22,11 @@ export async function smartFixture(t, { twoDevices = false } = {}) {
     return { id: diskId, hostId: 'example-host', serial: second ? 'EXAMPLE_SECOND_SERIAL' : serial, path: second ? '/dev/sdb' : '/dev/sda', model: 'Example disk' };
   }, sshRun: async ({ command }) => {
     commands.push(command);
-    runs++; if (failRun) throw new Error('SSH_EXECUTION_TIMEOUT');
+    runs++; if (typeof failRun === 'function' ? await failRun({ command }) : failRun) throw new Error('SSH_EXECUTION_TIMEOUT');
     const second = command.endsWith('/dev/sdb');
     return { stdout: JSON.stringify({ serial_number: second ? 'EXAMPLE_SECOND_SERIAL' : serial, device: { name: second ? '/dev/sdb' : '/dev/sda', protocol: 'ATA' }, smartctl: { exit_status: 0 }, smart_status: { passed: true }, temperature: { current: 35 }, power_on_time: { hours: 123 } }), stderr: '', exitCode: 0 };
   } });
-  t.after(async () => { await Promise.all([service.smartCollection.stop(), service.sshChannel.stop()]); if (!directory.startsWith(base + path.sep)) throw new Error('TEST_PATH_OUTSIDE_WORKSPACE'); await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }); });
+  t.after(async () => { await service.smartBatch?.stop(); await service.smartBatch?.drain(); await Promise.all([service.smartCollection.stop(), service.sshChannel.stop()]); if (!directory.startsWith(base + path.sep)) throw new Error('TEST_PATH_OUTSIDE_WORKSPACE'); await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }); });
   await service.initialize(caller);
   for (const id of ['rivetin-ssh-channel', smartId]) {
     const bytes = bundle(id, '0.1.0', pkg => {

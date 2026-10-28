@@ -4,9 +4,9 @@ const text = (value, limit) => typeof value === 'string' && value.length > 0 && 
 const devicePath = value => text(value, 256) && /^\/dev\/[A-Za-z0-9._/-]+$/.test(value) && value.slice(5).split('/').every(part => part && part !== '.' && part !== '..');
 const authenticated = actor => object(actor?.auth) && ['Authorization', 'Cookie'].some(name => text(actor.auth[name], name === 'Cookie' ? 16384 : 8192));
 
-// CloudTower 4.9 GetDisks returns Disk[]; host is one NestedHost object.
-// Keep this result server-side: command policy separately checks device paths.
-export function createTowerDiskReader({ request } = {}) {
+// Both projections use the same exact, caller-authenticated REST read. The
+// injected transport retains its timeout; neither projection retries or caches.
+function createReader(request, project) {
   if (typeof request !== 'function') throw new Error('TOWER_TRANSPORT_REQUIRED');
   return async function readDisk(input) {
     if (!object(input) || !identifier(input.diskId)) throw new Error('TOWER_DISK_REQUEST_INVALID');
@@ -19,8 +19,22 @@ export function createTowerDiskReader({ request } = {}) {
     if (result.length === 0) throw new Error('TOWER_DISK_NOT_FOUND');
     if (result.length !== 1) throw new Error('TOWER_DISK_AMBIGUOUS');
     const disk = result[0];
-    if (!object(disk) || disk.id !== diskId || !object(disk.host) || !identifier(disk.host.id) ||
-        !text(disk.serial, 256) || !devicePath(disk.path) || !text(disk.model, 512)) throw new Error('TOWER_DISK_RESPONSE_INVALID');
-    return { id: disk.id, hostId: disk.host.id, serial: disk.serial, path: disk.path, model: disk.model };
+    if (!object(disk) || disk.id !== diskId || !text(disk.model, 512)) throw new Error('TOWER_DISK_RESPONSE_INVALID');
+    return project(disk);
   };
+}
+
+// CloudTower 4.9 GetDisks returns Disk[]; host is one NestedHost object.
+// Keep this result server-side: command policy separately checks device paths.
+export function createTowerDiskReader({ request } = {}) {
+  return createReader(request, disk => {
+    if (!object(disk.host) || !identifier(disk.host.id) || !text(disk.serial, 256) || !devicePath(disk.path)) throw new Error('TOWER_DISK_RESPONSE_INVALID');
+    return { id: disk.id, hostId: disk.host.id, serial: disk.serial, path: disk.path, model: disk.model };
+  });
+}
+
+// Inventory may describe a virtual disk with no physical identity. It grants
+// no collection identity and must not be used as the strict reader above.
+export function createTowerDiskInventoryReader({ request } = {}) {
+  return createReader(request, disk => ({ id: disk.id, model: disk.model }));
 }

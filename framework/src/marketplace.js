@@ -12,6 +12,7 @@ const errors = {
   PLUGIN_COMPATIBILITY_UNDECLARED: ['插件未声明已验证版本，已停止安装。', 'The plugin has no verified version declaration; installation was stopped.'],
   UPDATE_METADATA_MISMATCH: ['安装包与市场清单的元数据不一致，已拒绝使用。', 'Package metadata differs from the published catalog and was rejected.'],
   MARKETPLACE_UNAVAILABLE: ['暂时无法连接插件市场，请稍后重试。', 'The marketplace is unavailable. Please retry later.'],
+  UPDATE_SOURCE_RATE_LIMITED: ['插件市场请求过于频繁，请稍后重试。', 'The marketplace is rate limited. Retry later.'],
   UPDATE_SOURCE_UNAVAILABLE: ['暂时无法连接插件市场，请稍后重试。', 'The marketplace is unavailable. Please retry later.'],
   UPDATE_SOURCE_ACCESS_REQUIRED: ['插件市场访问受限，请检查服务端更新源配置。', 'Marketplace access is restricted. Check the server-side source configuration.'],
   UPDATE_CATALOG_INVALID: ['市场清单无效，已停止安装。', 'The marketplace catalog is invalid; installation was stopped.'],

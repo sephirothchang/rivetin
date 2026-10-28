@@ -6,6 +6,7 @@ import { createSshVault } from './ssh-vault.js';
 
 const fixedError = error => /^(?:SSH_[A-Z_]+|ABORT_ERR)$/.test(error?.message || '') ? error.message : 'SSH_EXECUTION_FAILED';
 const systemActor = { id: 'ssh-scheduler', name: 'SSH scheduler', source: 'cli', admin: true };
+const sshCommandId = value => typeof value === 'string' && /^[a-z][a-z0-9.-]{0,63}$/.test(value);
 function ownerKeys(value) {
   if (Object.keys(value).some(id => !validId(id))) throw new Error('SSH_APPROVAL_STORE_INVALID');
   return value;
@@ -274,8 +275,24 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
         return { pluginId, commandId: commands[0].id, hostId: target.hostId, deviceId: target.deviceId, digest: registration.digest, approvalId: approval.id };
       });
     },
+    async snapshotSmartSelections(pluginId, actor) {
+      admin(actor); assertId(pluginId); await sync();
+      return disk.locked(async () => {
+        const registration = await current(pluginId), approval = (await state()).approvals[pluginId];
+        if (!approval?.id || approval.digest !== registration.digest) throw new Error('SSH_APPROVAL_REQUIRED');
+        const grouped = new Map();
+        for (const command of registration.commands.filter(item => item.operation === 'disk.smart.read')) for (const target of command.targets) {
+          const key = JSON.stringify([target.hostId, target.deviceId]), entries = grouped.get(key) || [];
+          entries.push({ pluginId, commandId: command.id, hostId: target.hostId, deviceId: target.deviceId, digest: registration.digest, approvalId: approval.id }); grouped.set(key, entries);
+          if (grouped.size > 100) throw new Error('SSH_TARGET_LIMIT');
+        }
+        const items = [], rejected = [];
+        for (const entries of grouped.values()) if (entries.length === 1) items.push(entries[0]); else rejected.push({ hostId: entries[0].hostId, deviceId: entries[0].deviceId, code: 'SSH_SMART_COMMAND_AMBIGUOUS' });
+        return { items, rejected };
+      });
+    },
     runTarget(selection, actor, { signal, requireSample = false } = {}) {
-      if (!selection || Object.keys(selection).sort().join() !== 'approvalId,commandId,deviceId,digest,hostId,pluginId' || typeof selection.digest !== 'string' || !/^[a-f0-9]{64}$/.test(selection.digest) || ![selection.approvalId, selection.commandId, selection.deviceId, selection.hostId].every(value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value))) return Promise.reject(new Error('SSH_TARGET_NOT_APPROVED'));
+      if (!selection || Object.keys(selection).sort().join() !== 'approvalId,commandId,deviceId,digest,hostId,pluginId' || typeof selection.digest !== 'string' || !/^[a-f0-9]{64}$/.test(selection.digest) || !sshCommandId(selection.commandId) || ![selection.approvalId, selection.deviceId, selection.hostId].every(value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value))) return Promise.reject(new Error('SSH_TARGET_NOT_APPROVED'));
       if (typeof requireSample !== 'boolean') return Promise.reject(new Error('SSH_TARGET_NOT_APPROVED'));
       return trackedExecute(selection.pluginId, selection.commandId, actor, false, selection, signal, requireSample);
     },

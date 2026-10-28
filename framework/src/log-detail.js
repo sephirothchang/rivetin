@@ -1,8 +1,9 @@
 const errors = {
-  UPDATE_SOURCE_ACCESS_REQUIRED: ['更新源访问被拒绝；私有仓库需要服务端访问凭据。', 'Update-source access was denied. A private repository requires server-side credentials.'],
-  UPDATE_SOURCE_UNAVAILABLE: ['无法连接 GitHub 更新源，请稍后重试或手动上传。', 'GitHub could not be reached. Retry or upload a package manually.'],
+  UPDATE_SOURCE_ACCESS_REQUIRED: ['官网更新源拒绝访问，请稍后重试或手动上传插件包。', 'Access to the website update source was denied. Retry or upload a package manually.'],
+  UPDATE_SOURCE_UNAVAILABLE: ['无法连接官网更新源，请稍后重试或手动上传。', 'The website update source could not be reached. Retry or upload a package manually.'],
+  UPDATE_SOURCE_RATE_LIMITED: ['更新源请求过于频繁，请稍后重试。', 'The update source is rate limited. Retry later.'],
   UPDATE_CHECKSUM_FAILED: ['下载内容的 SHA-256 与发布清单不一致，已拒绝使用。', 'The downloaded content does not match the catalog SHA-256 and was rejected.'],
-  UPDATE_CATALOG_INVALID: ['GitHub 版本清单格式无效。', 'The GitHub version catalog is invalid.'],
+  UPDATE_CATALOG_INVALID: ['官网版本清单格式无效。', 'The website version catalog is invalid.'],
   UPDATE_PACKAGE_UNPUBLISHED: ['该版本没有已发布的升级包。', 'This version has no published upgrade package.'],
   INVALID_SETTINGS: ['配置内容不符合插件的配置规则。', 'Settings do not match the plugin schema.'],
   CONFIGURATION_INVALID: ['已保存的配置无效，请检查或备份后重置。', 'Stored settings are invalid. Review or back up and reset them.'],

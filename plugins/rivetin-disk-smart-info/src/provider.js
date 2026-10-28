@@ -1,4 +1,5 @@
 import { normalizeSmart, compareMetrics, highestRisk } from './smart.js';
+import { isVirtualDiskModel, createVirtualDemo } from './virtual-demo.js';
 export const validId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
 export function validateIdentity(value, diskId) {
   if (!value || !validId(value.diskId) || value.diskId !== diskId || !validId(value.hostId) ||
@@ -38,6 +39,7 @@ export function withBaseline(sample, history) {
   return { sample: { ...sample, metrics, risk: highestRisk(metrics.map(metric => metric.risk)) }, previous };
 }
 export async function readHistoryPage(provider, result, cursor, signal, now = Date.now()) {
+  if (result.virtualDemo) throw new Error('VIRTUAL_DEMO_HAS_NO_HISTORY');
   cancelled(signal);
   const page = await provider.readHistory({ identity: result.identity, limit: 30, cursor, signal });
   cancelled(signal);
@@ -61,8 +63,14 @@ export async function readHistoryPage(provider, result, cursor, signal, now = Da
 }
 export async function loadDiskData(provider, diskId, signal, now = Date.now()) {
   if (!provider || !['resolveDisk', 'readLatest', 'readHistory'].every(key => typeof provider[key] === 'function')) throw new Error('SMART_PROVIDER_UNAVAILABLE');
+  if (typeof provider.readInventory === 'function') {
+    const value = await provider.readInventory({ diskId, signal }); cancelled(signal);
+    if (value?.schemaVersion !== 1 || !validId(value.disk?.diskId) || value.disk.diskId !== diskId || typeof value.disk.model !== 'string' || value.disk.model.length > 160) throw new Error('DISK_IDENTITY_UNVERIFIED');
+    if (isVirtualDiskModel(value.disk.model)) return createVirtualDemo(value.disk, now);
+  }
   const identity = validateIdentity(await provider.resolveDisk({ diskId, signal }), diskId);
   cancelled(signal);
+  if (isVirtualDiskModel(identity.model)) return createVirtualDemo({ diskId, model: identity.model }, now);
   const latest = validateSnapshot(await provider.readLatest({ identity, signal }), identity, now);
   cancelled(signal);
   const result = { identity, latest: withBaseline(latest, []).sample, history: [], previous: null, historyUnavailable: false, hasMore: false, nextCursor: null };

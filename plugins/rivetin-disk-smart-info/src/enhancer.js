@@ -41,7 +41,7 @@ export function installSmartInfo({ win, store, getLocale, provider, findDetail =
     }, collectNow);
   }
   function refresh() { return read(false); }
-  function loadMore() { return read(true); }
+  function loadMore() { if (!current?.state.result?.virtualDemo) return read(true); }
   async function read(more, expected) {
     if (!current || stopped || !matching(current.detail)) { unmount(); return; }
     if (current.state.collection?.status === 'running') return;
@@ -60,7 +60,7 @@ export function installSmartInfo({ win, store, getLocale, provider, findDetail =
       if (stopped || abort.signal.aborted || current !== session || sequence !== request) return;
       if (!matching(session.detail)) { unmount(); return; }
       if (expected && (!sameIdentity(result.identity, expected.identity) || result.latest.source !== expected.source)) throw new Error('SMART_GENERATION_CHANGED');
-      session.state = { result, selectedAt: more ? session.state.selectedAt : null, collection }; draw();
+      session.state = { result, selectedAt: more ? session.state.selectedAt : null, collection: result.virtualDemo ? undefined : collection }; draw();
     } catch (error) {
       if (!stopped && !abort.signal.aborted && current === session && sequence === request) {
         const code = errorCode(error);
@@ -70,7 +70,7 @@ export function installSmartInfo({ win, store, getLocale, provider, findDetail =
     } finally { win.clearTimeout(timeout); }
   }
   async function collectNow() {
-    if (!current || stopped || !current.open || !matching(current.detail) || !current.state.result || current.state.loading || current.state.historyLoading || current.state.collection?.status === 'running') return;
+    if (!current || stopped || !current.open || !matching(current.detail) || !current.state.result || current.state.result.virtualDemo || current.state.loading || current.state.historyLoading || current.state.collection?.status === 'running') return;
     const session = current, request = ++sequence, identity = Object.freeze({ ...session.state.result.identity }), source = session.state.result.latest.source;
     session.abort?.abort(); const abort = new win.AbortController(); session.collectionAbort = abort;
     session.state = { ...session.state, collection: { status: 'running' } }; draw();
@@ -81,7 +81,7 @@ export function installSmartInfo({ win, store, getLocale, provider, findDetail =
         onProgress: value => { if (active()) { session.state.collection = value; draw(); } } });
       if (!active()) return;
       session.state.collection = outcome; draw();
-      if (outcome.status === 'succeeded') await read(false, { identity, source });
+      if (outcome.status === 'succeeded' || outcome.status === 'failed' && outcome.operationId) await read(false, { identity, source });
     } catch (error) {
       if (!active()) return;
       const code = collectionCode(error), collection = { status: 'failed', code };

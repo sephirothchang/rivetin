@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { mkdtemp, mkdir, rm, readFile, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { createSmartCollection } from '../server/smart-collection.js';
+import { createSmartCollection, collectionSnapshotGuard } from '../server/smart-collection.js';
 import { createSshBroker } from '../server/ssh-broker.js';
 import { createSmartProvider } from '../server/smart-provider.js';
 
@@ -94,6 +94,37 @@ test('stop aborts only its accepted work and persists unknown instead of replayi
   const f = await fixture(t, { run: async (_, signal) => { started(); return new Promise(resolve => signal.addEventListener('abort', () => resolve({ items: [{ result: 'failed', code: 'SSH_EXECUTION_CANCELLED' }] }), { once: true })); } });
   const args = input(), operation = await f.collector.submit(args); await entered; await f.collector.stop();
   const next = createSmartCollection(f.root, f.opts); t.after(() => next.stop()); const result = await next.get({ ...f.query(args), operationId: operation.operationId }); assert.equal(result.status, 'unknown'); assert.equal(f.state.runs.length, 1);
+});
+
+test('internal expected snapshots bind the current approval and same-generation target without exposing raw tokens in markers', async t => {
+  const f = await fixture(t), args = input(), selection = await f.opts.broker.selectSmartTarget(args.pluginId, { hostId: f.state.target.profileHostId, deviceId: f.state.target.deviceId }, actor);
+  selection.commandId = 'smart.daily'; f.opts.broker.selectSmartTarget = async () => structuredClone(selection);
+  const expectedSnapshot = { target: structuredClone(f.state.target), selection }, guard = collectionSnapshotGuard(expectedSnapshot);
+  const operation = await f.collector.submit(args, { expectedSnapshot }); await f.collector.drain(); assert.equal((await f.collector.get({ ...f.query(args), operationId: operation.operationId })).status, 'succeeded');
+  const text = await readFile(path.join(f.root, 'smart-collection/operations.json'), 'utf8'); assert.ok(text.includes(guard)); assert.ok(!text.includes(f.state.target.bindingToken)); assert.ok(!text.includes(selection.approvalId));
+  f.state.target.bindingToken = 'e'.repeat(64); await assert.rejects(f.collector.submit(input(), { expectedSnapshot }), { message: 'SMART_COLLECTION_SNAPSHOT_CHANGED', status: 409 }); assert.equal(f.state.runs.length, 1);
+  await assert.rejects(f.collector.submit({ ...input(), expectedSnapshot }), { message: 'SMART_COLLECTION_REQUEST_INVALID', status: 400 });
+  for (const commandId of ['../smart', 'smart;id', 'smart\nreboot', '.smart', '/smart']) assert.throws(() => collectionSnapshotGuard({ target: expectedSnapshot.target, selection: { ...selection, commandId } }), /SMART_COLLECTION_SNAPSHOT_INVALID/);
+});
+
+test('a new approval between expected snapshot admission and asynchronous launch cannot transfer execution', async t => {
+  const f = await fixture(t), args = input(), selection = await f.opts.broker.selectSmartTarget(args.pluginId, { hostId: f.state.target.profileHostId, deviceId: f.state.target.deviceId }, actor), expectedSnapshot = { target: structuredClone(f.state.target), selection }; let calls = 0;
+  f.opts.broker.selectSmartTarget = async () => ({ ...selection, approvalId: ++calls === 1 ? selection.approvalId : randomUUID() });
+  const operation = await f.collector.submit(args, { expectedSnapshot }); await f.collector.drain(); const value = await f.collector.get({ ...f.query(args), operationId: operation.operationId }); assert.equal(value.status, 'failed'); assert.equal(value.code, 'SMART_COLLECTION_SNAPSHOT_CHANGED'); assert.equal(f.state.runs.length, 0);
+});
+
+test('internal batch cancellation aborts only its accepted single child', async t => {
+  let began; const started = new Promise(resolve => { began = resolve; });
+  const f = await fixture(t, { run: async (_, signal) => { began(); return new Promise(resolve => signal.addEventListener('abort', () => resolve({ items: [{ result: 'failed', code: 'SSH_EXECUTION_CANCELLED' }] }), { once: true })); } }), controller = new AbortController(), args = input();
+  const operation = await f.collector.submit(args, { signal: controller.signal }); await started; controller.abort(); await f.collector.drain(); const value = await f.collector.get({ ...f.query(args), operationId: operation.operationId }); assert.equal(value.status, 'failed'); assert.equal(value.code, 'SMART_EXECUTION_CANCELLED'); assert.equal(f.state.runs.length, 1);
+});
+
+test('stop during a single request preflight does not admit a late task', async t => {
+  const f = await fixture(t), original = f.opts.provider.collectionTarget; let release, entered;
+  const hold = new Promise(resolve => { release = resolve; }), began = new Promise(resolve => { entered = resolve; });
+  f.opts.provider.collectionTarget = async args => { entered(); await hold; return original(args); };
+  const request = f.collector.submit(input()), rejected = assert.rejects(request, { message: 'SMART_COLLECTION_STOPPED', status: 503 }); await began; await f.collector.stop(); release(); await rejected;
+  assert.equal(f.state.runs.length, 0); await assert.rejects(readFile(path.join(f.root, 'smart-collection/operations.json')), { code: 'ENOENT' });
 });
 
 test('an overdue in-flight status becomes unknown and does not replay even if its original worker returns later', async t => {

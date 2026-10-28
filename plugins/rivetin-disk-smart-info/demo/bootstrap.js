@@ -3,11 +3,12 @@ import ReactDOM from 'react-dom';
 import createPlugin from '../src/definition.js';
 import { defaults } from '../src/configuration.js';
 import { disks, createMockProvider } from './fixtures.js';
+import { createMockBatchProvider } from './global-fixture.js';
 let locale = 'zh-CN', scope = 'clusters', selected = disks[0], scenario = 'ok', active = true;
 let stored = { revision: 0, updatedAt: null, settings: defaults() };
 const copy = value => JSON.parse(JSON.stringify(value));
 const backend = { load: async () => copy(stored), save: async settings => { stored = { revision: stored.revision + 1, updatedAt: new Date().toISOString(), settings: copy(settings) }; return copy(stored); } };
-const plugin = createPlugin({ React, win: window, getLocale: () => locale, options: { configurationBackend: () => backend, diskSmartInfo: { provider: createMockProvider({ state: () => scenario }) } } });
+const plugin = createPlugin({ React, win: window, getLocale: () => locale, options: { configurationBackend: () => backend, diskSmartInfo: { provider: { ...createMockProvider({ state: () => scenario }), ...createMockBatchProvider({ state: () => scenario }) } } } });
 const $ = id => document.getElementById(id), t = (zh, en) => locale === 'en-US' ? en : zh;
 function node(tag, value, cls) { const el = document.createElement(tag); if (value !== undefined) el.textContent = value; if (cls) el.className = cls; return el; }
 function route() {

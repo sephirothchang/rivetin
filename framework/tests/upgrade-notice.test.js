@@ -4,8 +4,8 @@ import { JSDOM } from 'jsdom';
 import { installUpgradeNotice } from '../src/upgrade-notice.js';
 const selector = '[data-rivetin-upgrade-notice]';
 const tick = () => new Promise(setImmediate);
-function fixture(t, html = '<main class="upgrade-center"><h1>CloudTower 升级</h1><button id="native-upgrade">上传升级包</button></main>') {
-  const dom = new JSDOM(html, { url: 'https://tower.example.invalid/#/upgrade-center', pretendToBeVisual: true });
+function fixture(t, html = '<main class="upgrade-center"><h1>CloudTower 升级</h1><button id="native-upgrade">上传升级包</button></main>', route = '#/upgrade-center') {
+  const dom = new JSDOM(html, { url: 'https://tower.example.invalid/'+route, pretendToBeVisual: true });
   let state = { enabled: true, plugins: [{ id: 'rivetin-example', installed: true, enabled: true }] }, locale = 'zh-CN', opens = 0;
   const stop = installUpgradeNotice({ win: dom.window, getState: () => state, getLocale: () => locale, onOpen: () => { opens++; } });
   t.after(() => { stop(); dom.window.close(); });
@@ -73,4 +73,22 @@ test('observed div.title shape is recognized while global navigation and plugin 
   let actions = 0; upload.addEventListener('click', () => { actions++; }); settings.addEventListener('click', () => { actions++; });
   upload.click(); settings.click(); assert.equal(actions, 2);
   assert.equal(document.querySelectorAll(selector).length, 1);
+});
+
+test('CloudTower settings upgrade page shares the reminder without touching upload controls', async t => {
+  const { document, dom, stop, locale } = fixture(t, '<nav>CloudTower 升级</nav><main style="display:flex;flex-direction:column"><div class="title">CloudTower 升级</div><div class="divider"></div><section><button id="native-upload" disabled>上传</button></section></main>', '#/settings/upgrade-management');
+  const title = document.querySelector('.title'), upload = document.getElementById('native-upload');
+  assert.equal(title.nextElementSibling, document.querySelector(selector));
+  assert.equal(document.querySelector(selector).nextElementSibling.className, 'divider');
+  assert.equal(upload.disabled, true);
+  locale('en-US'); title.textContent = 'CloudTower Upgrade'; stop.update();
+  assert.match(document.querySelector(selector).textContent, /Before upgrading CloudTower/);
+  for (const route of ['#/settings/upgrade-management/?view=history', '#/upgrade-center', '#/settings/upgrade-management']) {
+    dom.window.location.hash = route; dom.window.dispatchEvent(new dom.window.HashChangeEvent('hashchange')); await tick();
+    assert.equal(document.querySelectorAll(selector).length, 1);
+  }
+  for (const route of ['#/settings/users', '#/settings/upgrade-management-extra', '#/settings/upgrade-management/unsupported', '#/other?next=/settings/upgrade-management']) {
+    dom.window.location.hash = route; dom.window.dispatchEvent(new dom.window.HashChangeEvent('hashchange')); await tick();
+    assert.equal(document.querySelector(selector), null);
+  }
 });
