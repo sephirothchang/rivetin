@@ -3,18 +3,24 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { resolveToolchain, createCacheDirectories } from './toolchain.mjs';
 const cli = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), root = path.resolve(cli, '..');
 const args = process.argv.slice(2), goIndex = args.indexOf('--go');
-const go = goIndex >= 0 ? args[goIndex + 1] : process.env.RIVETIN_GO;
-if (goIndex >= 0 && (!go || go.startsWith('--'))) throw new Error('Provide the Go executable after --go.');
+const selectedGo = goIndex >= 0 ? args[goIndex + 1] : undefined;
+if (goIndex >= 0 && (!selectedGo || selectedGo.startsWith('--'))) throw new Error('Provide the Go executable after --go.');
 const known = new Set(['--notices-only', '--go']);
+if (args.filter(value => value === '--go').length > 1) throw new Error('Select the Go executable only once.');
 for (let index = 0; index < args.length; index++) {
   if (!known.has(args[index])) throw new Error('Unknown preparation option.');
   if (args[index] === '--go') index++;
 }
 const noticesPath = path.join(cli, 'THIRD_PARTY_NOTICES.txt');
+const toolchain = resolveToolchain({ explicit: selectedGo });
+createCacheDirectories(toolchain);
+const go = toolchain.go;
 if (go) {
-  const env = JSON.parse(execFileSync(go, ['env', '-json', 'GOROOT', 'GOMODCACHE', 'GOVERSION'], { cwd: cli, encoding: 'utf8' }));
+  for (const action of ['download', 'verify']) execFileSync(go, ['mod', action], { cwd: cli, env: toolchain.env, stdio: 'inherit', timeout: 10 * 60 * 1000 });
+  const env = JSON.parse(execFileSync(go, ['env', '-json', 'GOROOT', 'GOMODCACHE', 'GOVERSION'], { cwd: cli, env: toolchain.env, encoding: 'utf8', timeout: 30000 }));
   const sections = ['Rivetin portable CLI — third-party notices\n\nGenerated from the selected Go toolchain and the exact modules in go.mod.\nToolchain: ' + env.GOVERSION + '\nFull upstream copyright, license and patent texts follow.'];
   async function include(label, directory, name) {
     const text = (await readFile(path.join(directory, name), 'utf8')).trimEnd();
@@ -38,7 +44,6 @@ if (go) {
   console.log('Generated portable CLI notices from locked modules and selected Go toolchain.');
 }
 if (args.includes('--notices-only')) {
-  if (!go) throw new Error('--notices-only requires --go or RIVETIN_GO.');
   process.exit(0);
 }
 const version = JSON.parse(await readFile(path.join(root, 'framework/package.json'), 'utf8')).version;

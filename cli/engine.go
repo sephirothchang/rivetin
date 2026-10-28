@@ -138,7 +138,7 @@ func operationID() string {
 	}
 	return hex.EncodeToString(b)
 }
-func deployment(p Profile, origin, checksum string) ([]byte, error) {
+func deployment(p Profile, origin, checksum, certificatePin string) ([]byte, error) {
 	if !strings.HasPrefix(origin, "https://") || strings.ContainsAny(origin, "\n\r\t\"'") {
 		return nil, errors.New("INVALID_ORIGIN")
 	}
@@ -152,6 +152,12 @@ func deployment(p Profile, origin, checksum string) ([]byte, error) {
 		"securityContext": map[string]any{"runAsUser": 1000, "runAsGroup": 1000, "allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true, "capabilities": map[string]any{"drop": []string{"ALL"}}},
 		"readinessProbe":  map[string]any{"httpGet": map[string]any{"path": "/healthz", "port": 8787}}, "livenessProbe": map[string]any{"httpGet": map[string]any{"path": "/healthz", "port": 8787}, "initialDelaySeconds": 10},
 		"volumeMounts": []map[string]any{{"name": "code", "mountPath": "/opt/rivetin", "readOnly": true}, {"name": "data", "mountPath": "/var/lib/rivetin"}}}
+	if certificatePin != "" {
+		if len(certificatePin) != 64 || strings.Trim(certificatePin, "0123456789abcdef") != "" {
+			return nil, errors.New("TLS_CERT_PIN_INVALID")
+		}
+		container["env"] = append(container["env"].([]map[string]string), map[string]string{"name": "RIVETIN_GATEWAY_CERT_SHA256", "value": certificatePin})
+	}
 	ingressPath := func(prefix string) map[string]any {
 		return map[string]any{"path": prefix, "pathType": "Prefix", "backend": map[string]any{"service": map[string]any{"name": installationName, "port": map[string]int{"number": 8787}}}}
 	}
@@ -467,7 +473,7 @@ func (e Engine) Run(ctx context.Context, mode, user, password, operation string)
 		if err := verificationCtx.Err(); err != nil {
 			return rollback(err)
 		}
-		manifest, err := deployment(p, e.Tower.base, digest(data["service.tar.gz"]))
+		manifest, err := deployment(p, e.Tower.base, digest(data["service.tar.gz"]), e.Tower.certificatePin)
 		if err != nil {
 			return rollback(err)
 		}

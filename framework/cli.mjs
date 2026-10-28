@@ -26,6 +26,10 @@ if (index < 0 || !args[index + 1]) {
     else if (command === 'upload') result = await service.upload(await readFile(args[0]), actor);
     else if (command === 'logs') result = await service.logs({ limit: 50, pluginId: args[0] });
     else if (command === 'ssh-hosts') result = await service.sshHosts.list();
+    else if (command === 'ssh-connections-migrate') {
+      if (args.length !== 4 || args[0] !== '--direction' || !['upgrade', 'rollback', 'recover'].includes(args[1]) || args[2] !== '--operation' || process.env.RIVETIN_OFFLINE_WRITERS_STOPPED !== 'yes') throw new Error('SSH_CONNECTION_MIGRATION_OFFLINE_CONFIRMATION_REQUIRED');
+      result = await service.sshMigrateConnections({ direction: args[1], operationId: args[3], stopped: true }, actor);
+    }
     else if (command === 'ssh-host-put') {
       if (args.length) throw new Error('SSH_PROFILE_STDIN_REQUIRED');
       const chunks = []; let size = 0;

@@ -105,7 +105,7 @@ export function createSshPreflight({ inventory, vault, transport, audit = async 
       if (!exact(input, ['hostId', 'actor']) || !identifier(input.hostId)) throw error('SSH_PREFLIGHT_REQUEST_INVALID', 400);
       return operation(input.actor, 'verify', async ctx => {
         const revision = await vault.revision(); ctx.remaining();
-        let host; try { host = await vault.get(input.hostId); } catch { throw error('SSH_PREFLIGHT_CONNECTION_UNAVAILABLE'); } ctx.remaining();
+        let host; try { host = await vault.get(input.hostId, input.actor, { connectionOnly: true }); } catch { throw error('SSH_PREFLIGHT_CONNECTION_UNAVAILABLE'); } ctx.remaining();
         if (host?.hostId !== input.hostId || !hex(host.hostKeySha256)) throw error('SSH_PREFLIGHT_CONNECTION_UNAVAILABLE');
         const before = await target(input.hostId, host.address, host.port, input.actor, ctx);
         const result = await transport.verify({ host, signal: ctx.signal, timeoutMs: ctx.remaining() }); ctx.remaining();

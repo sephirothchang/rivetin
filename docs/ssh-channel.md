@@ -2,6 +2,8 @@
 
 `rivetin-ssh-channel` 是框架默认附带安装的受控能力插件，生命周期和功能开关均默认关闭。需要框架开启、通道插件启用、采集配置保存为开启，且消费插件独立审核批准，才允许按计划采集。安装、添加主机或审批本身不会立即连接主机。它不是 Web 终端，不接受任意 shell、脚本、参数或可执行文件。
 
+> 当前源码边界（2026-10-28）：Web 连接编辑器已使用 v2 草稿协议，服务端连接存储/API 仍为 v1，两者尚未集成。以下连接草稿及保存行为描述 v1 服务协议与原有验收基线，不能据此声称当前工作树的 Web 读写已通过联调；也不能将源码问题反推为固定历史部署制品的故障。
+
 ## 主机与凭据
 
 管理员可在 SSH 功能页使用独立连接草稿，也可通过便携 CLI 的 `channel import-host --host-profile-file <sensitive-file>` 导入连接资料。CLI 使用既有 Tower SSH 身份、HTTPS 信任与管理员校验，不调用客户端外部 SSH。服务端独立凭据库使用 AES-256-GCM，POSIX 环境中密钥与密文文件权限为 `0600`；Windows 本地测试不把 POSIX mode 当作 NTFS ACL 保证。备份含该存储，应作为敏感资料保管；加密不意味着拥有同等服务器文件访问权限的管理员不能解密。
@@ -43,7 +45,13 @@ rivetin channel remove-host --host-id <configured-alias> [existing Tower connect
 | 操作 | 服务端固定命令 | 约束 |
 |---|---|---|
 | `host.identity` | `/usr/bin/uname -srm` | 仅查询主机内核和架构 |
-| `disk.smart.read` | `sudo -n -- /usr/sbin/smartctl --json=c --all <device>` | 设备来自可信映射；必须有序列号，响应身份不符则采集失败，不启动自检或修改 SMART 设置 |
+| `disk.smart.read` | `sudo -n -- /usr/sbin/smartctl --json=c --all <disk>` | 参数来自目标主机的可信设备映射或已验证当前库存；必须有序列号，响应身份不符则采集失败，不启动自检或修改 SMART 设置 |
+
+注册页按插件 ID 分组，再按主机／磁盘命令类别展示。`<disk>` 是参数范式，不能直接执行；具体计划由框架按照该主机的已授权磁盘策略逐盘编译。注册页将范式、参数来源要求与当前解析来源、预期／已解析计划数量、排除的主机和具体命令分别显示；审核对话框展开全部具体计划，原有二次确认继续生效。不同主机上的相同 `/dev/sdb` 路径是不同目标，不能只按路径合并；不会将整个注册固定为某一个设备路径。
+
+这些展示字段由框架可信 operation catalog 派生，插件 manifest 的严格八字段注册格式不变，不接受插件提供 shell 范式、正则、glob 或新增可执行参数。`category`、`template`、`argumentSource`、`expansion`、`expectedCount`、`resolvedCount`、`resolutionSource` 和 `excludedHosts` 是只读诊断信息；批准仍绑定完整声明、目标、凭据库和撤销版本。展示字段不会替代 `targets`／`preview` 或扩大执行资格。
+
+`argumentSource: fresh-host-inventory` 表示磁盘范式的参数来源要求；当前来源另由 `resolutionSource` 标明。v2 从同一目标主机的当前可信库存和 all/custom 策略解析；legacy v1 仍使用既有设备映射，不将其标成已核验的当前库存，也不为展示自动迁移。每台主机的明确 v2 `custom: []` 只排除该主机的磁盘目标，不阻断其他主机的合法目标；该状态只能由服务端已验证的 v2 解析器派生，客户端不能在连接资料中伪造。未知库存、未配置设备、失效身份、非法路径以及 all 模式下的无可用盘仍失败关闭；所有主机均明确排除时也没有可供批准的执行计划。
 
 管理员在 SSH 通道页审计完整命令、目的、目标、周期和风险。审核返回两分钟、一次性且绑定操作者的挑战；勾选并二次确认后才持久授权。摘要绑定安装包、完整声明、解析目标、凭据库及撤销版本。更新、回滚、配置变化、禁用、重置、卸载、主机映射变化与紧急禁用会使旧审核和批准失效，恢复开关不自动恢复授权。
 
@@ -72,7 +80,7 @@ rivetin channel remove-host --host-id <configured-alias> [existing Tower connect
 
 ## 调度、取消与数据
 
-`intervalSeconds: 0` 不调度；非零仅接受 300～604800 秒，86400 表示每天一次。计划由服务端持久保存，审批后从未来时刻开始，重启不补跑积压任务。当前单副本进程最多两个批次、两个连接，每主机一个；每连接 30 秒、stdout/stderr 合计最多 1 MiB，批次总预算五分钟。失败不自动重试。
+`intervalSeconds: 0` 不调度；非零仅接受 300～604800 秒，86400 表示每天一次。既有 v1 计划由服务端持久保存，审批后从未来时刻开始，重启不补跑积压任务。这不代表 v2 设备策略、合法后台 Tower 库存身份及每日采集全链路已经完成；其集成与真实验收仍待完成。当前单副本进程最多两个批次、两个连接，每主机一个；每连接 30 秒、stdout/stderr 合计最多 1 MiB，批次总预算五分钟。失败不自动重试。
 
 执行超时和权限撤销使用不同取消状态。只有由 broker 超时标记产生、无 stdout 的失败记录，可在授权仍有效时通过结果钩子写无指标失败；守卫仍复核框架/插件开关、当前 digest、approval ID、撤销 epoch 和 stop 状态。超时后若又撤销、禁用或停止，同样拒绝历史提交。成功记录从不忽略执行取消。历史 sink 必须在独立锁的最终提交前检查 signal 并 await assertActive，不能调用需要 broker 锁的方法。
 
@@ -81,3 +89,23 @@ rivetin channel remove-host --host-id <configured-alias> [existing Tower connect
 结果按消费插件隔离保留最多 30 条并限制总字节，管理日志只记元数据和固定错误码，不记输出、stderr 或凭据。SMART 的采集成功只代表读取完成，不代表磁盘健康；健康位掩码交由解析器判断。
 
 框架 0.1.1 已完成受控真实验证：候选指纹与独立核验值一致，保留已有全局凭据后认证成功，一次 `host.identity` 命令执行成功。SMART 单盘页面请求执行一次后失败；另获批准追加同命令一次作诊断，确认 smartctl 7.1 返回有效设备信息 JSON 及退出码 4，未取得健康或属性数据，两次均无自动重试。结果保持采集失败、健康未知，设备模拟层支持不足仍只是推断。对应 86400 秒计划及到期时间保留，未加速时钟或额外执行每日任务。有效 SMART 样本及真实磁盘指标仍需后续验证，不能将失败记录或模拟数据称为有效采样。跨多个 Pod 的分布式调度、第三方插件沙箱与发布者签名不在本版本能力内。
+
+
+<a id="connections-v2"></a>
+
+## Connections v2 (introduced in 0.2.1; current framework 0.2.2)
+
+Framework 0.2.2 completed a controlled upgrade and read-only UI acceptance with existing persisted v1 connections unchanged. The public v2 projection does not mean the stored data was migrated. Explicit v2 migration, fresh real-host authorization and actual v2 command execution remain pending real-environment testing.
+
+This source implements a real shared HTTP/service/vault path. Local tests inject Tower and SSH transports; they do not establish live platform acceptance. The API prefix remains `/api/rivetin/v1`; the connection document version is 2.
+
+- `GET /ssh-channel/connections` returns version 2, revision, operationId, credential-presence summaries, hosts with `devicePolicy`, and migration state. Reading an existing v1 vault returns a read-only projection (`migration.required=true`); it does not write, migrate, connect, or widen old `devices` (including empty lists).
+- `PUT /ssh-channel/connections` accepts exactly version, operationId (UUID v4), expectedRevision, global, clusters, hosts and selectionProofs. Credentials retain keep/replace/clear semantics. Responses contain version, operationId, committedRevision, replayed and connections. CAS conflicts do not revoke approval or change configuration. Durable actor-bound operation records are checked before CAS; replay returns the original committedRevision and the current summary without another write. Records are bounded to 10,000 and never evicted to permit replay.
+- `GET /ssh-channel/policy-capabilities` reports actual connected adapters. GPU/USB/PCIe inventory and execution remain unsupported. Scheduled execution is disabled with `SSH_BACKGROUND_INVENTORY_AUTH_UNAVAILABLE`: no administrator token is stored or reused as a background identity. Manual execution requires the current verified ROOT caller.
+- `GET /ssh-channel/device-inventory?hostId=<CANONICAL_HOST_ID>&category=disk` obtains a complete bounded host disk set under that caller. It uses a 1,001-row sentinel (maximum 1,000), rejects duplicates/ambiguous identity and returns no partial authoritative set. Model-only disks without serial/path are unselectable. Selection proofs last 60 seconds, bind actor, host, endpoint, credentials, connection revision and complete inventory identity, and are revalidated against fresh inventory when saved. They are not persisted in configuration or logs.
+
+`devicePolicy` has version 1 and disk/gpu/usb/pcie classes, each `{mode: "all"|"custom", ids: []}`. All requires an empty ID list; custom stores canonical Tower IDs, with an empty list allowing no devices. All is a candidate range: approval binds the resolved complete set, identities, paths, endpoint and pin. Replacement, removal, addition or changed paths invalidate execution. A custom identity never silently follows a replacement. Execution has a 100-target limit. Fresh reads are uncached; unavailable or incomplete inventory fails closed.
+
+The v2 vault uses a separate `connections.v2.json`, AES-256-GCM and AAD `rivetin-ssh-connections-v2`; it keeps the existing key. The v1 path becomes a version-2 tombstone so old writers fail instead of falling back to legacy host files. A durable mutation barrier precedes revocation; encrypted configuration and HMAC operation receipts are committed before the barrier clears. Any uncertain stage blocks execution. An explicit offline recovery can confirm a committed write or abort a demonstrably uncommitted operation without replaying it. This is not a database transaction or a guarantee against every storage failure.
+
+Migration and rollback are explicit offline data-CLI operations described in [CLI instructions](../cli/README.md#offline-connection-format-maintenance). Legacy references are retained encrypted and unresolved until an explicit scope change/reselection establishes canonical identity; merely saving unrelated credentials does not erase them. A nonempty unresolved scope remains non-executable. Rollback restores original ciphertext bytes only before any successful v2 edit; otherwise it returns `SSH_CONNECTION_DOWNGRADE_UNREPRESENTABLE` and preserves current data. Approvals/schedules are never restored from old backups.

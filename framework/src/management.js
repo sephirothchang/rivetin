@@ -28,7 +28,7 @@ export function createManagement(React) {
                 logErrorCode(event) && h(React.Fragment, null, h('dt', null, t('错误码')), h('dd', null, h('code', null, logErrorCode(event)))))))))))) : h('p', null, t('暂无日志')),
       logs.next && h('button', { disabled: busy, onClick: onMore }, t('加载更多')));
     return h(React.Fragment, null,
-      h('div', { className: 'pk-toolbar' }, h('h3', null, 'Rivetin'), h('span', { className: `c89-badge ${runtime.enabled ? 'c89-badge-enabled' : 'c89-badge-disabled'}` }, t(runtime.enabled ? '框架运行' : '插件已全部停用'))),
+      h('div', { className: 'pk-toolbar' }, h('h3', null, 'Rivetin'), h('span', { className: `c89-badge ${runtime.enabled ? 'c89-badge-enabled' : 'c89-badge-disabled'}` }, t(runtime.enabled ? '框架运行中' : '框架已停用'))),
       h('div', { className: 'pk-framework' }, h('span', null, `${t('版本')} ${runtime.version || FRAMEWORK_VERSION}`),
         h('button', { disabled: busy, className: runtime.enabled ? 'pk-emergency' : '', onClick: () => onAction(runtime.enabled ? 'framework.disable' : 'framework.enable') },
           runtime.enabled && h('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true', focusable: 'false', style: { verticalAlign: 'middle', marginRight: 6 } },

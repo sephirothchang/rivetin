@@ -114,7 +114,7 @@ class KubernetesFixture:
                 if stored['version'] != version:
                     if not (settings.parent / 'disabled.json').is_file():
                         raise RuntimeError('FRAMEWORK_DISABLE_BEFORE_UPGRADE')
-                    if args[-2:] != ('--upgrade-from', stored['version']) or (stored['version'], version) not in {('0.1.0', '0.1.1'), ('0.1.0', '0.1.2'), ('0.1.1', '0.1.2'), ('0.1.0', '0.1.3'), ('0.1.1', '0.1.3'), ('0.1.2', '0.1.3'), ('0.1.0', '0.1.4'), ('0.1.1', '0.1.4'), ('0.1.2', '0.1.4'), ('0.1.3', '0.1.4'), ('0.1.0', '0.1.5'), ('0.1.1', '0.1.5'), ('0.1.2', '0.1.5'), ('0.1.3', '0.1.5'), ('0.1.4', '0.1.5'), ('0.1.0', '0.2.0'), ('0.1.1', '0.2.0'), ('0.1.2', '0.2.0'), ('0.1.3', '0.2.0'), ('0.1.4', '0.2.0'), ('0.1.5', '0.2.0')}:
+                    if args[-2:] != ('--upgrade-from', stored['version']) or (stored['version'], version) not in {('0.1.0', '0.1.1'), ('0.1.0', '0.1.2'), ('0.1.1', '0.1.2'), ('0.1.0', '0.1.3'), ('0.1.1', '0.1.3'), ('0.1.2', '0.1.3'), ('0.1.0', '0.1.4'), ('0.1.1', '0.1.4'), ('0.1.2', '0.1.4'), ('0.1.3', '0.1.4'), ('0.1.0', '0.1.5'), ('0.1.1', '0.1.5'), ('0.1.2', '0.1.5'), ('0.1.3', '0.1.5'), ('0.1.4', '0.1.5'), ('0.1.0', '0.2.0'), ('0.1.1', '0.2.0'), ('0.1.2', '0.2.0'), ('0.1.3', '0.2.0'), ('0.1.4', '0.2.0'), ('0.1.5', '0.2.0')} | {(source, '0.2.1') for source in ['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0']} | {(source, '0.2.2') for source in ['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1']}:
                         raise RuntimeError('FRAMEWORK_MIGRATION_REQUIRED')
                     stored['version'] = version
                     settings.write_text(json.dumps(stored))
@@ -194,14 +194,14 @@ class RemoteTests(unittest.TestCase):
                 remote.validate_manifest(wanted, 'a' * 64)
 
     def test_service_archive_accepts_shared_runtime_and_new_builtin_only(self):
-        for forbidden in ['server/builtins/pluginkit-ssh-channel.json', 'shared/unknown.js', 'shared/version-extra.js', 'shared/nested/version.js', 'shared/framework-compatibility-extra.js', 'shared/nested/framework-compatibility.js', 'shared/framework-compatibility.json', 'integrity-extra.json', 'server/integrity.json', 'integrity.json/extra.js']:
+        for forbidden in ['server/builtins/pluginkit-ssh-channel.json', 'server/ssh-connections-v3.js', 'shared/unknown.js', 'shared/version-extra.js', 'shared/nested/version.js', 'shared/framework-compatibility-extra.js', 'shared/nested/framework-compatibility.js', 'shared/framework-compatibility.json', 'integrity-extra.json', 'server/integrity.json', 'integrity.json/extra.js']:
             with self.assertRaisesRegex(RuntimeError, 'SERVICE_ARCHIVE_INVALID'):
                 remote.extract_release(archive([('server/main.js', b'// EXAMPLE'), (forbidden, b'{}')]), self.directory / 'rejected')
         target = self.directory / 'new-service'
         target.mkdir()
         content = remote.extract_release(archive([('server/main.js', b'// EXAMPLE'), ('shared/identity.js', b'// EXAMPLE'), ('shared/version.js', b'// EXAMPLE_VERSION'), ('shared/framework-compatibility.js', b'// EXAMPLE_DECLARATION'), ('integrity.json', b'{}'),
-            ('server/builtins/rivetin-ssh-channel.json', b'{}'), ('server/vendor/ssh2.cjs', b'// EXAMPLE')]), target)
-        self.assertEqual(len(content), 7)
+            ('server/builtins/rivetin-ssh-channel.json', b'{}'), ('server/vendor/ssh2.cjs', b'// EXAMPLE'), ('server/ssh-connections-v2.js', b'// EXAMPLE_V2')]), target)
+        self.assertEqual(len(content), 8)
         self.assertEqual((target / 'shared/version.js').read_bytes(), b'// EXAMPLE_VERSION')
         self.assertEqual((target / 'shared/framework-compatibility.js').read_bytes(), b'// EXAMPLE_DECLARATION')
         self.assertEqual((target / 'integrity.json').read_bytes(), b'{}')
@@ -361,7 +361,7 @@ class RemoteTests(unittest.TestCase):
             return self.kube(*args, **kw)
 
         target_version = json.loads((ROOT.parent / 'framework/package.json').read_text())['version']
-        self.assertEqual(target_version, '0.2.0')
+        self.assertEqual(target_version, '0.2.2')
         data = archive([('server/main.js', b'// NEXT'), ('package.json', json.dumps(dict(name='rivetin', version=target_version)).encode())])
         with patch.object(remote, 'kube', execute):
             with self.assertRaisesRegex(RuntimeError, 'EXAMPLE_POST_INIT_TRANSPORT_FAILURE'):
@@ -557,10 +557,12 @@ class RemoteTests(unittest.TestCase):
         sources = ('0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5')
         expected = {(source, target) for index, source in enumerate(sources) for target in sources[index + 1:]}
         expected.update((source, '0.2.0') for source in sources)
-        self.assertEqual(remote.KNOWN_METADATA_VERSIONS, sources + ('0.2.0',))
+        expected.update((source, '0.2.1') for source in sources + ('0.2.0',))
+        expected.update((source, '0.2.2') for source in sources + ('0.2.0', '0.2.1'))
+        self.assertEqual(remote.KNOWN_METADATA_VERSIONS, sources + ('0.2.0', '0.2.1', '0.2.2'))
         self.assertEqual(remote.METADATA_UPGRADES, expected)
         self.assertNotIn(('0.2.0', '0.1.5'), remote.METADATA_UPGRADES)
-        self.assertNotIn(('0.2.0', '0.2.1'), remote.METADATA_UPGRADES)
+        self.assertIn(('0.2.0', '0.2.1'), remote.METADATA_UPGRADES)
 
     def test_all_known_sources_upgrade_to_020_without_migrating_configs_or_vault(self):
         config = self.installed()
@@ -634,6 +636,113 @@ class RemoteTests(unittest.TestCase):
         self.assertFalse(self.kube.writes)
         remote.handle({'action': 'rollback', 'operation': self.op})
 
+    def test_021_recovery_refuses_old_code_with_v2_data_then_allows_explicit_format_rollback(self):
+        self.installed()
+        settings = self.base / 'data/framework/settings.json'
+        settings.write_text('{"apiVersion":1,"version":"0.2.0"}')
+        self.op = 'b' * 32
+        self.begin('update')
+        data = archive([('server/main.js', b'// NEW_021'), ('package.json', b'{"name":"rivetin","version":"0.2.1"}')])
+        self.apply('update', service=data)
+        vault = self.base / 'data/ssh-channel/vault'
+        vault.mkdir(parents=True, exist_ok=True)
+        ciphertext = vault / 'connections.v2.json'
+        ciphertext.write_text('EXAMPLE_OPAQUE_V2')
+        with self.assertRaisesRegex(RuntimeError, 'SSH_CONNECTION_DOWNGRADE_UNREPRESENTABLE'):
+            remote.handle({'action': 'rollback', 'operation': self.op})
+        self.assertEqual(json.loads(settings.read_text())['version'], '0.2.1')
+        self.assertEqual(ciphertext.read_text(), 'EXAMPLE_OPAQUE_V2')
+        self.assertTrue((settings.parent / 'disabled.json').is_file())
+        # Simulate separately verified offline format rollback; never do it as
+        # part of an automatic code recovery or restore the whole data archive.
+        ciphertext.rename(vault / 'archived-example-v2')
+        remote.handle({'action': 'rollback', 'operation': self.op})
+        self.assertEqual(json.loads(settings.read_text())['version'], '0.2.0')
+
+    def test_022_recovery_to_021_preserves_existing_v2_format(self):
+        self.installed()
+        settings = self.base / 'data/framework/settings.json'
+        settings.write_text('{"apiVersion":1,"version":"0.2.1"}')
+        self.op = 'b' * 32
+        self.begin('update')
+        data = archive([('server/main.js', b'// NEW_022'), ('package.json', b'{"name":"rivetin","version":"0.2.2"}')])
+        self.apply('update', service=data)
+        vault = self.base / 'data/ssh-channel/vault'
+        vault.mkdir(parents=True, exist_ok=True)
+        ciphertext = vault / 'connections.v2.json'
+        ciphertext.write_bytes(b'EXAMPLE_EXISTING_V2_CIPHERTEXT')
+        remote.handle({'action': 'rollback', 'operation': self.op})
+        self.assertEqual(json.loads(settings.read_text())['version'], '0.2.1')
+        self.assertEqual(ciphertext.read_bytes(), b'EXAMPLE_EXISTING_V2_CIPHERTEXT')
+        self.assertTrue((settings.parent / 'disabled.json').is_file())
+
+    def test_021_partial_rollback_retry_blocks_v2_independent_of_metadata(self):
+        self.installed()
+        settings = self.base / 'data/framework/settings.json'
+        settings.write_text('{"apiVersion":1,"version":"0.2.0"}')
+        self.op = 'b' * 32
+        self.begin('update')
+        data = archive([('server/main.js', b'// NEW_021'), ('package.json', b'{"name":"rivetin","version":"0.2.1"}')])
+        self.apply('update', service=data)
+        # Restore metadata, then fail before the old resources are applied.
+        def fail_resource_apply(*args, **options):
+            if args[0] == 'apply':
+                raise RuntimeError('KUBERNETES_COMMAND_FAILED')
+            return self.kube(*args, **options)
+        with patch.object(remote, 'kube', side_effect=fail_resource_apply):
+            with self.assertRaisesRegex(RuntimeError, 'KUBERNETES_COMMAND_FAILED'):
+                remote.handle({'action': 'rollback', 'operation': self.op})
+        self.assertEqual(json.loads(settings.read_text())['version'], '0.2.0')
+        self.assertEqual(remote.pending(), self.op)
+        vault = self.base / 'data/ssh-channel/vault'
+        vault.mkdir(parents=True, exist_ok=True)
+        for marker in ('connections.v2.json', 'mutation.v2.json'):
+            with self.subTest(marker=marker):
+                file = vault / marker
+                file.write_bytes(b'EXAMPLE_PRESERVE_V2_OR_PENDING_BYTES')
+                self.kube.calls.clear()
+                with self.assertRaisesRegex(RuntimeError, 'SSH_CONNECTION_DOWNGRADE_UNREPRESENTABLE'):
+                    remote.handle({'action': 'rollback', 'operation': self.op})
+                self.assertFalse(self.kube.writes)
+                self.assertEqual(file.read_bytes(), b'EXAMPLE_PRESERVE_V2_OR_PENDING_BYTES')
+                self.assertEqual(remote.pending(), self.op)
+                self.assertTrue((settings.parent / 'disabled.json').is_file())
+                file.rename(vault / ('archived-' + marker))
+        remote.handle({'action': 'rollback', 'operation': self.op})
+        self.assertFalse(remote.pending())
+        self.assertTrue(self.kube.writes)
+
+    def test_rollback_metadata_missing_or_inconsistent_refuses_resource_restore(self):
+        config = self.installed()
+        original_config = config.read_bytes()
+        self.op = 'b' * 32
+        self.begin('update')
+        backup = self.base / 'backups' / self.op
+        saved = backup / 'framework-version-before.json'
+        settings = self.base / 'data/framework/settings.json'
+        original_saved, original_settings = saved.read_bytes(), settings.read_bytes()
+        cases = [('missing-backup', None, original_settings),
+                 ('null-backup-with-old-resources', b'null', original_settings),
+                 ('missing-current', original_saved, None),
+                 ('invalid-current', original_saved, b'{"apiVersion":1,"version":"unknown"}'),
+                 ('reverse-version', b'{"apiVersion":1,"version":"0.2.1"}', b'{"apiVersion":1,"version":"0.2.0"}')]
+        for name, previous, current in cases:
+            with self.subTest(case=name):
+                for file, value in ((saved, previous), (settings, current)):
+                    if value is None:
+                        file.unlink(missing_ok=True)
+                    else:
+                        file.write_bytes(value)
+                self.kube.calls.clear()
+                with self.assertRaisesRegex(RuntimeError, 'FRAMEWORK_MIGRATION_REQUIRED'):
+                    remote.rollback(backup)
+                self.assertFalse(self.kube.writes)
+                self.assertEqual(remote.pending(), self.op)
+                self.assertEqual(config.read_bytes(), original_config)
+        saved.write_bytes(original_saved)
+        settings.write_bytes(original_settings)
+        remote.handle({'action': 'rollback', 'operation': self.op})
+
     def test_unmanaged_resources_and_owner_marker_refused(self):
         item = manifest('0' * 64)['items'][1]
         item['metadata']['annotations'] = {}
@@ -642,6 +751,46 @@ class RemoteTests(unittest.TestCase):
             self.begin('update')
         self.assertFalse(self.base.exists())
         self.assertFalse(self.kube.writes)
+
+    def test_manifest_gateway_pin_is_optional_exact_and_cannot_expand_environment(self):
+        original = manifest('a' * 64)
+        remote.validate_manifest(original, 'a' * 64)
+        environment = original['items'][0]['spec']['template']['spec']['containers'][0]['env']
+        environment.append(dict(name='RIVETIN_GATEWAY_CERT_SHA256', value='a' * 64))
+        remote.validate_manifest(original, 'a' * 64)
+        for value in ['', 'INVALID_PIN', 'A' * 64, 'a' * 63, None]:
+            with self.subTest(pin=value):
+                environment[-1]['value'] = value
+                with self.assertRaisesRegex(RuntimeError, 'MANIFEST_INVALID'):
+                    remote.validate_manifest(original, 'a' * 64)
+        environment[-1]['value'] = 'a' * 64
+        for name in ['RIVETIN_ORIGINS', 'NODE_TLS_REJECT_UNAUTHORIZED', 'NODE_EXTRA_CA_CERTS']:
+            with self.subTest(env=name):
+                environment[-1]['name'] = name
+                with self.assertRaisesRegex(RuntimeError, 'MANIFEST_INVALID'):
+                    remote.validate_manifest(original, 'a' * 64)
+        self.assertFalse(self.kube.writes)
+
+    def test_pinned_upgrade_recovery_restores_original_three_env_resources_and_preserves_data(self):
+        config = self.installed()
+        original_config = config.read_bytes()
+        settings = self.base / 'data/framework/settings.json'
+        settings.write_text('{"apiVersion":1,"version":"0.2.0"}')
+        previous = copy.deepcopy(self.kube.items)
+        self.op = 'b' * 32
+        self.begin('update')
+        data = archive([('server/main.js', b'// NEW_PINNED_021'), ('package.json', b'{"name":"rivetin","version":"0.2.1"}')])
+        checksum = hashlib.sha256(data).hexdigest()
+        wanted = manifest(checksum)
+        wanted['items'][0]['spec']['template']['spec']['containers'][0]['env'].append(dict(name='RIVETIN_GATEWAY_CERT_SHA256', value='a' * 64))
+        self.apply('update', service=data, wanted=wanted)
+        self.assertEqual(len(self.kube.items['deployment']['spec']['template']['spec']['containers'][0]['env']), 4)
+        remote.handle({'action': 'rollback', 'operation': self.op})
+        self.assertEqual(self.kube.items, previous)
+        self.assertEqual(config.read_bytes(), original_config)
+        self.assertEqual(json.loads(settings.read_text())['version'], '0.2.0')
+        self.assertFalse(remote.pending())
+        self.assertTrue((settings.parent / 'disabled.json').is_file())
 
     def test_wrong_owner_marker_refused(self):
         self.base.mkdir()
@@ -718,6 +867,27 @@ class RemoteTests(unittest.TestCase):
         self.assertEqual(config.read_bytes(), old)
         self.assertTrue(all(item.is_dir() for item in releases))
         self.assertTrue((self.base / 'backups' / self.op / 'data.tar.gz').exists())
+
+    def test_failed_reinstall_over_retained_data_removes_only_new_owned_resources(self):
+        config = self.installed()
+        original = config.read_bytes()
+        self.op = 'b' * 32
+        self.begin('uninstall')
+        remote.handle({'action': 'remove', 'operation': self.op})
+        self.finish()
+        settings = self.base / 'data/framework/settings.json'
+        metadata = settings.read_bytes()
+        self.op = 'c' * 32
+        self.begin('install')
+        self.apply('install')
+        self.kube.calls.clear()
+        remote.handle({'action': 'rollback', 'operation': self.op})
+        self.assertEqual(config.read_bytes(), original)
+        self.assertEqual(settings.read_bytes(), metadata)
+        self.assertFalse(self.kube.items)
+        self.assertFalse(remote.pending())
+        self.assertTrue((settings.parent / 'disabled.json').is_file())
+        self.assertEqual({args[1] for args in self.kube.writes if args[0] == 'delete'}, set(remote.KINDS))
 
     def test_remove_requires_uninstall_phase(self):
         self.begin()

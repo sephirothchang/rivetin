@@ -66,13 +66,16 @@ func TestGoManifestAndEmbeddedServiceMatchRemoteAdapter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if bundle.Version != cliVersion {
+		t.Fatalf("CLI version %s differs from embedded release %s", cliVersion, bundle.Version)
+	}
 	script, err := assets.ReadFile("remote.py")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, origin := range []string{"https://tower.example.invalid", "https://tower.example.invalid:8443"} {
 		t.Run(origin, func(t *testing.T) {
-			manifest, err := deployment(profiles()[0], origin, digest(inputs["service.tar.gz"]))
+			manifest, err := deployment(profiles()[0], origin, digest(inputs["service.tar.gz"]), "")
 			if err != nil {
 				t.Fatal(err)
 			}

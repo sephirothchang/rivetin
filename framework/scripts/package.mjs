@@ -13,11 +13,15 @@ const seaMap = JSON.parse(await readFile(path.join(root, 'sea-map.json'), 'utf8'
 if (metadata.version !== FRAMEWORK_VERSION || seaMap.metadata?.info?.version !== FRAMEWORK_VERSION) throw new Error('FRAMEWORK_VERSION_MISMATCH');
 await mkdir(stage, { recursive: true }); await mkdir(output, { recursive: true });
 const channel = path.resolve(root, '../plugins/rivetin-ssh-channel');
-execFileSync(process.execPath, [path.join(channel, 'scripts/build.mjs')], { cwd: channel, stdio: 'inherit' });
-execFileSync(process.execPath, [path.join(channel, 'scripts/package.mjs')], { cwd: channel, stdio: 'inherit' });
+const args = process.argv.slice(2);
+if (args.length && (args.length !== 2 || args[0] !== '--builtin-package')) throw new Error('INVALID_PACKAGE_ARGUMENTS');
+if (!args.length) {
+  execFileSync(process.execPath, [path.join(channel, 'scripts/build.mjs')], { cwd: channel, stdio: 'inherit' });
+  execFileSync(process.execPath, [path.join(channel, 'scripts/package.mjs')], { cwd: channel, stdio: 'inherit' });
+}
 const channelManifest = JSON.parse(await readFile(path.join(channel, 'rivetin.json'), 'utf8'));
 if (!/^\d+\.\d+\.\d+$/.test(channelManifest.version)) throw new Error('INVALID_BUILTIN_VERSION');
-const builtin = path.join(channel, `release/rivetin-ssh-channel-${channelManifest.version}.rivetin.json`);
+const builtin = args.length ? path.resolve(args[1]) : path.join(channel, `release/rivetin-ssh-channel-${channelManifest.version}.rivetin.json`);
 const builtinPackage = validatePackage(await readFile(builtin));
 if (builtinPackage.manifest.id !== 'rivetin-ssh-channel' || builtinPackage.manifest.configuration.defaults.enabled !== false) throw new Error('INVALID_BUILTIN_PLUGIN');
 await mkdir(path.join(root, 'server/builtins'), { recursive: true });

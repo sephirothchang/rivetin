@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { storage, atomic, json, validId, assertId } from './storage.js';
 import { SSH_CHANNEL_ID, SSH_OPERATIONS, SSH_REJECTED_EXAMPLES, validateSshRegistration, compileSshCommand, sshRegistrationDigest } from './ssh-policy.js';
 import { createSshVault } from './ssh-vault.js';
@@ -18,7 +18,7 @@ function boundedResults(items) {
   while (kept.length > 1 && Buffer.byteLength(JSON.stringify({ items: kept })) > 4 * 1024 * 1024) kept.pop();
   return { items: kept };
 }
-export function createSshBroker(directory, { serviceStatus, vault = createSshVault(directory), run: transport, audit = async () => {}, now = Date.now, prepareResultContext, onResult } = {}) {
+export function createSshBroker(directory, { serviceStatus, vault = createSshVault(directory), run: transport, audit = async () => {}, now = Date.now, prepareResultContext, onResult, manualOnly = false } = {}) {
   if (typeof serviceStatus !== 'function') throw new Error('SSH_STATUS_PROVIDER_REQUIRED');
   if (prepareResultContext !== undefined && typeof prepareResultContext !== 'function' || onResult !== undefined && typeof onResult !== 'function') throw new Error('SSH_RESULT_HOOK_INVALID');
   const root = path.join(path.resolve(directory), 'ssh-channel'), disk = storage(root);
@@ -43,11 +43,11 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
     for (const job of active.values()) if (pluginId === null || job.pluginId === pluginId) cancelJob(job);
     for (const [token, challenge] of challenges) if (pluginId === null || challenge.pluginId === pluginId) challenges.delete(token);
   }
-  async function registrations(status) {
+  async function registrations(status, actor) {
     const epoch = await json(path.join(path.resolve(directory), 'framework', 'ssh-revocation.json'), null);
     if (epoch !== null && (typeof epoch !== 'object' || Array.isArray(epoch) || Object.keys(epoch).join() !== 'nonce' || !/^[a-f0-9]{32}$/.test(epoch.nonce || ''))) throw new Error('SSH_REVOCATION_INVALID');
-    const hosts = await vault.list(), byId = new Map(hosts.map(host => [host.hostId, host])), revocations = (await state()).revocations;
-    const revision = await vault.revision() + ':' + (epoch?.nonce || '') + ':' + revocations.global, items = [];
+    const hosts = await vault.list(actor), byId = new Map(hosts.map(host => [host.hostId, host])), revocations = (await state()).revocations;
+    const revision = await vault.revision() + ':' + (epoch?.nonce || '') + ':' + revocations.global + ':' + createHash('sha256').update(JSON.stringify(hosts.map(({ password, privateKey, ...host }) => host))).digest('hex'), items = [];
     const seen = new Set();
     for (const input of status.plugins || []) {
       if (!validId(input.id)) continue;
@@ -65,11 +65,13 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
       }
       const commands = [];
       for (const command of registration.commands) {
-        const targets = [], missingHosts = [], missingDevices = [];
+        const targets = [], missingHosts = [], missingDevices = [], excludedHosts = [];
         const hostIds = command.hostScope === 'configured' ? hosts.map(host => host.hostId) : command.hostIds;
         const selections = [], resolvedDevices = new Set(); let count = 0;
         for (const hostId of hostIds) {
           const host = byId.get(hostId);
+          // Only the trusted v2 resolver can identify a deliberate empty policy.
+          if (command.operation === 'disk.smart.read' && command.deviceScope === 'configured' && host?.diskSelection?.source === 'fresh-host-inventory' && host.diskSelection.mode === 'custom' && host.diskSelection.explicitlyEmpty === true && host.devices.length === 0) { excludedHosts.push(hostId); continue; }
           if (!host || host.credentialConfigured === false) { missingHosts.push(hostId); continue; }
           const deviceIds = command.operation !== 'disk.smart.read' ? [undefined] : command.deviceScope === 'configured' ? host.devices.map(device => device.deviceId).sort() : command.deviceIds;
           if (!deviceIds.length) missingDevices.push({ hostId, reason: 'SSH_DEVICES_NOT_CONFIGURED' });
@@ -84,8 +86,11 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
             catch { missingDevices.push({ hostId: host.hostId, deviceId }); }
           }
         }
+        const operation = SSH_OPERATIONS.find(item => item.id === command.operation);
+        const source = command.operation !== 'disk.smart.read' ? 'configured-hosts' : !hostIds.length ? 'unresolved' : hostIds.every(hostId => byId.get(hostId)?.diskSelection?.source === 'fresh-host-inventory') ? 'fresh-host-inventory' : 'configured-device-mappings';
         commands.push({ ...command, hostIds, ...(command.operation === 'disk.smart.read' ? { deviceIds: command.deviceScope === 'configured' ? [...resolvedDevices].sort() : command.deviceIds } : {}),
-          risk: 'read-only', preview: targets.map(target => `${target.hostId}${target.deviceId ? '/' + target.deviceId : ''}: ${target.command}`), targets, missingHosts, missingDevices, targetLimitExceeded });
+          category: operation.category, template: operation.command, argumentSource: operation.argumentSource, expansion: operation.expansion, resolutionSource: source,
+          expectedCount: count, resolvedCount: targets.length, excludedHosts, risk: 'read-only', preview: targets.map(target => `${target.hostId}${target.deviceId ? '/' + target.deviceId : ''}: ${target.command}`), targets, missingHosts, missingDevices, targetLimitExceeded });
       }
       const resolvedCommands = commands.map(({ id, hostIds, deviceIds, preview, targets }) => ({ id, hostIds, ...(deviceIds ? { deviceIds } : {}), preview, targets }));
       items.push({ pluginId: plugin.id, packageId: plugin.packageId, name: plugin.manifest.name, pluginName: plugin.manifest.name, enabled: plugin.enabled === true, digest: sshRegistrationDigest(plugin, registration, revision + ':' + (revocations.plugins[plugin.id] || ''), resolvedCommands), commands,
@@ -93,9 +98,9 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
     }
     return { hosts, items };
   }
-  async function current(pluginId, { enabled = true } = {}) {
+  async function current(pluginId, { enabled = true, actor } = {}) {
     assertId(pluginId);
-    const status = await serviceStatus(), { items } = await registrations(status);
+    const status = await serviceStatus(), { items } = await registrations(status, actor);
     const registration = items.find(item => item.pluginId === pluginId);
     if (!registration) throw new Error('SSH_REGISTRATION_UNAVAILABLE');
     if (registration.reason === 'SSH_REGISTRATION_INVALID') throw new Error('SSH_REGISTRATION_INVALID');
@@ -105,9 +110,19 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
     if (enabled && typeof transport !== 'function') throw new Error('SSH_TRANSPORT_UNAVAILABLE');
     return registration;
   }
-  async function sync() {
+  async function sync(actor) {
     return disk.locked(async () => {
-      const status = await serviceStatus(), { items } = await registrations(status), value = await state();
+      const status = await serviceStatus(), value = await state();
+      let items;
+      try { ({ items } = await registrations(status, actor)); }
+      catch (error) {
+        abortMatching(null);
+        if (Object.keys(value.approvals).length || Object.keys(value.schedules).length) {
+          value.approvals = {}; value.schedules = {}; value.revocations.global = randomBytes(16).toString('hex');
+          await atomic(stateFile, value);
+        }
+        throw error;
+      }
       let changed = false;
       for (const [pluginId, approval] of Object.entries(value.approvals)) {
         const registration = items.find(item => item.pluginId === pluginId);
@@ -120,7 +135,7 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
         if (!gate(status) || !registration?.enabled || registration.reason || registration.digest !== job.digest || approval?.digest !== job.digest || approval?.id !== job.approvalId) cancelJob(job);
       }
       if (changed) await atomic(stateFile, value);
-      return { status, registrations: items, hosts: (await vault.list()), state: value };
+      return { status, registrations: items, hosts: (await vault.list(actor)), state: value };
     });
   }
   async function invalidate(pluginId = null, reason = 'SSH_APPROVAL_REVOKED') {
@@ -144,14 +159,14 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
     return { items: value.items.slice(0, 30) };
   }
   async function assertActive(job, allowTimeoutFailure = false) {
-    const latest = await current(job.pluginId), approval = (await state()).approvals[job.pluginId];
+    const latest = await current(job.pluginId, { actor: job.actor }), approval = (await state()).approvals[job.pluginId];
     if (job.revoked || job.controller.signal.aborted && !(allowTimeoutFailure && job.timedOut) || latest.digest !== job.digest || approval?.id !== job.approvalId || approval?.digest !== job.digest) throw new Error('SSH_APPROVAL_REVOKED');
   }
   async function persistResult(item, context, job) {
     // A timeout cancels transport, while authorization can still permit a metric-free failure record.
     const timeoutFailure = item.result === 'failed' && item.code === 'SSH_EXECUTION_TIMEOUT' && job.timedOut && !Object.hasOwn(item, 'stdout');
     try {
-      const publication = await onResult(structuredClone(item), context, { signal: timeoutFailure ? job.permissionController.signal : job.controller.signal, assertActive: () => assertActive(job, timeoutFailure) });
+      const publication = await onResult(structuredClone(item), context, { signal: timeoutFailure ? job.permissionController.signal : job.controller.signal, assertActive: () => assertActive(job, timeoutFailure), actor: job.actor });
       if (job.requireSample && item.result === 'success' && (publication?.collectedStatus !== 'ok' || publication?.record?.status !== 'ok' || publication?.record?.operationId !== item.id)) {
         const code = { SMART_UNSUPPORTED: 'SSH_SMART_UNSUPPORTED', SMART_OUTPUT_INVALID: 'SSH_SMART_OUTPUT_INVALID', SMART_IDENTITY_MISMATCH: 'SSH_SMART_IDENTITY_MISMATCH' }[publication?.collectedCode];
         throw new Error(code || 'SSH_SMART_SAMPLE_FAILED');
@@ -173,10 +188,10 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
     if (externalSignal?.aborted) throw new Error('SSH_EXECUTION_CANCELLED');
     if (!validId(pluginId) || typeof commandId !== 'string') throw new Error('SSH_REGISTRATION_INVALID');
     assertId(pluginId);
-    await sync();
+    await sync(actor);
     const invocation = randomUUID();
     const batch = await disk.locked(async () => {
-      const registration = await current(pluginId), value = await state(), approval = value.approvals[pluginId];
+      const registration = await current(pluginId, { actor }), value = await state(), approval = value.approvals[pluginId];
       if (approval?.digest !== registration.digest) throw new Error('SSH_APPROVAL_REQUIRED');
       const command = registration.commands.find(item => item.id === commandId);
       if (!command) throw new Error('SSH_COMMAND_UNAVAILABLE');
@@ -194,7 +209,7 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
     });
     const results = [];
     try { for (const target of batch.targets) {
-      const job = { id: randomUUID(), pluginId, commandId, hostId: target.hostId, target, controller: new AbortController(), permissionController: new AbortController(), timedOut: false, revoked: false, digest: batch.digest, approvalId: batch.approvalId, requireSample };
+      const job = { actor, id: randomUUID(), pluginId, commandId, hostId: target.hostId, target, controller: new AbortController(), permissionController: new AbortController(), timedOut: false, revoked: false, digest: batch.digest, approvalId: batch.approvalId, requireSample };
       const startedAt = now();
       const externalAbort = () => cancelJob(job);
       externalSignal?.addEventListener('abort', externalAbort, { once: true });
@@ -203,16 +218,16 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
       try {
         if (now() >= batch.deadline) throw new Error('SSH_BATCH_TIMEOUT');
         const registration = await disk.locked(async () => {
-          const candidate = await current(pluginId), approval = (await state()).approvals[pluginId];
+          const candidate = await current(pluginId, { actor }), approval = (await state()).approvals[pluginId];
           if (candidate.digest !== job.digest || approval?.digest !== job.digest || approval.id !== batch.approvalId) throw new Error('SSH_APPROVAL_REVOKED');
           if (active.size >= 2 || [...active.values()].some(item => item.hostId === job.hostId)) throw new Error('SSH_CONCURRENCY_LIMIT');
           active.set(job.id, job); return candidate;
         });
-        const host = await vault.get(job.hostId);
+        const host = await vault.get(job.hostId, actor);
         if (compileSshCommand(commandSpec(registration.commands.find(item => item.id === commandId)), host, job.target.deviceId) !== job.target.command) throw new Error('SSH_APPROVAL_REVOKED');
         await assertActive(job);
         if (prepareResultContext) {
-          try { context = await prepareResultContext({ pluginId, commandId, operation: batch.operation, hostId: job.hostId, ...(job.target.deviceId ? { deviceId: job.target.deviceId } : {}), host: structuredClone(host) }); }
+          try { context = await prepareResultContext({ pluginId, commandId, operation: batch.operation, hostId: job.hostId, ...(job.target.deviceId ? { deviceId: job.target.deviceId } : {}), host: structuredClone(host), actor }); }
           catch { throw new Error('SSH_RESULT_CONTEXT_FAILED'); }
           await assertActive(job);
         }
@@ -266,9 +281,9 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
     async selectSmartTarget(pluginId, target, actor) {
       admin(actor); assertId(pluginId);
       if (!target || Object.keys(target).sort().join() !== 'deviceId,hostId' || ![target.hostId, target.deviceId].every(value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value))) throw new Error('SSH_TARGET_NOT_APPROVED');
-      await sync();
+      await sync(actor);
       return disk.locked(async () => {
-        const registration = await current(pluginId), approval = (await state()).approvals[pluginId];
+        const registration = await current(pluginId, { actor }), approval = (await state()).approvals[pluginId];
         if (!approval?.id || approval.digest !== registration.digest) throw new Error('SSH_APPROVAL_REQUIRED');
         const commands = registration.commands.filter(command => command.operation === 'disk.smart.read' && command.targets.some(item => item.hostId === target.hostId && item.deviceId === target.deviceId));
         if (commands.length !== 1) throw new Error(commands.length ? 'SSH_SMART_COMMAND_AMBIGUOUS' : 'SSH_TARGET_NOT_APPROVED');
@@ -276,9 +291,9 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
       });
     },
     async snapshotSmartSelections(pluginId, actor) {
-      admin(actor); assertId(pluginId); await sync();
+      admin(actor); assertId(pluginId); await sync(actor);
       return disk.locked(async () => {
-        const registration = await current(pluginId), approval = (await state()).approvals[pluginId];
+        const registration = await current(pluginId, { actor }), approval = (await state()).approvals[pluginId];
         if (!approval?.id || approval.digest !== registration.digest) throw new Error('SSH_APPROVAL_REQUIRED');
         const grouped = new Map();
         for (const command of registration.commands.filter(item => item.operation === 'disk.smart.read')) for (const target of command.targets) {
@@ -298,7 +313,7 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
     },
     async status(actor) {
       admin(actor);
-      const snapshot = await sync(), recentRuns = [];
+      const snapshot = await sync(actor), recentRuns = [];
       for (const item of snapshot.registrations) recentRuns.push(...(await recent(item.pluginId)).items.map(({ stdout, ...metadata }) => metadata));
       return { enabled: gate(snapshot.status), transportReady: typeof transport === 'function', hosts: snapshot.hosts,
         operations: SSH_OPERATIONS, rejectedExamples: SSH_REJECTED_EXAMPLES.map(item => ({ ...item, command: item.example, impact: item.risk })),
@@ -306,7 +321,7 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
         recentRuns: recentRuns.sort((a, b) => b.finishedAt.localeCompare(a.finishedAt)).slice(0, 50), running: active.size };
     },
     async review(pluginId, actor) {
-      admin(actor); assertId(pluginId); await sync(); const registration = await current(pluginId);
+      admin(actor); assertId(pluginId); await sync(actor); const registration = await current(pluginId, { actor });
       for (const [token, challenge] of challenges) if (challenge.expiresAt <= now()) challenges.delete(token);
       if (challenges.size >= 100) throw new Error('SSH_REVIEW_LIMIT');
       const token = randomBytes(32).toString('hex'), expiresAt = now() + 120000;
@@ -319,23 +334,29 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
       return disk.locked(async () => {
         const review = challenges.get(challenge); challenges.delete(challenge);
         if (acknowledged !== true || !review || review.actorId !== actor.id || review.actorSource !== actor.source || review.pluginId !== pluginId || review.digest !== digest || review.expiresAt <= now()) throw new Error('SSH_REVIEW_CONFIRMATION_REQUIRED');
-        const registration = await current(pluginId);
+        const registration = await current(pluginId, { actor });
         if (registration.digest !== digest) throw new Error('SSH_REGISTRATION_CHANGED');
         const value = await state(), approvedAt = new Date(now()).toISOString();
         await emit(actor, 'approve', pluginId);
         value.approvals[pluginId] = { id: randomUUID(), digest, approvedAt, actorId: actor.id };
-        value.schedules[pluginId] = Object.fromEntries(registration.commands.filter(command => command.intervalSeconds).map(command => [command.id, now() + command.intervalSeconds * 1000]));
+        value.schedules[pluginId] = manualOnly || await vault.v2?.active() ? {} : Object.fromEntries(registration.commands.filter(command => command.intervalSeconds).map(command => [command.id, now() + command.intervalSeconds * 1000]));
         await atomic(stateFile, value); return { pluginId, approved: true, digest, approvedAt };
       });
     },
     async revoke(pluginId, actor) { admin(actor); const result = await invalidate(pluginId); await emit(actor, 'revoke', pluginId); return result; },
     run: (pluginId, commandId, actor) => trackedExecute(pluginId, commandId, actor),
     drain: async () => { await Promise.allSettled([...pending]); },
-    async results(pluginId, actor) { admin(actor); await current(pluginId, { enabled: false }); const value = await recent(pluginId); return { items: value.items }; },
+    async results(pluginId, actor) { admin(actor); await current(pluginId, { enabled: false, actor }); const value = await recent(pluginId); return { items: value.items }; },
     async tick() {
       if (ticking || stopped) return;
       ticking = true;
       try {
+        if (manualOnly || await vault.v2?.active()) {
+          // Keep authorization polling for the lifetime of a manual invocation;
+          // disabling background schedules must not disable emergency revocation.
+          for (const job of active.values()) { try { await assertActive(job); } catch { cancelJob(job); } }
+          return;
+        }
         const snapshot = await sync(), due = [];
         if (!gate(snapshot.status) || typeof transport !== 'function') return;
         await disk.locked(async () => {

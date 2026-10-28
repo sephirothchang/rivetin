@@ -2,6 +2,8 @@
 
 This server-side Rivetin provider exposes a fixed CloudTower 4.9.0 action allowlist. It is not a general REST proxy or a binding to native Tower dialogs. Clients cannot supply API paths, URLs, authentication headers, commands, filters or arbitrary mutation fields. The module has local contract tests; these tests do not establish live VM power-operation acceptance.
 
+> Scope: this document describes the retained server-side resource-action bridge. The current context-menu plugin uses native UI entry points and does not call this bridge; see its [native action provider](../plugins/rivetin-context-menu/docs/action-provider.md).
+
 ## Integration contract
 
 ```js
@@ -17,7 +19,7 @@ const provider = createResourceActions(absoluteDataDirectory, {
 
 The actor must come from the framework's live Tower authentication. The provider requires its Tower identity and original `Authorization` or `Cookie` transport headers. Neither an arbitrary client actor nor a decoded token is an authorization source. The current implementation only enables mutations for the server-confirmed `ROOT` role; other authenticated roles receive an unknown action permission and cannot execute. This is deliberately narrower than all possible Tower roles. An administrator display name or `admin: true` is insufficient. Each native API submission still uses the original caller's credentials, so Tower performs final authorization.
 
-The framework's HTTP integration must retain its administrator and origin gates, independently authenticate every request, and inject the installed plugin ID. The server module does not accept client-supplied role, actor or authentication fields as trusted evidence.
+The framework's HTTP integration must retain its administrator and origin gates, independently authenticate every request, and validate the requested plugin ID against installed state, compatibility and permissions. The framework client fixes its own plugin ID in requests; HTTP requests carry that ID rather than receiving a server-injected identity. The server module does not accept client-supplied role, actor or authentication fields as trusted evidence.
 
 Methods:
 
@@ -34,7 +36,7 @@ The VM read uses `where: {id}` and `first: 2`, rejects missing, mismatched or no
 
 ## Implemented actions
 
-The 67-entry VM menu receives explicit capability results: eight actions have an implementation and the remaining 59 are unsupported. Unknown action IDs are also rejected. An implementation may still be unavailable because of caller permissions, VM state, plugin state or Tower version.
+The retained bridge has a 67-action VM catalog, distinct from the current native UI menu: eight actions have an implementation and the remaining 59 are unsupported. Unknown action IDs are also rejected. An implementation may still be unavailable because of caller permissions, VM state, plugin state or Tower version.
 
 | Action ID | Values | Fixed public API | Required VM state |
 |---|---|---|---|

@@ -49,7 +49,9 @@ IPMI 0.1.1 包 SHA-256 为 `af61f845abeec068f314be88538ac7ea1b3ddca175bc7f3df871
 2. 历史部署同时遗留版本化和无版本 Island。旧 CLI 固定按无版本名操作，漏掉版本化入口；下载缺失资源时该 Tower 返回 500，而非 404。已先独立备份并精确清理自有残留，源码改为刷新注册表、识别实际名称、按版本下载或删除并回读。多实例、实际注册名变更、非法响应及已登记但无法备份的状态均安全拒绝，不能把 500 当作“未安装”。
 3. Island POST 的传输中断或超时存在结果不确定性，现在返回固定 `ISLAND_REGISTER_OUTCOME_UNKNOWN` 并保留 pending，避免对未知写入伪报自动回滚成功。该边界使用本地注入测试，未在真实环境故意中断注册请求。
 
-## 可复现检查
+## 按当前工具链复现检查
+
+以下命令适用于当前源码，不改写前述历史验收版本、数量和结果。打包会生成制品，执行前须明确新版本或产物保全方案，不能覆盖固定同版本归档。
 
 在仓库根目录执行：
 
@@ -60,32 +62,26 @@ npm run package
 npm run check:public
 ```
 
-使用项目隔离缓存后，先在 `cli/` 目录下载模块：
+Go 工具链按 [CLI 开发说明](../cli/README.md) 放在项目内的 `.local/toolchains/go`。以下命令全部从仓库根目录执行，解析器自动选择项目工具链、CLI 工作目录和隔离缓存，不依赖旧目录或额外路径参数：
 
 ```text
-go mod download
+node cli/scripts/toolchain.mjs --run-go mod download
+node cli/scripts/prepare.mjs
+node cli/scripts/toolchain.mjs --run-go mod verify
+node cli/scripts/toolchain.mjs --run-go test -v ./...
+node cli/scripts/toolchain.mjs --run-go vet ./...
+python -m unittest discover -s cli -p test_remote.py -v
 ```
 
-再回到仓库根目录生成嵌入资源（首次检出没有 `cli/payload/`，不能先运行 Go 测试）：
-
-```text
-node cli/scripts/prepare.mjs --go <GO_EXECUTABLE>
-```
-
-最后在 `cli/` 目录执行：
-
-```text
-go mod verify
-go test -v ./...
-go vet ./...
-python -m unittest -v test_remote.py
-```
+首次检出没有 `cli/payload/`，须先 prepare 再运行 Go 测试；prepare 会生成嵌入资源，已有固定产物须先保全。只有有意选择其他编译器时才使用已有 `--go` 选项，默认流程无需该参数。
 
 Go 和 Python 均指开发环境已有或项目隔离的工具链，发布客户端无此要求。Go 跨语言契约测试需要开发环境可发现 Python 3.8+；缺少时会明确标记跳过，该次运行不能称为完成全部契约验收。本轮 Python 可用，相关测试未跳过。测试使用保留域名、显式模拟凭据及工作区内忽略的临时目录，不连接真实 Tower。
 
 本轮回归覆盖初始探测为未知构建时部署写入拒绝、只读命令仍可显示未知构建及不支持状态、非管理员拒绝、SSH 主机指纹和 TLS 校验、后端/Island 回读、注册失败与恢复、同名非安装器资源拒绝、归档路径限制、卸载保留数据、紧急禁用不依赖 Tower Web/API，以及不记录凭据。后续重现时仍应以实际测试输出核对通过、失败和跳过数量。
 
-## 尚未覆盖的边界
+2026-10-28 的 0.2.1 本地恢复边界回归另覆盖：元数据已恢复、旧资源应用失败后的重试仍拒绝带 v2 密文或 mutation barrier 的旧代码恢复；恢复版本快照缺失、已有安装的当前元数据缺失和不一致版本转换均拒绝资源恢复并保留 pending。此为本地状态机注入验证，不能视为真实平台故障恢复已验收；历史候选不自动获得后续修复。
+
+## 该历史验收轮次尚未覆盖的边界
 
 - 本次 Web 升级使用手动上传。私有仓库未配置在线下载凭据，版本清单尚无发布制品标识，因此没有声称 GitHub 联网升级成功；不将源码推送等同于发布可下载制品。
 - 未故意使真实 Tower Web/API 整体失效；SSH 禁用不依赖这些接口的机制由源码与本地测试覆盖，实机是在 Tower 可用时验证该独立 SSH 路径。

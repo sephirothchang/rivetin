@@ -31,6 +31,10 @@ APPLY_ROLLOUT_SECONDS = 270
 APPLY_ROLLOUT_PROCESS_SECONDS = 280
 KNOWN_METADATA_VERSIONS = ('0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0')
 METADATA_UPGRADES = {('0.1.0', '0.1.1'), ('0.1.0', '0.1.2'), ('0.1.1', '0.1.2'), ('0.1.0', '0.1.3'), ('0.1.1', '0.1.3'), ('0.1.2', '0.1.3'), ('0.1.0', '0.1.4'), ('0.1.1', '0.1.4'), ('0.1.2', '0.1.4'), ('0.1.3', '0.1.4'), ('0.1.0', '0.1.5'), ('0.1.1', '0.1.5'), ('0.1.2', '0.1.5'), ('0.1.3', '0.1.5'), ('0.1.4', '0.1.5'), ('0.1.0', '0.2.0'), ('0.1.1', '0.2.0'), ('0.1.2', '0.2.0'), ('0.1.3', '0.2.0'), ('0.1.4', '0.2.0'), ('0.1.5', '0.2.0')}
+METADATA_UPGRADES.update((source, '0.2.1') for source in KNOWN_METADATA_VERSIONS)
+KNOWN_METADATA_VERSIONS += ('0.2.1',)
+METADATA_UPGRADES.update((source, '0.2.2') for source in KNOWN_METADATA_VERSIONS)
+KNOWN_METADATA_VERSIONS += ('0.2.2',)
 
 def fail(code):
     raise RuntimeError(code)
@@ -253,7 +257,7 @@ def extract_release(data, target):
                 if name not in ['server', 'deploy', 'server/vendor', 'server/builtins', 'shared']:
                     fail('SERVICE_ARCHIVE_INVALID')
                 continue
-            if not m.isfile() or not (name in allowed or name in ['shared/identity.js', 'shared/version.js', 'shared/framework-compatibility.js', 'server/vendor/ssh2.cjs', 'server/builtins/rivetin-ssh-channel.json'] or re.fullmatch(r'(server/[a-z-]+\.js|deploy/[a-z.-]+)', name)):
+            if not m.isfile() or not (name in allowed or name in ['shared/identity.js', 'shared/version.js', 'shared/framework-compatibility.js', 'server/vendor/ssh2.cjs', 'server/builtins/rivetin-ssh-channel.json', 'server/ssh-connections-v2.js'] or re.fullmatch(r'(server/[a-z-]+\.js|deploy/[a-z.-]+)', name)):
                 fail('SERVICE_ARCHIVE_INVALID')
             if name in contents:
                 fail('SERVICE_ARCHIVE_INVALID')
@@ -389,10 +393,13 @@ def validate_manifest(manifest, checksum):
             {'name': 'data', 'mountPath': '/var/lib/rivetin'}]:
         fail('MANIFEST_INVALID')
     environment = container.get('env', [])
-    if len(environment) != 3 or any(set(item) != {'name', 'value'} for item in environment):
+    if len(environment) not in (3, 4) or any(set(item) != {'name', 'value'} for item in environment):
         fail('MANIFEST_INVALID')
     values = {item['name']: item['value'] for item in environment}
-    if set(values) != {'RIVETIN_' + key for key in ['DATA', 'TOWER_URL', 'ORIGINS']}:
+    required_env = {'RIVETIN_' + key for key in ['DATA', 'TOWER_URL', 'ORIGINS']}
+    if len(values) != len(environment) or set(values) not in (required_env, required_env | {'RIVETIN_GATEWAY_CERT_SHA256'}):
+        fail('MANIFEST_INVALID')
+    if 'RIVETIN_GATEWAY_CERT_SHA256' in values and (not isinstance(values['RIVETIN_GATEWAY_CERT_SHA256'], str) or not re.fullmatch('[a-f0-9]{64}', values['RIVETIN_GATEWAY_CERT_SHA256'])):
         fail('MANIFEST_INVALID')
     values = {key: values['RIVETIN_' + key] for key in ['DATA', 'TOWER_URL', 'ORIGINS']}
     if values['DATA'] != '/var/lib/rivetin' or values['TOWER_URL'] != 'http://cloudtower-cloudtower.cloudtower-system.svc.cluster.local':
@@ -473,6 +480,8 @@ def remove_owned():
 
 def rollback(backup):
     before = json.loads((backup / 'resources.json').read_text())
+    if not (backup / 'framework-version-before.json').is_file():
+        fail('FRAMEWORK_MIGRATION_REQUIRED')
     previous = saved_framework_metadata(backup)
     if not owned(resources()):
         fail('RESOURCE_OWNERSHIP_MISMATCH')
@@ -480,6 +489,15 @@ def rollback(backup):
     disable()
     with snapshot_locks():
         current = framework_metadata()
+        if before and (previous is None or current is None):
+            fail('FRAMEWORK_MIGRATION_REQUIRED')
+        # Metadata can already be restored when a previous resource apply failed.
+        # Gate the old-code restore itself, including every retry of that state.
+        if previous and previous['version'] not in ('0.2.1', '0.2.2'):
+            vault = BASE / 'data' / 'ssh-channel' / 'vault'
+            if any((vault / name).exists() or (vault / name).is_symlink()
+                   for name in ['connections.v2.json', 'mutation.v2.json']):
+                fail('SSH_CONNECTION_DOWNGRADE_UNREPRESENTABLE')
         if previous and current and previous != current:
             if (previous['version'], current['version']) not in METADATA_UPGRADES:
                 fail('FRAMEWORK_MIGRATION_REQUIRED')

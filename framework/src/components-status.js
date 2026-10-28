@@ -21,9 +21,25 @@ const reasons = {
   REQUEST_FAILED: ['无法完成请求，请检查服务状态。', 'The request failed. Check service status.'],
   COMPONENT_STATUS_INVALID: ['状态响应无效，未将其视为正常。', 'The status response is invalid and was not treated as healthy.'],
   COMPONENT_UNVERIFIED: ['尚未完成验证。', 'Verification is incomplete.'],
+  DEPLOYMENT_PROBE_AUTH_UNAVAILABLE: ['缺少可用于只读探测的当前 Tower 管理员身份。', 'A current Tower administrator identity is required for the read-only probe.'],
+  DEPLOYMENT_PROBE_FORBIDDEN: ['入口或注册接口拒绝了当前身份；尚未核验。', 'The gateway or registry rejected the current identity. Verification is incomplete.'],
+  DEPLOYMENT_PROBE_TIMEOUT: ['只读探测超时；未将其视为正常。', 'The read-only probe timed out and was not treated as healthy.'],
+  ISLAND_UNOBSERVABLE: ['尚未接入 Island 注册读取。', 'The Island registry reader is unavailable.'],
+  ISLAND_REGISTRY_UNAVAILABLE: ['无法读取 Tower 中的实际 Island 注册。', 'The actual Tower Island registry could not be read.'],
+  ISLAND_REGISTRY_INVALID: ['Island 注册响应无效，尚未核验。', 'The Island registry response is invalid.'],
+  ISLAND_REGISTRATION_MISSING: ['Tower 中未找到 Rivetin 注册。', 'The Rivetin registration was not found in Tower.'],
+  ISLAND_REGISTRATION_MISMATCH: ['Rivetin 注册的版本、入口或挂载位置与当前框架不符。', 'The registered Rivetin version, entry or mount does not match this framework.'],
+  GATEWAY_ORIGIN_UNAVAILABLE: ['未配置唯一可信的 HTTPS 入口，未发送探测。', 'No single trusted HTTPS origin is configured. No probe was sent.'],
+  GATEWAY_TLS_UNTRUSTED: ['后端无法验证入口 TLS 证书；未跳过证书校验。', 'The backend cannot verify the gateway TLS certificate. Certificate checks were retained.'],
+  GATEWAY_TRUST_INVALID: ['入口证书固定值配置无效，已停止探测。', 'The configured gateway certificate pin is invalid. The probe was stopped.'],
+  GATEWAY_PIN_MISMATCH: ['入口证书与独立核验的固定指纹不符，未发送认证信息。', 'The gateway certificate does not match the independently verified pin. Authentication was not sent.'],
+  GATEWAY_CERT_VALIDITY_INVALID: ['固定的入口证书已过期或尚未生效，未发送认证信息。', 'The pinned gateway certificate is expired or not yet valid. Authentication was not sent.'],
+  GATEWAY_UNREACHABLE: ['后端无法通过配置的 Tower 入口完成只读请求。', 'The backend could not complete the read-only request through the configured Tower origin.'],
+  GATEWAY_HTTP_FAILED: ['配置的入口返回了非成功状态。', 'The configured gateway returned an unsuccessful HTTP status.'],
+  GATEWAY_RESPONSE_MISMATCH: ['入口响应未匹配本次挑战和当前后端实例。', 'The gateway response did not match this challenge and backend instance.'],
   TOWER_BUILD_UNKNOWN: ['无法确认 CloudTower 版本。', 'The CloudTower version could not be confirmed.'],
   PLUGIN_INCOMPATIBLE: ['当前版本不在插件兼容范围内。', 'The current version is outside plugin compatibility.'],
-  PLUGIN_COMPATIBILITY_UNDECLARED: ['插件未声明机器可验证的兼容范围。', 'The plugin has no machine-verifiable compatibility declaration.'],
+  PLUGIN_COMPATIBILITY_UNDECLARED: ['插件使用旧版兼容性声明；请升级至支持当前框架的插件版本。', 'The plugin uses an older compatibility declaration; update it to a version supporting this framework.'],
   SUPPORT_BUNDLE_INVALID: ['支持包校验失败，未下载文件。', 'Support bundle validation failed. No file was downloaded.'],
   COMPONENT_ACTION_INVALID: ['操作响应无法核实。', 'The operation response could not be verified.'],
   COMPONENT_ACTION_UNAVAILABLE: ['此操作当前不可用，请使用 CLI。', 'This action is unavailable. Use the CLI.'],
@@ -100,6 +116,7 @@ export function createComponentsStatus(React, helpers = {}) {
     const life = React.useRef({ mounted: false, epoch: 0, generation: 0, controller: null, mutating: false });
     const localized = (value, fallback = '—') => text(typeof value === 'string' ? value : value?.[locale] || value?.['en-US'] || value?.['zh-CN'], fallback);
     const explanation = value => { const key = code(value); return `${reasons[key]?.[en ? 1 : 0] || reasons.COMPONENT_UNVERIFIED[en ? 1 : 0]} [${key}]`; };
+    const detail = row => row.status === 'ok' && row.code === null ? (en ? 'This check passed.' : '本项检查已通过。') : explanation(row.code);
     const status = value => h('span', { className: `rv-components-status rv-components-${STATES.includes(value) ? value : 'unknown'}` }, tr({ ok: '已核验', warning: '需关注', failed: '失败', unknown: '未知', disabled: '已停用' }[value] || '未知'));
     async function load(fresh = false) {
       const state = life.current, epoch = ++state.epoch; state.controller?.abort(); const controller = new AbortController(); state.controller = controller;
@@ -165,8 +182,8 @@ export function createComponentsStatus(React, helpers = {}) {
       h('td', null, status(row.status)),
       h('td', null, row.dependsOn.length ? row.dependsOn.join(' → ') : tr('无依赖')),
       h('td', null, h('details', null,
-        h('summary', null, tr('详情')), h('p', null, explanation(row.code)), h('small', null, text(row.kind)),
-        ...(row.checks || []).map((check, index) => h('p', { key: index }, localized(check.label, text(check.id)), ' ', status(check.status), ' ', explanation(check.code))))));
+        h('summary', null, tr('详情')), h('p', null, detail(row)), h('small', null, text(row.kind)),
+        ...(row.checks || []).map((check, index) => h('p', { key: index }, localized(check.label, text(check.id)), ' ', status(check.status), ' ', detail(check))))));
     return h('section', { className: 'rv-components', 'aria-label': tr('组件状态') },
       h('div', { className: 'rv-components-toolbar' }, h('h3', null, tr('组件状态')), h('button', { className: 'rv-components-refresh', disabled: loading || busy, onClick: () => load(true) }, tr(loading ? '正在检查…' : '检查 / 刷新'))),
       h('p', { className: 'rv-components-note' }, tr('接口已注册不代表端到端功能已经验证；未知状态不视为正常。')),

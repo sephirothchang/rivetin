@@ -9,18 +9,35 @@ import testUtils from 'react-dom/test-utils.js';
 import { JSDOM } from 'jsdom';
 import { createSshVault } from '../server/ssh-vault.js';
 import { createSshConnectionsStore, createSshConnectionSettings } from '../src/ssh-connection-settings.js';
+import { defaultDevicePolicy } from '../src/ssh-target-settings.js';
 const { act } = testUtils;
 async function fixture(t) {
   const base = path.resolve('qa'); await mkdir(base, { recursive: true }); const root = await mkdtemp(path.join(base, 'ssh-connection-store-'));
   const vault = createSshVault(root);
   await vault.saveConnections({ version: 1, operationId: randomUUID(), global: { username: 'example-reader', authType: 'password', password: { action: 'replace', value: 'EXAMPLE_SAVED_PASSWORD' }, privateKey: { action: 'keep' } }, clusters: [],
     hosts: [{ hostId: 'example-host', clusterId: 'example-cluster', address: '192.0.2.10', port: 22, hostKeySha256: 'a'.repeat(64), devices: [{ deviceId: 'example-disk', path: '/dev/sda', serial: 'EXAMPLE_SERIAL' }], connection: null }] });
-  const failures = { load: false, put: '', inventory: false, malformed: false }, calls = [];
+  // A v2 contract mock around the existing real credential vault; this is not a v2 backend implementation.
+  const policies = new Map([['example-host', { ...defaultDevicePolicy(), classes: { ...defaultDevicePolicy().classes, disk: { mode: 'custom', ids: ['example-disk'] } } }]]);
+  const failures = { load: false, put: '', inventory: false, malformed: false, saveCode: '', migration: false }, calls = [];
+  const summary = async () => { const value = await vault.connections(); return { ...value, version: 2, migration: { persistedVersion: failures.migration ? 1 : 2, required: failures.migration, state: failures.migration ? 'required' : 'ready' }, hosts: value.hosts.map(({ devices, ...row }) => ({ ...row, devicePolicy: structuredClone(policies.get(row.hostId) || defaultDevicePolicy()), policyState: { disk: 'ready', unresolvedLegacyCount: 0, changedSelectionCount: 0 } })) }; };
+  const commit = async body => {
+    if (body.expectedRevision !== (await vault.connections()).revision) throw Object.assign(new Error('SSH_CONNECTION_REVISION_CONFLICT'), { status: 409 });
+    const previous = await vault.connections();
+    const value = await vault.saveConnections({ version: 1, operationId: body.operationId, global: body.global, clusters: body.clusters, hosts: body.hosts.map(({ devicePolicy, ...row }) => ({ ...row, devices: previous.hosts.find(host => host.hostId === row.hostId)?.devices || [] })) });
+    for (const host of body.hosts) policies.set(host.hostId, structuredClone(host.devicePolicy));
+    return { version: 2, operationId: body.operationId, committedRevision: value.revision, replayed: false, connections: await summary() };
+  };
   const client = async (route, method = 'GET', body, options = {}) => {
     calls.push({ route, method, body: body === undefined ? undefined : structuredClone(body), signal: options.signal });
     if (route === '/ssh-channel/preflight') {
       assert.equal(method, 'POST'); if (failures.preflight) return failures.preflight(body, options);
       throw new Error('SSH_PREFLIGHT_UNAVAILABLE');
+    }
+    if (route === '/ssh-channel/policy-capabilities') return failures.capabilities || { version: 1, connectionsVersion: 2, maxTargets: 100, classes: Object.fromEntries(['disk', 'gpu', 'usb', 'pcie'].map(category => [category, { inventory: category === 'disk', custom: category === 'disk', operations: category === 'disk' ? ['disk.smart.read'] : [] }])), execution: { manual: false, scheduled: false, reason: 'SSH_POLICY_RESOLVER_UNAVAILABLE' } };
+    if (route.startsWith('/ssh-channel/device-inventory?')) {
+      if (failures.disks) return failures.disks(route, options);
+      const hostId = new URL('https://tower.example.invalid' + route).searchParams.get('hostId');
+      return diskInventory(hostId);
     }
     if (route === '/ssh-channel/inventory') {
       if (failures.inventory) throw new Error('EXAMPLE_PRIVATE_INVENTORY_ERROR');
@@ -29,17 +46,19 @@ async function fixture(t) {
     assert.equal(route, '/ssh-channel/connections');
     if (method === 'GET') {
       if (failures.load) throw new Error('EXAMPLE_PRIVATE_LOAD_ERROR');
-      const value = await vault.connections(); if (failures.malformed) value.global.password = 'EXAMPLE_FORBIDDEN_RESPONSE_SECRET'; return value;
+      const value = await summary(); if (failures.malformed) value.global.password = 'EXAMPLE_FORBIDDEN_RESPONSE_SECRET'; return value;
     }
     if (failures.put === 'before') throw new Error('EXAMPLE_PRIVATE_PUT_ERROR');
-    const value = await vault.saveConnections(body);
+    if (failures.saveCode) throw Object.assign(new Error(failures.saveCode), { status: 409 });
+    const value = await commit(body);
     if (failures.put === 'after') throw new Error('EXAMPLE_PRIVATE_RESPONSE_LOST');
     return value;
   };
   const store = createSshConnectionsStore({ client, crypto: { randomUUID } }); await store.load();
   t.after(async () => { store.dispose(); await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }); });
-  return { store, vault, client, calls, failures };
+  return { store, vault, client, calls, failures, summary, commit };
 }
+function diskInventory(hostId, expiresAt = new Date(Date.now() + 60000).toISOString()) { return { version: 1, hostId, category: 'disk', complete: true, inventoryRevision: 'EXAMPLE_INVENTORY_REVISION', expiresAt, items: [{ id: 'example-disk', label: 'Example disk', model: 'Example SSD', selectable: true, selectionToken: 'EXAMPLE_SIGNED_SELECTION_TOKEN' }, { id: 'example-disk-2', label: 'Second disk', model: 'Example NVMe', selectable: true, selectionToken: 'EXAMPLE_SECOND_TOKEN' }] }; }
 function replace(store, value = 'EXAMPLE_NEW_PASSWORD') { store.update({ global: { ...store.getDraft().global, password: { action: 'replace', value } } }); }
 
 test('SSH connection drafts use an isolated store, never return saved secrets and never write until shared save', async t => {
@@ -73,11 +92,11 @@ test('SSH uncertain successful PUT is reconciled by operation ID with one GET an
 test('SSH unconfirmed writes and failed reloads preserve draft secrets and cannot report success', async t => {
   const f = await fixture(t); replace(f.store); f.failures.put = 'before';
   assert.equal(await f.store.save(), false); assert.equal(f.store.status().dirty, true); assert.equal(f.store.getDraft().global.password.value, 'EXAMPLE_NEW_PASSWORD');
-  assert.equal(f.calls.filter(call => call.method === 'PUT').length, 1); assert.equal(f.store.status().error, 'SSH_CONNECTION_SAVE_NOT_CONFIRMED');
+  assert.equal(f.calls.filter(call => call.method === 'PUT').length, 1); assert.equal(f.store.status().error, 'SSH_CONNECTION_OUTCOME_UNKNOWN');
   f.failures.load = true; await f.store.load(); assert.equal(f.store.getDraft().global.password.value, 'EXAMPLE_NEW_PASSWORD');
   assert.doesNotMatch(f.store.status().error, /EXAMPLE_PRIVATE/);
-  f.failures.load = false; f.failures.put = ''; assert.equal(await f.store.save(), true);
-  const writes = f.calls.filter(call => call.method === 'PUT'); assert.equal(writes[0].body.operationId, writes[1].body.operationId);
+  f.failures.load = false; f.failures.put = ''; assert.equal(await f.store.save(), false);
+  assert.equal(f.calls.filter(call => call.method === 'PUT').length, 1, 'unknown outcomes never replay a PUT');
 });
 
 test('SSH a secret-bearing server summary is rejected and disposal clears pending secret memory', async t => {
@@ -87,10 +106,10 @@ test('SSH a secret-bearing server summary is rejected and disposal clears pendin
 });
 
 test('SSH a slow GET cannot roll back the baseline after a newer PUT succeeds', async t => {
-  const f = await fixture(t), old = await f.vault.connections(); let reads = 0, release;
+  const f = await fixture(t), old = await f.summary(); let reads = 0, release;
   const slow = new Promise(resolve => { release = resolve; });
   const store = createSshConnectionsStore({ crypto: { randomUUID }, client: async (route, method, body) => {
-    if (method === 'PUT') return f.vault.saveConnections(body);
+    if (method === 'PUT') return f.commit(body);
     return ++reads === 1 ? old : slow;
   } });
   t.after(() => store.dispose()); await store.load(); replace(store);
@@ -102,7 +121,7 @@ test('SSH a slow GET cannot roll back the baseline after a newer PUT succeeds', 
 });
 
 test('SSH an edit made during a slow reload is retained without replacing its saved baseline', async t => {
-  const f = await fixture(t), original = await f.vault.connections(); let reads = 0, release;
+  const f = await fixture(t), original = await f.summary(); let reads = 0, release;
   const waiting = new Promise(resolve => { release = resolve; });
   const store = createSshConnectionsStore({ crypto: { randomUUID }, client: async () => ++reads === 1 ? original : waiting });
   t.after(() => store.dispose()); await store.load(); const loading = store.load(); replace(store);
@@ -130,7 +149,7 @@ test('SSH inventory names and existing aliases coexist; choosing a different hos
   assert.match(document.body.textContent, /Example host \(tower-host-1\)/); assert.match(document.body.textContent, /已配置映射：example-host/);
   await ui.change(ui.label('选择主机').querySelector('select'), 'tower-host-1');
   const row = f.store.getDraft().hosts[0]; assert.equal(row.hostId, 'tower-host-1'); assert.equal(row.clusterId, 'tower-cluster-1'); assert.equal(row.address, '192.0.2.20');
-  assert.equal(row.hostKeySha256, ''); assert.deepEqual(row.devices, []); assert.equal(row.connection, null);
+  assert.equal(row.hostKeySha256, ''); assert.deepEqual(row.devicePolicy, defaultDevicePolicy()); assert.equal(row.connection, null);
   assert.equal(f.calls.filter(call => call.method === 'PUT').length, 0); assert.equal((await f.vault.list())[0].hostId, 'example-host');
 });
 
@@ -157,7 +176,7 @@ async function savedOverrides(f, { cluster = true, host = true } = {}) {
   const draft = f.store.getDraft();
   if (cluster) draft.clusters = [{ clusterId: 'tower-cluster-1', connection: credential('cluster-reader', 'EXAMPLE_CLUSTER_PASSWORD') }];
   if (host) draft.hosts[0].connection = credential('host-reader', 'EXAMPLE_HOST_PASSWORD');
-  await f.vault.saveConnections({ ...draft, operationId: randomUUID() }); await f.store.load();
+  await f.commit({ ...draft, expectedRevision: f.store.status().revision, selectionProofs: [], operationId: randomUUID() }); await f.store.load();
 }
 const scopeControl = index => document.querySelector(`select[aria-label="例外 ${index} 范围"]`);
 const targetControl = index => document.querySelector(`select[aria-label="例外 ${index} 对象"]`);
@@ -223,7 +242,7 @@ test('SSH switching cluster to an existing host merges only the exception and do
 test('SSH a new host exception creates only a draft target and requires an independently verified pin', async t => {
   const f = await fixture(t), ui = await mount(t, f); await clickButton('+ 添加例外'); await ui.change(scopeControl(1), 'host');
   await ui.change(targetControl(1), 'tower-host-1'); const draft = f.store.getDraft(), target = draft.hosts.find(row => row.hostId === 'tower-host-1');
-  assert.equal(target.clusterId, 'tower-cluster-1'); assert.equal(target.address, '192.0.2.20'); assert.equal(target.hostKeySha256, ''); assert.deepEqual(target.devices, []);
+  assert.equal(target.clusterId, 'tower-cluster-1'); assert.equal(target.address, '192.0.2.20'); assert.equal(target.hostKeySha256, ''); assert.deepEqual(target.devicePolicy, defaultDevicePolicy());
   assert.match(document.querySelector('.pk-ssh-exception').textContent, /尚缺可信指纹/);
   assert.equal(await f.store.save(), false); assert.equal(f.store.status().dirty, true); assert.equal((await f.vault.list()).length, 1);
 });
@@ -386,4 +405,155 @@ test('SSH unmount aborts candidate discovery and prevents late writes into a dis
   await act(async () => ReactDOM.unmountComponentAtNode(ui.root)); assert.equal(call.signal.aborted, true);
   await act(async () => { release(observed(request)); await new Promise(setImmediate); });
   assert.equal(f.store.status().dirty, false); assert.equal(f.calls.filter(item => item.method === 'PUT').length, 0);
+});
+
+test('v2 legacy projection is read-only and cannot silently migrate or widen an empty custom scope', async t => {
+  const f = await fixture(t); f.failures.migration = true; await f.store.load(); const before = f.store.getDraft();
+  replace(f.store); assert.deepEqual(f.store.getDraft(), before); assert.equal(f.store.status().readOnly, true);
+  assert.equal(await f.store.save(), false); assert.equal(f.store.status().error, 'SSH_CONNECTION_MIGRATION_REQUIRED');
+  assert.equal(f.calls.filter(call => call.method === 'PUT').length, 0);
+  await mount(t, f); assert.match(document.body.textContent, /旧连接配置尚未显式迁移/);
+  assert.equal(document.querySelector('fieldset').disabled, true);
+});
+
+test('v2 dirty reload preserves original CAS revision and a 409 retains draft secrets without replay', async t => {
+  const f = await fixture(t), base = f.store.status().revision; replace(f.store);
+  const old = f.store.getDraft(); await f.commit({ ...old, operationId: randomUUID(), expectedRevision: base, selectionProofs: [] });
+  await f.store.load(); assert.equal(f.store.status().revision, base); assert.equal(f.store.status().remoteRevision, base + 1); assert.deepEqual(f.store.getDraft(), old);
+  assert.equal(await f.store.save(), false); assert.equal(f.store.status().error, 'SSH_CONNECTION_REVISION_CONFLICT');
+  const puts = f.calls.filter(call => call.method === 'PUT'); assert.equal(puts.length, 1); assert.equal(puts[0].body.expectedRevision, base);
+  assert.equal(f.store.getDraft().global.password.value, 'EXAMPLE_NEW_PASSWORD');
+  f.store.discard(); assert.equal(f.store.status().revision, base + 1); assert.equal(f.store.status().dirty, false);
+});
+
+test('v2 custom selection sends only opaque proofs and canonical IDs, then clears proof and secret memory on success', async t => {
+  const f = await fixture(t), before = f.store.getDraft();
+  f.store.selectDevices({ hostId: 'example-host', ids: ['example-disk', 'example-disk-2'], inventory: diskInventory('example-host') });
+  assert.equal(f.store.status().dirty, true); assert.doesNotMatch(JSON.stringify(f.store.getDraft()), /EXAMPLE_SECOND_TOKEN|selectionToken|serial|\/dev\//);
+  assert.equal(await f.store.save(), true);
+  const put = f.calls.find(call => call.method === 'PUT').body; assert.equal(put.version, 2); assert.equal(put.expectedRevision, f.store.status().revision - 1);
+  assert.equal(put.selectionProofs.length, 2); assert.deepEqual(put.selectionProofs[1], { hostId: 'example-host', category: 'disk', id: 'example-disk-2', selectionToken: 'EXAMPLE_SECOND_TOKEN' });
+  assert.doesNotMatch(JSON.stringify(put), /serial|\/dev\//); assert.equal(f.store.status().dirty, false);
+  assert.deepEqual(f.store.getDraft().global, before.global);
+});
+
+test('v2 explicit same-ID reselection is dirty and preserves fresh identity proof without changing policy IDs', async t => {
+  const f = await fixture(t), before = f.store.getDraft();
+  f.store.selectDevices({ hostId: 'example-host', ids: ['example-disk'], inventory: diskInventory('example-host') });
+  assert.deepEqual(f.store.getDraft(), before); assert.equal(f.store.status().dirty, true);
+  assert.equal(await f.store.save(), true); assert.equal(f.calls.find(call => call.method === 'PUT').body.selectionProofs.length, 1);
+});
+
+test('v2 endpoint changes invalidate selection proof and prevent saving new custom IDs without reselecting', async t => {
+  const f = await fixture(t); f.store.selectDevices({ hostId: 'example-host', ids: ['example-disk-2'], inventory: diskInventory('example-host') });
+  f.store.update({ hosts: f.store.getDraft().hosts.map(row => ({ ...row, address: '192.0.2.30' })) });
+  assert.equal(await f.store.save(), false); assert.equal(f.store.status().error, 'SSH_DEVICE_SELECTION_EXPIRED'); assert.equal(f.calls.filter(call => call.method === 'PUT').length, 0);
+  f.store.discard(); assert.deepEqual(f.store.getDraft().hosts[0].devicePolicy.classes.disk.ids, ['example-disk']); assert.equal(f.store.status().dirty, false);
+});
+
+test('v2 expired proofs and server identity changes retain draft and require explicit fresh selection', async t => {
+  const f = await fixture(t); f.store.selectDevices({ hostId: 'example-host', ids: ['example-disk-2'], inventory: diskInventory('example-host', new Date(Date.now() + 25).toISOString()) });
+  await new Promise(resolve => setTimeout(resolve, 35)); assert.equal(await f.store.save(), false); assert.equal(f.store.status().error, 'SSH_DEVICE_SELECTION_EXPIRED');
+  assert.equal(f.calls.filter(call => call.method === 'PUT').length, 0);
+  f.store.selectDevices({ hostId: 'example-host', ids: ['example-disk-2'], inventory: diskInventory('example-host') }); f.failures.saveCode = 'SSH_DEVICE_IDENTITY_CHANGED';
+  assert.equal(await f.store.save(), false); assert.equal(f.store.status().error, 'SSH_DEVICE_IDENTITY_CHANGED'); assert.equal(f.store.status().dirty, true);
+  assert.deepEqual(f.store.getDraft().hosts[0].devicePolicy.classes.disk.ids, ['example-disk-2']);
+});
+
+test('v2 malformed receipts fail unknown without clearing draft secrets or issuing a second PUT', async t => {
+  const f = await fixture(t), initial = await f.summary(); let puts = 0;
+  const store = createSshConnectionsStore({ crypto: { randomUUID }, client: async (route, method) => method === 'PUT' ? (puts++, { version: 2, operationId: 'wrong-operation' }) : initial });
+  t.after(() => store.dispose()); await store.load(); replace(store);
+  assert.equal(await store.save(), false); assert.equal(store.status().error, 'SSH_CONNECTION_OUTCOME_UNKNOWN');
+  assert.equal(await store.save(), false); assert.equal(puts, 1); assert.equal(store.getDraft().global.password.value, 'EXAMPLE_NEW_PASSWORD');
+});
+
+test('v2 unknown outcomes freeze edits until readback confirms the submitted draft without replay', async t => {
+  const f = await fixture(t), initial = await f.summary(); let latest = initial, readable = true, puts = 0;
+  const store = createSshConnectionsStore({ crypto: { randomUUID }, client: async (route, method, body) => {
+    if (method === 'PUT') { puts++; latest = (await f.commit(body)).connections; readable = false; throw new Error('EXAMPLE_RESPONSE_LOST'); }
+    if (!readable) throw new Error('EXAMPLE_READBACK_UNAVAILABLE');
+    return latest;
+  } });
+  t.after(() => store.dispose()); await store.load(); replace(store);
+  assert.equal(await store.save(), false); assert.equal(store.status().outcomeUnknown, true);
+  const pendingDraft = store.getDraft(); replace(store, 'EXAMPLE_UNSUBMITTED_PASSWORD');
+  assert.deepEqual(store.getDraft(), pendingDraft, 'unresolved writes cannot be mixed with another draft');
+  await store.load(); assert.equal(store.status().error, 'SSH_CONNECTION_OUTCOME_UNKNOWN');
+  readable = true; await store.load();
+  assert.equal(store.status().outcomeUnknown, false); assert.equal(store.status().dirty, false); assert.equal(puts, 1);
+  assert.deepEqual(store.getDraft().global.password, { action: 'keep' });
+  assert.equal((await f.vault.get('example-host')).password, 'EXAMPLE_NEW_PASSWORD');
+});
+
+test('v2 unknown outcome UI keeps the draft read-only and offers explicit readback without a second PUT', async t => {
+  const f = await fixture(t); replace(f.store); f.failures.put = 'before';
+  await f.store.save(); await mount(t, f);
+  assert.equal(document.querySelector('fieldset.pk-ssh-draft').disabled, true);
+  await clickButton('核对保存结果');
+  assert.equal(f.store.status().outcomeUnknown, true); assert.equal(f.store.getDraft().global.password.value, 'EXAMPLE_NEW_PASSWORD');
+  assert.equal(f.calls.filter(call => call.method === 'PUT').length, 1);
+});
+
+test('v2 a historical receipt cannot replace a newer server snapshot already observed by the client', async t => {
+  const f = await fixture(t), initial = await f.summary(); let latest = initial;
+  const store = createSshConnectionsStore({ crypto: { randomUUID }, client: async (route, method, body) => method === 'PUT'
+    ? { version: 2, operationId: body.operationId, committedRevision: initial.revision + 1, replayed: true, connections: { ...initial, revision: initial.revision + 1, operationId: body.operationId } }
+    : latest });
+  t.after(() => store.dispose()); await store.load(); replace(store);
+  latest = { ...initial, revision: initial.revision + 2, operationId: randomUUID(), global: { ...initial.global, username: 'newer-reader' } };
+  await store.load(); assert.equal(store.get().revision, latest.revision);
+  assert.equal(await store.save(), false); assert.equal(store.status().error, 'SSH_CONNECTION_OUTCOME_UNKNOWN');
+  assert.equal(store.get().revision, latest.revision); assert.equal(store.get().global.username, 'newer-reader');
+  assert.equal(store.getDraft().global.password.value, 'EXAMPLE_NEW_PASSWORD');
+});
+
+test('v2 source UI batches inventory hosts and edits device policy without posting until shared save', async t => {
+  const f = await fixture(t); await mount(t, f); await clickButton('从清单批量添加');
+  await act(async () => document.querySelector('[aria-label="选择主机 tower-host-1"]').click()); await clickButton('将 1 台主机加入草稿');
+  const added = f.store.getDraft().hosts.find(row => row.hostId === 'tower-host-1'); assert.ok(added); assert.equal(added.hostKeySha256, ''); assert.equal(added.connection, null); assert.deepEqual(added.devicePolicy, defaultDevicePolicy());
+  assert.equal(document.querySelector('[role=dialog]'), null); assert.equal(f.calls.filter(call => call.method === 'PUT').length, 0);
+  await clickButton('刷新磁盘清单');
+  await act(async () => document.querySelector('[aria-label="选择磁盘 example-disk-2"]').click());
+  assert.deepEqual(f.store.getDraft().hosts[0].devicePolicy.classes.disk.ids, ['example-disk', 'example-disk-2']);
+  assert.match(document.body.textContent, /分类设备策略的执行能力尚未就绪/);
+});
+
+test('v2 rejects a v1 backend response instead of silently posting incompatible fields', async t => {
+  const calls = [], store = createSshConnectionsStore({ crypto: { randomUUID }, client: async (route, method = 'GET') => { calls.push(method); return { version: 1 }; } });
+  t.after(() => store.dispose()); await store.load(); assert.equal(store.status().loaded, false); assert.equal(store.status().error, 'SSH_CONNECTION_VERSION_UNSUPPORTED');
+  assert.equal(await store.save(), false); assert.deepEqual(calls, ['GET']);
+});
+
+test('v2 verified historical receipt accepts the newer snapshot with an explicit newer-revision notice', async t => {
+  const f = await fixture(t), initial = await f.summary();
+  const store = createSshConnectionsStore({ crypto: { randomUUID }, client: async (route, method, body) => method === 'PUT' ? { version: 2, operationId: body.operationId, committedRevision: initial.revision + 1, replayed: true, connections: { ...initial, revision: initial.revision + 2, operationId: randomUUID() } } : initial });
+  t.after(() => store.dispose()); await store.load(); replace(store); assert.equal(await store.save(), true);
+  assert.equal(store.status().revision, initial.revision + 2); assert.equal(store.status().notice, 'SSH_CONNECTION_NEWER_REVISION'); assert.equal(store.status().dirty, false);
+});
+
+test('v2 host changes abort disk inventory and late responses cannot select devices on another host', async t => {
+  const f = await fixture(t); let release; const waiting = new Promise(resolve => { release = resolve; }); f.failures.disks = () => waiting;
+  const ui = await mount(t, f); await clickButton('刷新磁盘清单');
+  const call = f.calls.find(row => row.route.startsWith('/ssh-channel/device-inventory?'));
+  await ui.change(document.querySelector('select[aria-label="选择主机"]'), 'tower-host-1'); assert.equal(call.signal.aborted, true);
+  await act(async () => { release(diskInventory('example-host')); await new Promise(setImmediate); });
+  assert.deepEqual(f.store.getDraft().hosts[0].devicePolicy, defaultDevicePolicy()); assert.equal(document.querySelector('[aria-label="选择磁盘 example-disk-2"]'), null);
+  assert.equal(f.calls.filter(row => row.method === 'PUT').length, 0);
+});
+
+test('v2 incomplete or wrong-host inventories render generic failure without importing partial entries', async t => {
+  const f = await fixture(t); f.failures.disks = () => ({ ...diskInventory('example-host'), complete: false });
+  const ui = await mount(t, f); const before = f.store.getDraft(); await clickButton('刷新磁盘清单');
+  assert.match(document.body.textContent, /磁盘清单不可用或已过期/); assert.deepEqual(f.store.getDraft(), before); assert.equal(document.querySelector('[aria-label="选择磁盘 example-disk-2"]'), null);
+  f.failures.disks = () => { throw new Error('EXAMPLE_PRIVATE_STACK_OR_TOKEN'); }; await clickButton('刷新磁盘清单');
+  await ui.render('en-US'); assert.match(document.body.textContent, /Disk inventory is unavailable or expired/); assert.doesNotMatch(document.body.textContent, /EXAMPLE_PRIVATE_STACK_OR_TOKEN/);
+});
+
+test('v2 inconsistent capability claims cannot enable custom selection or suggest execution readiness', async t => {
+  const f = await fixture(t), value = await f.client('/ssh-channel/policy-capabilities');
+  f.failures.capabilities = { ...value, execution: { manual: true, scheduled: true, reason: 'SSH_POLICY_RESOLVER_UNAVAILABLE' } };
+  await mount(t, f); assert.match(document.body.textContent, /分类设备策略的执行能力尚未就绪/);
+  for (const row of document.querySelectorAll('.pk-ssh-scope-option')) assert.equal(row.querySelectorAll('input')[1].disabled, true);
+  assert.equal([...document.querySelectorAll('button')].find(row => row.textContent === '刷新磁盘清单').disabled, true);
 });

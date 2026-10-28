@@ -30,7 +30,7 @@ export function validateConnection(value) {
 export function connectionSummary(value) {
   return value === null ? null : { username: value.username, authType: value.authType, hasPassword: typeof value.password === 'string', hasPrivateKey: typeof value.privateKey === 'string' };
 }
-function patchConnection(input, previous) {
+export function patchConnection(input, previous) {
   if (input === null) return null;
   if (!exact(input, ['username', 'authType', 'password', 'privateKey']) || !['password', 'private-key'].includes(input.authType)) fail();
   const clean = { username: input.username, authType: input.authType };

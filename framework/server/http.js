@@ -35,6 +35,11 @@ export function createApi(service, { authenticate, origins = [] } = {}) {
           return Object.fromEntries(url.searchParams);
         };
         if (route === '/components/status') {
+          if (url.searchParams.has('probe')) {
+            const values = parameters(['probe']);
+            if (!/^[a-f0-9]{32}$/.test(values.probe)) throw new Error('COMPONENT_PROBE_INVALID');
+            return send(res, 200, await service.components.probe(actor, values.probe));
+          }
           const values = parameters(['fresh']);
           if (values.fresh !== undefined && values.fresh !== 'true') throw new Error('INVALID_REQUEST');
           return send(res, 200, await service.components.status(actor, { fresh: values.fresh === 'true' }));
@@ -62,6 +67,12 @@ export function createApi(service, { authenticate, origins = [] } = {}) {
         }
         if (route === '/inventory/disk-bindings') return send(res, 200, await service.smartData.bindings(actor));
         if (route === '/ssh-channel/connections') return send(res, 200, await service.sshConnections(actor));
+        if (route === '/ssh-channel/policy-capabilities') { parameters([]); return send(res, 200, await service.sshPolicyCapabilities(actor)); }
+        if (route === '/ssh-channel/device-inventory') {
+          const values = parameters(['hostId', 'category']);
+          if (Object.keys(values).sort().join() !== 'category,hostId') throw new Error('INVALID_REQUEST');
+          return send(res, 200, await service.sshDeviceInventory(values.hostId, values.category, actor));
+        }
         if (route === '/ssh-channel/inventory') return send(res, 200, await service.sshInventory(actor));
         if (route === '/resource-actions/read') {
           const { pluginId, type, id } = parameters(['pluginId', 'type', 'id']);

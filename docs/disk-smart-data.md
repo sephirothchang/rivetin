@@ -29,7 +29,7 @@
 
 公开身份包含 `diskId`、`hostId`、`generation`、`deviceId`、`path` 和 `model`。代际是私有持久密钥计算的 64 位十六进制 HMAC，`deviceId` 等于代际，`path` 固定为空。设备路径、序列号、WWN、SSH 地址和认证材料不进入消费接口。
 
-采样包含版本、来源、身份、`status`、`collectedAt` 和可选 `smart`、`code`、`gapCode`。状态为 `ok`、`stale`、`unavailable` 或 `unsupported`。失败尝试保留准确时间和固定码，不携带健康指标；仅从未采样的 `SMART_NO_SAMPLE` 使用 `collectedAt: null`，不生成历史行。
+采样包含版本、来源、身份、`status`、`collectedAt` 和可选 `smart`、`code`、`gapCode`。服务端采样状态为 `ok`、`unavailable` 或 `unsupported`。SMART 消费提供器将超过 36 小时的成功样本派生为 `stale` 展示状态；`stale` 不是服务端持久采样写入状态。失败尝试保留准确时间和固定码，不携带健康指标；仅从未采样的 `SMART_NO_SAMPLE` 使用 `collectedAt: null`，不生成历史行。
 
 ## 立即采集
 
@@ -76,3 +76,12 @@
 采样提交前复核当前绑定和 SSH 授权；撤销后不提交新的成功结果。历史及私有密钥随框架数据一起备份，缺失现有密钥时安全拒绝，不能自动生成新密钥来恢复旧绑定。
 
 本地集成覆盖 HTTP、正式客户端、采集代理和持久历史，但注入库存与 SSH 传输仍为测试替身，不能据此声称读取了真实硬盘。真实部署和主机采集兼容性分别验收。
+
+
+## Connections v2 automatic association (0.2.1 source)
+
+The eight disk SMART provider methods and public identity remain unchanged. In v2 mode the framework resolves each allowed canonical Tower disk using the current caller, then projects its path/serial into the controlled SSH target server-side. It automatically associates this target with the existing binding record; the original generation HMAC domain/key and history storage are retained. Public identity still exposes a 64-hex generation, `deviceId=generation`, and an empty path.
+
+A replacement produces a new generation and cannot inherit the old baseline; reads using an old generation return `SMART_GENERATION_CHANGED`. A changed binding returns `SMART_BINDING_CHANGED`; unavailable scope/identity is rejected rather than treated as disk failure. SSH authentication and SMART command/output failures remain separate layers, and sanitized SMART failure records do not claim a disk is unhealthy. The execution guard rechecks fresh identity and approval before commands and before results enter history. Actor credentials exist only within the current request/invocation, never in binding, history, result context or logs.
+
+V1 manual bindings remain supported for an unmigrated vault. V2 empty custom scopes resolve no targets. Scheduled collection is unavailable without a supported fresh background identity; a configured daily interval does not prove a runnable or completed daily collection. The 0.2.1 local integration tests use injected Tower/SSH transports; real samples and cross-day acceptance remain pending.

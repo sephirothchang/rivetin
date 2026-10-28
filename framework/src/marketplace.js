@@ -9,7 +9,7 @@ const installable = (item, source, towerBuild) => typeof towerBuild === 'string'
 const errors = {
   PLUGIN_INCOMPATIBLE: ['插件不兼容当前 CloudTower 或框架版本，已停止安装。', 'The plugin is incompatible with this CloudTower or framework version; installation was stopped.'],
   TOWER_BUILD_UNKNOWN: ['无法确认 CloudTower 版本，已停止安装。', 'The CloudTower version could not be verified; installation was stopped.'],
-  PLUGIN_COMPATIBILITY_UNDECLARED: ['插件未声明已验证版本，已停止安装。', 'The plugin has no verified version declaration; installation was stopped.'],
+  PLUGIN_COMPATIBILITY_UNDECLARED: ['插件使用旧版兼容性声明，请选择支持当前框架的新版插件。', 'The plugin uses an older compatibility declaration. Choose a newer plugin version supporting this framework.'],
   UPDATE_METADATA_MISMATCH: ['安装包与市场清单的元数据不一致，已拒绝使用。', 'Package metadata differs from the published catalog and was rejected.'],
   MARKETPLACE_UNAVAILABLE: ['暂时无法连接插件市场，请稍后重试。', 'The marketplace is unavailable. Please retry later.'],
   UPDATE_SOURCE_RATE_LIMITED: ['插件市场请求过于频繁，请稍后重试。', 'The marketplace is rate limited. Retry later.'],
@@ -24,7 +24,7 @@ const errors = {
   MARKETPLACE_PACKAGE_UNPUBLISHED: ['该版本尚无可下载安装包。', 'This version has no published downloadable package.'],
   UPDATE_PACKAGE_UNPUBLISHED: ['该版本尚无可下载安装包。', 'This version has no published downloadable package.'],
   PLUGIN_INCOMPATIBLE: ['此插件与当前 CloudTower 或框架版本不兼容，已停止安装。', 'This plugin is incompatible with the current CloudTower or framework version; installation was stopped.'],
-  PLUGIN_COMPATIBILITY_UNDECLARED: ['此插件未声明已验证的 CloudTower 构建，已停止安装。', 'This plugin declares no tested CloudTower builds; installation was stopped.'],
+  PLUGIN_COMPATIBILITY_UNDECLARED: ['此插件使用旧版兼容性声明，请升级至支持当前框架的版本。', 'This plugin uses an older compatibility declaration. Update it to a version supporting this framework.'],
   TOWER_BUILD_UNKNOWN: ['无法识别当前 CloudTower 构建，已停止安装。', 'The current CloudTower build is unknown; installation was stopped.'],
   PLUGIN_ALREADY_INSTALLED: ['该插件已安装，请通过插件管理进行升级。', 'The plugin is already installed. Use Plugin management to upgrade it.'],
   REQUEST_FAILED: ['请求未完成，请刷新后重试。', 'The request could not be completed. Refresh and retry.'],

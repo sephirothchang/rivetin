@@ -113,7 +113,14 @@ async function codeIntegrity(root, version, alive) {
   return { status: 'ok', code: null, checks: { files: names.size, bytes: total } };
 }
 
-export function createComponentInspector({ dataDirectory, codeDirectory, version, readRuntime, readPlugins, readConfig, readCompatibility, readUpdates, readIsland, apiRegistry = [], maintenanceActions = {}, now = Date.now } = {}) {
+function deploymentObservation(value, fallback) {
+  const codes = new Set(['DEPLOYMENT_PROBE_AUTH_UNAVAILABLE', 'DEPLOYMENT_PROBE_FORBIDDEN', 'DEPLOYMENT_PROBE_TIMEOUT', 'ISLAND_UNOBSERVABLE', 'ISLAND_REGISTRY_INVALID', 'ISLAND_REGISTRATION_MISSING', 'ISLAND_REGISTRATION_MISMATCH', 'ISLAND_REGISTRY_UNAVAILABLE', 'GATEWAY_ORIGIN_UNAVAILABLE', 'GATEWAY_HTTP_FAILED', 'GATEWAY_RESPONSE_MISMATCH', 'GATEWAY_TLS_UNTRUSTED', 'GATEWAY_UNREACHABLE']);
+  for (const reason of ['GATEWAY_TRUST_INVALID', 'GATEWAY_PIN_MISMATCH', 'GATEWAY_CERT_VALIDITY_INVALID']) codes.add(reason);
+  if (typeof value?.available !== 'boolean' || typeof value?.matched !== 'boolean') return { status: 'unknown', code: fallback };
+  return { status: value.available ? value.matched ? 'ok' : 'failed' : 'unknown', code: value.available && value.matched ? null : codes.has(value.code) ? value.code : fallback };
+}
+
+export function createComponentInspector({ dataDirectory, codeDirectory, version, readRuntime, readPlugins, readConfig, readCompatibility, readUpdates, readIsland, readGateway, apiRegistry = [], maintenanceActions = {}, now = Date.now } = {}) {
   const pending = new Map(), noActor = Symbol('anonymous');
   const limitations = ['NO_KUBERNETES_AUTHORITY', 'NO_HOST_COMMANDS', 'READ_ONLY_STORAGE_ACCESS_CHECK', 'LOCAL_MANIFEST_NOT_SIGNATURE_PROOF', 'NO_BROKER_STATUS_OR_SYNC', 'CLI_REQUIRED_FOR_DEPLOYMENT_REPAIR'];
   const base = () => new Map(kinds.map(id => [id, { id, label: { 'zh-CN': labels[id][0], 'en-US': labels[id][1] }, kind: id.startsWith('api-') ? 'api' : id === 'storage' || id === 'audit' || id === 'package-store' ? 'storage' : 'component', status: 'unknown', code: 'COMPONENT_UNCHECKED', dependsOn: id.startsWith('api-') ? ['runtime'] : id === 'runtime' ? ['framework-compatibility', 'code-integrity', 'storage'] : ['audit', 'package-store'].includes(id) ? ['storage'] : [] }]));
@@ -139,7 +146,8 @@ export function createComponentInspector({ dataDirectory, codeDirectory, version
       reader(readPlugins).then(value => { pluginResult = value; }), reader(readConfig).then(value => { configResult = value; }),
       reader(readCompatibility).then(value => { compatibilityResult = value; const projected = compatibility(value.ok ? value.value : null); mark('framework-compatibility', { status: projected.status === 'compatible' && projected.compatible ? 'ok' : projected.status === 'incompatible' ? 'failed' : 'unknown', code: projected.reason }); }),
       reader(readUpdates).then(value => { mark('update-source', value.ok && typeof value.value?.reachable === 'boolean' ? { status: value.value.reachable ? 'ok' : 'warning', code: value.value.reachable ? null : 'UPDATE_SOURCE_UNAVAILABLE' } : { status: 'unknown', code: value.code || 'UPDATE_STATUS_INVALID' }); }),
-      reader(readIsland).then(value => { mark('island-registration', value.ok && typeof value.value?.available === 'boolean' && typeof value.value?.matched === 'boolean' ? { status: value.value.available && value.value.matched ? 'ok' : value.value.available ? 'failed' : 'unknown', code: value.value.available && value.value.matched ? null : value.value.available ? 'ISLAND_REGISTRATION_MISMATCH' : 'ISLAND_UNOBSERVABLE' } : { status: 'unknown', code: value.code || 'ISLAND_UNOBSERVABLE' }); }),
+      reader(readIsland).then(value => { mark('island-registration', value.ok ? deploymentObservation(value.value, 'ISLAND_UNOBSERVABLE') : { status: 'unknown', code: value.code || 'ISLAND_UNOBSERVABLE' }); }),
+      reader(readGateway).then(value => { mark('gateway', value.ok ? deploymentObservation(value.value, 'GATEWAY_UNREACHABLE') : { status: 'unknown', code: value.code || 'GATEWAY_UNREACHABLE' }); }),
       fsCheck('storage', async () => { alive(); const info = await lstat(dataDirectory); alive(); if (!info.isDirectory() || info.isSymbolicLink()) throw error('STORAGE_PATH_UNSAFE'); await access(dataDirectory, constants.R_OK | constants.W_OK); alive(); storageWritable = true; return { status: 'ok', code: null, checks: { readable: true, writable: true } }; }),
       fsCheck('audit', async () => { try { const file = await securePath(dataDirectory, 'audit.jsonl', alive); const info = await lstat(file); alive(); if (!info.isFile()) throw error('AUDIT_PATH_UNSAFE'); return { status: 'ok', code: null, checks: { bytes: info.size } }; } catch (failure) { if (failure.code === 'ENOENT') return { status: 'unknown', code: 'AUDIT_UNAVAILABLE' }; throw failure; } }),
       fsCheck('code-integrity', () => codeIntegrity(codeDirectory, version, alive)),
@@ -184,7 +192,7 @@ export function createComponentInspector({ dataDirectory, codeDirectory, version
         if (registry.filter(row => row?.id === item.id).length !== 1) { mark(item.id, { status: 'unknown', code: 'API_REGISTRY_INVALID' }); continue; }
         if (item.registered !== true) mark(item.id, { status: 'unknown', code: 'API_NOT_REGISTERED' });
         else if (typeof item.probe !== 'function') mark(item.id, { status: 'unknown', code: 'API_REGISTERED_UNPROBED' });
-        else jobs.push(async () => { const result = await reader(item.probe); mark(item.id, result.ok && result.value === true ? { status: 'ok', code: null } : { status: 'unknown', code: result.code || 'API_PROBE_UNCONFIRMED' }); });
+        else jobs.push(async () => { const result = await reader(item.probe); mark(item.id, result.ok && result.value === true ? { status: 'ok', code: null } : result.ok && item.id === 'api-components' ? deploymentObservation(result.value, 'API_PROBE_UNCONFIRMED') : { status: 'unknown', code: result.code || 'API_PROBE_UNCONFIRMED' }); });
       }
       let cursor = 0;
       await Promise.all([0, 1, 2, 3].map(async () => { while (cursor < jobs.length) { alive(); await jobs[cursor++](); } }));

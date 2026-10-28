@@ -20,7 +20,7 @@ import { createSshInventory } from './tower-inventory.js';
 import { createSshPreflight } from './ssh-preflight.js';
 
 const missing = { installed: false, enabled: false, version: null, packageId: null, previous: null };
-export function createService(directory, { towerSink, updateSource, builtinPackages = [], sshRun, sshPreflightTransport, towerBuild, towerVersionProvider, productVersionProvider, readDisk, readDiskInventory, towerRequest } = {}) {
+export function createService(directory, { towerSink, updateSource, builtinPackages = [], sshRun, sshPreflightTransport, towerBuild, towerVersionProvider, productVersionProvider, readDisk, readDiskInventory, towerRequest, componentProbes } = {}) {
   const disk = storage(directory), runtimeDisk = storage(path.join(disk.root, 'framework'));
   const frameworkFile = path.join(disk.root, 'framework', 'settings.json'), disabledFile = path.join(disk.root, 'framework', 'disabled.json');
   const sshRevocationFile = path.join(disk.root, 'framework', 'ssh-revocation.json');
@@ -45,7 +45,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
     return { ...result, declared: manifest.compatibility, observed: { frameworkVersion: FRAMEWORK_VERSION, towerVersion: context.towerBuild,
       ...(valid ? { smtxVersions: [...new Set(snapshot.clusters.filter(row => row.product === 'SMTX_OS').map(row => row.version))].sort(), clusterCount: snapshot.clusters.length, smtxClusterCount: snapshot.clusters.filter(row => row.product === 'SMTX_OS').length } : {}) } };
   }
-  const vault = createSshVault(disk.root);
+  const vault = createSshVault(disk.root, { request: towerRequest });
   let service, smart, preflight, components;
   const maintenance = createComponentMaintenance({ dataDirectory: disk.root,
     disableAll: async actor => {
@@ -74,12 +74,13 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
     },
     audit: event => audit.append(event),
   });
-  function componentsReady() { return components ||= createComponents({ service, dataDirectory: disk.root, maintenance }); }
+  function componentsReady() { return components ||= createComponents({ service, dataDirectory: disk.root, maintenance,
+    readIsland: componentProbes?.readIsland, readGateway: componentProbes?.readGateway, probeReply: componentProbes?.reply }); }
   const pluginStatus = async id => {
     const runtime = await service.runtime(), plugin = (await service.plugins()).find(item => item.id === id);
     return { ...plugin, frameworkEnabled: runtime.enabled, enabled: Boolean(plugin?.active), compatible: Boolean(plugin?.compatible) };
   };
-  const ssh = createSshBroker(disk.root, { vault, run: sshRun,
+  const ssh = createSshBroker(disk.root, { vault, run: sshRun, manualOnly: true,
     serviceStatus: async () => {
       const runtime = await service.runtime(), plugins = await service.plugins();
       const channel = plugins.find(item => item.id === 'rivetin-ssh-channel');
@@ -180,6 +181,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
         ...(snapshot?.trusted && snapshot.complete ? { smtxVersions: [...new Set(snapshot.clusters.filter(row => row.product === 'SMTX_OS').map(row => row.version))].sort(), clusterCount: snapshot.clusters.length, smtxClusterCount: snapshot.clusters.filter(row => row.product === 'SMTX_OS').length } : {}) } };
     },
     components: {
+      probe: (...args) => componentsReady().probe(...args),
       status: (...args) => componentsReady().status(...args),
       support: (...args) => componentsReady().support(...args),
       maintain: (...args) => componentsReady().maintain(...args),
@@ -196,7 +198,23 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
     sshHosts: vault,
     sshConnections(actor) {
       actorCheck(actor); if (!actor.admin) throw Object.assign(new Error('ADMIN_REQUIRED'), { status: 403 });
-      return vault.connections();
+      return vault.v2.connections();
+    },
+    sshPolicyCapabilities(actor) {
+      actorCheck(actor); if (!actor.admin) throw Object.assign(new Error('ADMIN_REQUIRED'), { status: 403 });
+      return vault.v2.capabilities();
+    },
+    sshDeviceInventory(hostId, category, actor) {
+      actorCheck(actor); if (!actor.admin) throw Object.assign(new Error('ADMIN_REQUIRED'), { status: 403 });
+      return vault.v2.inventory(hostId, category, actor);
+    },
+    async sshMigrateConnections(input, actor) {
+      actorCheck(actor);
+      if (actor.source !== 'cli' || !actor.admin || !(await exists(disabledFile))) throw new Error('SSH_CONNECTION_MIGRATION_REQUIRES_DISABLED');
+      return recorded(actor, 'ssh.connections.migrate', 'rivetin-ssh-channel', () => vault.v2.migrate(input, async () => {
+        try { await preflight?.cancel(); const result = await ssh.invalidate(null, 'CONNECTION_SETTINGS_CHANGED'); if (result.revoked !== true) throw new Error('UNCONFIRMED'); }
+        catch { throw Object.assign(new Error('SSH_CONNECTION_REVOKE_FAILED'), { status: 503 }); }
+      }));
     },
     async sshInventory(actor) {
       if (!actor?.admin) throw Object.assign(new Error('ADMIN_REQUIRED'), { status: 403 });
@@ -206,8 +224,11 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
     sshSaveConnections(payload, actor) {
       if (!actor?.admin) throw Object.assign(new Error('ADMIN_REQUIRED'), { status: 403 });
       return recorded(actor, 'ssh.connections.save', 'rivetin-ssh-channel', async () => {
-        await preflight?.cancel();
-        await ssh.invalidate(null, 'CONNECTION_SETTINGS_CHANGED'); return vault.saveConnections(payload);
+        return vault.v2.save(payload, actor, async () => {
+          await preflight?.cancel();
+          const revoked = await ssh.invalidate(null, 'CONNECTION_SETTINGS_CHANGED');
+          if (revoked.revoked !== true) throw new Error('SSH_CONNECTION_REVOKE_FAILED');
+        });
       });
     },
     smartData: {
@@ -245,6 +266,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
     },
     sshSaveHost(profile, actor) {
       return recorded(actor, 'ssh.host.save', 'rivetin-ssh-channel', async () => {
+        if (await vault.v2.active()) throw Object.assign(new Error('SSH_CONNECTION_VERSION_UNSUPPORTED'), { status: 409 });
         await preflight?.cancel();
         await ssh.invalidate(null, 'HOST_PROFILE_CHANGED');
         return vault.put(profile);
@@ -252,6 +274,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
     },
     sshRemoveHost(hostId, actor) {
       return recorded(actor, 'ssh.host.remove', 'rivetin-ssh-channel', async () => {
+        if (await vault.v2.active()) throw Object.assign(new Error('SSH_CONNECTION_VERSION_UNSUPPORTED'), { status: 409 });
         await preflight?.cancel();
         await ssh.invalidate(null, 'HOST_PROFILE_CHANGED');
         return vault.remove(hostId);
@@ -259,7 +282,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
     },
     async initialize(actor, { upgradeFrom } = {}) {
       actorCheck(actor);
-      if (upgradeFrom !== undefined && (!['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5'].includes(upgradeFrom) || FRAMEWORK_VERSION !== '0.2.0')) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
+      if (upgradeFrom !== undefined && (!['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1'].includes(upgradeFrom) || FRAMEWORK_VERSION !== '0.2.2')) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
       return disk.locked(() => runtimeDisk.locked(async () => {
         await mkdir(path.dirname(frameworkFile), { recursive: true });
         const created = !(await exists(frameworkFile));
@@ -267,7 +290,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
         if (created && upgradeFrom !== undefined) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
         if (!created) {
           const stored = await json(frameworkFile);
-          if (stored.apiVersion !== 1 || !['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', FRAMEWORK_VERSION].includes(stored.version)) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
+          if (stored.apiVersion !== 1 || !['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1', FRAMEWORK_VERSION].includes(stored.version)) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
           if (upgradeFrom !== undefined && !(await exists(disabledFile))) throw new Error('FRAMEWORK_DISABLE_BEFORE_UPGRADE');
           if (stored.version !== FRAMEWORK_VERSION) {
             if (upgradeFrom !== stored.version) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');

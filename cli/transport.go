@@ -118,9 +118,10 @@ func (r *SSHRemote) Call(ctx context.Context, request map[string]any) (map[strin
 }
 
 type Tower struct {
-	base  string
-	http  *http.Client
-	token string
+	base           string
+	http           *http.Client
+	token          string
+	certificatePin string
 }
 
 func newTower(raw, caFile string) (*Tower, error) {
@@ -173,7 +174,7 @@ func newTowerWithPin(raw, caFile, certificatePin string) (*Tower, error) {
 		tlsConfig.RootCAs = roots
 	}
 	tr := &http.Transport{Proxy: nil, TLSClientConfig: tlsConfig, ResponseHeaderTimeout: 15 * time.Second}
-	return &Tower{base: strings.TrimRight(raw, "/"), http: &http.Client{Transport: tr, Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("REDIRECT_REJECTED") }}}, nil
+	return &Tower{base: strings.TrimRight(raw, "/"), certificatePin: strings.ToLower(certificatePin), http: &http.Client{Transport: tr, Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("REDIRECT_REJECTED") }}}, nil
 }
 func (t *Tower) request(ctx context.Context, method, path, contentType string, body []byte) ([]byte, int, error) {
 	req, err := http.NewRequestWithContext(ctx, method, t.base+path, bytes.NewReader(body))

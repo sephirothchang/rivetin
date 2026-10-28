@@ -1,6 +1,8 @@
+import { defaultDevicePolicy, validateDevicePolicy, validateDeviceInventory, createSshTargetSettings } from './ssh-target-settings.js';
+
 const copy = value => JSON.parse(JSON.stringify(value));
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const empty = () => ({ version: 1, revision: 0, updatedAt: null, operationId: null, global: null, clusters: [], hosts: [] });
+const empty = () => ({ version: 2, revision: 0, updatedAt: null, operationId: null, global: null, clusters: [], hosts: [], migration: { persistedVersion: 2, required: false, state: 'ready' } });
 const keep = () => ({ action: 'keep' });
 const newConnection = () => ({ username: 'root', authType: 'password', password: keep(), privateKey: keep() });
 const draftConnection = value => value === null ? null : { username: value.username, authType: value.authType, password: keep(), privateKey: keep() };
@@ -9,68 +11,117 @@ function checkConnection(value) {
   if (!object(value) || Object.keys(value).some(key => !['username', 'authType', 'hasPassword', 'hasPrivateKey'].includes(key)) || typeof value.username !== 'string' || !['password', 'private-key'].includes(value.authType) || typeof value.hasPassword !== 'boolean' || typeof value.hasPrivateKey !== 'boolean') throw new Error('SSH_CONNECTION_RESPONSE_INVALID');
 }
 function checked(value) {
-  if (!object(value) || value.version !== 1 || !Number.isSafeInteger(value.revision) || value.revision < 0 || !(value.updatedAt === null || typeof value.updatedAt === 'string') || !(value.operationId === null || typeof value.operationId === 'string') || !Array.isArray(value.clusters) || value.clusters.length > 500 || !Array.isArray(value.hosts) || value.hosts.length > 500) throw new Error('SSH_CONNECTION_RESPONSE_INVALID');
-  if (Object.keys(value).some(key => !['version', 'revision', 'updatedAt', 'operationId', 'global', 'clusters', 'hosts'].includes(key))) throw new Error('SSH_CONNECTION_RESPONSE_INVALID');
+  if (value?.version === 1) throw new Error('SSH_CONNECTION_VERSION_UNSUPPORTED');
+  if (!object(value) || value.version !== 2 || !Number.isSafeInteger(value.revision) || value.revision < 0 || !(value.updatedAt === null || typeof value.updatedAt === 'string') || !(value.operationId === null || typeof value.operationId === 'string') || !Array.isArray(value.clusters) || value.clusters.length > 500 || !Array.isArray(value.hosts) || value.hosts.length > 500) throw new Error('SSH_CONNECTION_RESPONSE_INVALID');
+  if (Object.keys(value).some(key => !['version', 'revision', 'updatedAt', 'operationId', 'global', 'clusters', 'hosts', 'migration'].includes(key))) throw new Error('SSH_CONNECTION_RESPONSE_INVALID');
+  if (!object(value.migration) || Object.keys(value.migration).sort().join() !== 'persistedVersion,required,state' || ![1, 2].includes(value.migration.persistedVersion) || typeof value.migration.required !== 'boolean' || value.migration.required !== (value.migration.persistedVersion === 1) || value.migration.state !== (value.migration.required ? 'required' : 'ready')) throw new Error('SSH_CONNECTION_RESPONSE_INVALID');
   checkConnection(value.global);
   for (const row of value.clusters) { if (!object(row) || Object.keys(row).some(key => !['clusterId', 'connection'].includes(key)) || typeof row.clusterId !== 'string') throw new Error('SSH_CONNECTION_RESPONSE_INVALID'); checkConnection(row.connection); }
   for (const row of value.hosts) {
-    if (!object(row) || Object.keys(row).some(key => !['hostId', 'clusterId', 'address', 'port', 'hostKeySha256', 'devices', 'connection', 'effective'].includes(key)) || typeof row.hostId !== 'string' || typeof row.clusterId !== 'string' || typeof row.address !== 'string' || !Number.isInteger(row.port) || typeof row.hostKeySha256 !== 'string' || !Array.isArray(row.devices)) throw new Error('SSH_CONNECTION_RESPONSE_INVALID');
-    for (const device of row.devices) if (!object(device) || Object.keys(device).some(key => !['deviceId', 'path', 'serial'].includes(key)) || typeof device.deviceId !== 'string' || typeof device.path !== 'string' || device.serial !== undefined && typeof device.serial !== 'string') throw new Error('SSH_CONNECTION_RESPONSE_INVALID');
+    if (!object(row) || Object.keys(row).some(key => !['hostId', 'clusterId', 'address', 'port', 'hostKeySha256', 'devicePolicy', 'policyState', 'connection', 'effective'].includes(key)) || typeof row.hostId !== 'string' || typeof row.clusterId !== 'string' || typeof row.address !== 'string' || !Number.isInteger(row.port) || typeof row.hostKeySha256 !== 'string') throw new Error('SSH_CONNECTION_RESPONSE_INVALID');
+    try { row.devicePolicy = validateDevicePolicy(row.devicePolicy); } catch { throw new Error('SSH_CONNECTION_RESPONSE_INVALID'); }
+    if (!object(row.policyState) || Object.keys(row.policyState).sort().join() !== 'changedSelectionCount,disk,unresolvedLegacyCount' || !['ready', 'unresolved', 'identity-changed', 'unsupported'].includes(row.policyState.disk) || !['unresolvedLegacyCount', 'changedSelectionCount'].every(key => Number.isSafeInteger(row.policyState[key]) && row.policyState[key] >= 0 && row.policyState[key] <= 1000)) throw new Error('SSH_CONNECTION_RESPONSE_INVALID');
     checkConnection(row.connection);
     if (!object(row.effective) || Object.keys(row.effective).some(key => !['source', 'username', 'authType', 'hasPassword', 'hasPrivateKey', 'ready'].includes(key)) || !['host', 'cluster', 'global', 'none'].includes(row.effective.source) || typeof row.effective.ready !== 'boolean') throw new Error('SSH_CONNECTION_RESPONSE_INVALID');
   }
   return copy(value);
 }
 function draftOf(value) {
-  return { version: 1, global: draftConnection(value.global), clusters: value.clusters.map(row => ({ clusterId: row.clusterId, connection: draftConnection(row.connection) })),
-    hosts: value.hosts.map(({ connection, effective, ...target }) => ({ ...copy(target), connection: draftConnection(connection) })) };
+  return { version: 2, global: draftConnection(value.global), clusters: value.clusters.map(row => ({ clusterId: row.clusterId, connection: draftConnection(row.connection) })),
+    hosts: value.hosts.map(({ connection, effective, policyState, ...target }) => ({ ...copy(target), connection: draftConnection(connection) })) };
 }
 export function createSshConnectionsStore({ client, crypto } = {}) {
   if (typeof client !== 'function') throw new Error('SSH_CONNECTION_CLIENT_REQUIRED');
-  let saved = empty(), baseline = draftOf(saved), draft = copy(baseline), disposed = false, pending = null, epoch = 0, loadControl = null;
-  let state = { loaded: false, loading: false, saving: false, error: '', revision: 0, updatedAt: null };
+  let saved = empty(), baseline = draftOf(saved), draft = copy(baseline), baseRevision = 0, proofs = [], disposed = false, pending = null, uncertain = false, epoch = 0, loadControl = null;
+  let state = { loaded: false, loading: false, saving: false, error: '', revision: 0, updatedAt: null, remoteRevision: null, notice: '' };
   const listeners = new Set(), controls = new Set();
-  const status = () => ({ ...state, dirty: JSON.stringify(draft) !== JSON.stringify(baseline) });
+  const status = () => ({ ...state, dirty: JSON.stringify(draft) !== JSON.stringify(baseline) || proofs.length > 0, readOnly: saved.migration.required, outcomeUnknown: uncertain });
   const emit = () => { if (!disposed) for (const listener of listeners) listener(copy(saved)); };
-  const safeErrors = new Set(['SSH_CONNECTION_RESPONSE_INVALID', 'SSH_CONNECTION_RANDOM_UNAVAILABLE', 'SSH_CONNECTION_SAVE_NOT_CONFIRMED', 'SSH_CONNECTION_SETTINGS_INVALID', 'SSH_CONNECTION_SETTINGS_TOO_LARGE', 'SSH_CONNECTION_OPERATION_CONFLICT', 'SSH_VAULT_KEY_MISSING', 'SSH_VAULT_INVALID', 'SSH_VAULT_PERMISSIONS', 'SSH_HOST_INVALID', 'SSH_HOST_ADDRESS_REJECTED', 'SSH_HOST_KEY_REQUIRED', 'SSH_DEVICE_INVALID', 'SSH_CREDENTIAL_REQUIRED', 'ADMIN_OR_ORIGIN_REQUIRED', 'ADMIN_REQUIRED', 'AUTHENTICATION_REQUIRED', 'STORE_BUSY']);
+  const safeErrors = new Set(['SSH_CONNECTION_RESPONSE_INVALID', 'SSH_CONNECTION_RANDOM_UNAVAILABLE', 'SSH_CONNECTION_SAVE_NOT_CONFIRMED', 'SSH_CONNECTION_SETTINGS_INVALID', 'SSH_CONNECTION_SETTINGS_TOO_LARGE', 'SSH_CONNECTION_OPERATION_CONFLICT', 'SSH_VAULT_KEY_MISSING', 'SSH_VAULT_INVALID', 'SSH_VAULT_PERMISSIONS', 'SSH_HOST_INVALID', 'SSH_HOST_ADDRESS_REJECTED', 'SSH_HOST_KEY_REQUIRED', 'SSH_DEVICE_INVALID', 'SSH_CREDENTIAL_REQUIRED', 'ADMIN_OR_ORIGIN_REQUIRED', 'ADMIN_REQUIRED', 'AUTHENTICATION_REQUIRED', 'STORE_BUSY', 'SSH_CONNECTION_VERSION_UNSUPPORTED', 'SSH_CONNECTION_REVISION_CONFLICT', 'SSH_CONNECTION_OUTCOME_UNKNOWN', 'SSH_CONNECTION_MIGRATION_REQUIRED', 'SSH_CONNECTION_MIGRATION_INCOMPLETE', 'SSH_CONNECTION_REVOKE_FAILED', 'SSH_CONNECTION_SAVE_UNVERIFIED', 'SSH_CONNECTION_OPERATION_LIMIT', 'SSH_DEVICE_CLASS_UNSUPPORTED', 'SSH_DEVICE_SCOPE_UNAVAILABLE', 'SSH_DEVICE_IDENTITY_UNVERIFIED', 'SSH_DEVICE_IDENTITY_CHANGED', 'SSH_DEVICE_SELECTION_EXPIRED', 'SSH_DEVICE_INVENTORY_LIMIT', 'SSH_DEVICE_INVENTORY_UNAVAILABLE', 'SSH_DEVICE_INVENTORY_TIMEOUT']);
   const code = error => safeErrors.has(error?.message) ? error.message : 'SSH_CONNECTION_REQUEST_FAILED';
-  function accept(value) { saved = checked(value); baseline = draftOf(saved); draft = copy(baseline); pending = null; state = { ...state, loaded: true, revision: saved.revision, updatedAt: saved.updatedAt, error: '' }; }
+  const endpoint = row => row && JSON.stringify([row.hostId, row.clusterId, row.address, row.port, row.hostKeySha256]);
+  function accept(value) { saved = checked(value); baseline = draftOf(saved); draft = copy(baseline); baseRevision = saved.revision; pending = null; proofs = []; uncertain = false; state = { ...state, loaded: true, revision: saved.revision, updatedAt: saved.updatedAt, remoteRevision: null, error: '', notice: '' }; }
   async function request(method, body, control = new AbortController()) {
     controls.add(control);
-    try { return checked(await client('/ssh-channel/connections', method, body, { signal: control.signal })); }
+    try { return await client('/ssh-channel/connections', method, body, { signal: control.signal }); }
     finally { controls.delete(control); }
+  }
+  function update(patch) {
+    if (!disposed && state.loaded && !state.saving && !status().readOnly && !uncertain) {
+      const next = copy({ ...draft, ...patch });
+      proofs = proofs.filter(proof => { const before = draft.hosts.find(row => row.hostId === proof.hostId), after = next.hosts.find(row => row.hostId === proof.hostId); return endpoint(before) === endpoint(after) && after?.devicePolicy.classes[proof.category].mode === 'custom' && after.devicePolicy.classes[proof.category].ids.includes(proof.id); });
+      epoch++; draft = next; if (!uncertain) pending = null; emit();
+    }
+    return copy(draft);
   }
   return {
     status, get: () => copy(saved), getDraft: () => copy(draft),
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
-    update(patch) { if (!disposed && state.loaded && !state.saving) { epoch++; draft = copy({ ...draft, ...patch }); pending = null; emit(); } return copy(draft); },
+    update,
+    selectDevices({ hostId, ids, inventory }) {
+      if (disposed || !state.loaded || state.saving || status().readOnly || uncertain) throw new Error('SSH_DEVICE_SELECTION_EXPIRED');
+      const rows = validateDeviceInventory(inventory, hostId), target = draft.hosts.find(row => row.hostId === hostId);
+      if (!target || target.devicePolicy.classes.disk.mode !== 'custom' || !Array.isArray(ids) || ids.length > 1000 || new Set(ids).size !== ids.length) throw new Error('SSH_DEVICE_SELECTION_EXPIRED');
+      const existing = target.devicePolicy.classes.disk.ids;
+      for (const id of ids) if (!rows.items.some(row => row.id === id && row.selectable) && !existing.includes(id)) throw new Error('SSH_DEVICE_IDENTITY_UNVERIFIED');
+      update({ hosts: draft.hosts.map(row => row.hostId === hostId ? { ...row, devicePolicy: validateDevicePolicy({ ...row.devicePolicy, classes: { ...row.devicePolicy.classes, disk: { mode: 'custom', ids } } }) } : row) });
+      const chosen = rows.items.filter(row => row.selectable && ids.includes(row.id));
+      proofs = [...proofs.filter(proof => proof.hostId !== hostId || proof.category !== 'disk' || !chosen.some(row => row.id === proof.id)), ...chosen.map(row => ({ hostId, category: 'disk', id: row.id, selectionToken: row.selectionToken, expiresAt: rows.expiresAt }))];
+      emit();
+    },
     async load() {
       if (disposed || state.loading || state.saving) return;
       const generation = epoch, control = new AbortController(); loadControl = control; state.loading = true; emit();
-      try { const value = await request('GET', undefined, control); if (!disposed && generation === epoch && value.revision >= saved.revision) { if (!status().dirty || pending && value.operationId === pending.operationId) accept(value); else { saved = value; baseline = draftOf(value); state = { ...state, loaded: true, revision: value.revision, updatedAt: value.updatedAt, error: '' }; } } }
-      catch (error) { if (!disposed && generation === epoch) state.error = code(error); }
+      try {
+        const value = checked(await request('GET', undefined, control));
+        if (!disposed && generation === epoch && value.revision >= saved.revision) {
+          if (pending && value.operationId === pending.operationId && value.revision > pending.expectedRevision) accept(value);
+          else if (!status().dirty && !uncertain) accept(value);
+          else { saved = value; state = { ...state, remoteRevision: value.revision !== baseRevision ? value.revision : null, error: uncertain ? 'SSH_CONNECTION_OUTCOME_UNKNOWN' : value.revision !== baseRevision ? 'SSH_CONNECTION_REVISION_CONFLICT' : state.error }; }
+        }
+      } catch (error) { if (!disposed && generation === epoch) state.error = uncertain ? 'SSH_CONNECTION_OUTCOME_UNKNOWN' : code(error); }
       finally { if (loadControl === control) { loadControl = null; state.loading = false; emit(); } }
     },
     async save() {
       if (disposed || !state.loaded || state.saving) return false;
+      if (status().readOnly) { state.error = 'SSH_CONNECTION_MIGRATION_REQUIRED'; emit(); return false; }
+      if (uncertain) { state.error = 'SSH_CONNECTION_OUTCOME_UNKNOWN'; emit(); return false; }
       if (!status().dirty) return true;
       epoch++; loadControl?.abort(); loadControl = null; state.loading = false; state.saving = true; state.error = ''; emit();
       try {
         if (!pending) {
           if (typeof crypto?.randomUUID !== 'function') throw new Error('SSH_CONNECTION_RANDOM_UNAVAILABLE');
-          pending = { ...copy(draft), operationId: crypto.randomUUID() };
+          const selectedProofs = proofs.filter(proof => draft.hosts.some(row => row.hostId === proof.hostId && row.devicePolicy.classes.disk.mode === 'custom' && row.devicePolicy.classes.disk.ids.includes(proof.id)));
+          if (selectedProofs.some(proof => Date.parse(proof.expiresAt) <= Date.now())) throw new Error('SSH_DEVICE_SELECTION_EXPIRED');
+          for (const host of draft.hosts) for (const id of host.devicePolicy.classes.disk.mode === 'custom' ? host.devicePolicy.classes.disk.ids : []) {
+            const previous = baseline.hosts.find(row => row.hostId === host.hostId);
+            if (!previous?.devicePolicy.classes.disk.ids.includes(id) && !selectedProofs.some(proof => proof.hostId === host.hostId && proof.id === id)) throw new Error('SSH_DEVICE_SELECTION_EXPIRED');
+          }
+          pending = { ...copy(draft), operationId: crypto.randomUUID(), expectedRevision: baseRevision, selectionProofs: selectedProofs.map(({ expiresAt, ...proof }) => proof) };
         }
         const operationId = pending.operationId;
         let response;
-        try { response = await request('PUT', pending); if (response.operationId !== operationId) throw new Error('SSH_CONNECTION_SAVE_NOT_CONFIRMED'); }
-        catch { response = await request('GET'); if (response.operationId !== operationId) throw new Error('SSH_CONNECTION_SAVE_NOT_CONFIRMED'); }
+        try { response = await request('PUT', pending); }
+        catch (error) {
+          if (disposed) return false;
+          if (Number.isInteger(error?.status) && error.status >= 400 && error.status < 500 && error.message !== 'SSH_CONNECTION_OUTCOME_UNKNOWN') { pending = null; throw error; }
+          uncertain = true;
+          try { const value = checked(await request('GET')); if (!disposed && pending && value.operationId === operationId && value.revision > pending.expectedRevision) { accept(value); return true; } } catch {}
+          throw new Error('SSH_CONNECTION_OUTCOME_UNKNOWN');
+        }
         if (disposed) return false;
-        accept(response); return true;
+        const valid = object(response) && response.version === 2 && response.operationId === operationId && Number.isSafeInteger(response.committedRevision) && response.committedRevision > pending.expectedRevision && typeof response.replayed === 'boolean';
+        if (!valid) { uncertain = true; throw new Error('SSH_CONNECTION_OUTCOME_UNKNOWN'); }
+        let value;
+        try { value = checked(response.connections); } catch { uncertain = true; throw new Error('SSH_CONNECTION_OUTCOME_UNKNOWN'); }
+        if (value.revision < saved.revision || value.revision < response.committedRevision || value.revision === response.committedRevision && value.operationId !== operationId || value.revision > response.committedRevision && !response.replayed) { uncertain = true; throw new Error('SSH_CONNECTION_OUTCOME_UNKNOWN'); }
+        if (disposed) return false;
+        const newer = value.revision > response.committedRevision; accept(value); if (newer) state.notice = 'SSH_CONNECTION_NEWER_REVISION'; return true;
       } catch (error) { if (!disposed) state.error = code(error); return false; }
       finally { state.saving = false; emit(); }
     },
-    discard() { if (!state.saving && !disposed) { epoch++; loadControl?.abort(); loadControl = null; state.loading = false; draft = copy(baseline); pending = null; state.error = ''; emit(); } },
-    dispose() { disposed = true; epoch++; for (const control of controls) control.abort(); controls.clear(); loadControl = null; saved = empty(); baseline = draftOf(saved); draft = copy(baseline); pending = null; listeners.clear(); },
+    discard() { if (!state.saving && !disposed) { epoch++; loadControl?.abort(); loadControl = null; state.loading = false; if (!uncertain) accept(saved); else { draft = draftOf(saved); baseline = draftOf(saved); proofs = []; state.error = 'SSH_CONNECTION_OUTCOME_UNKNOWN'; } emit(); } },
+    dispose() { disposed = true; epoch++; for (const control of controls) control.abort(); controls.clear(); loadControl = null; saved = empty(); baseline = draftOf(saved); draft = copy(baseline); pending = null; proofs = []; listeners.clear(); },
   };
 }
 
@@ -171,8 +222,42 @@ function createHostPreflight(React) {
   };
 }
 
+function createHostDeviceScope(React) {
+  const h = React.createElement, { useEffect, useState, useRef } = React, { DeviceScopeEditor } = createSshTargetSettings(React);
+  return function HostDeviceScope({ store, index, client, capabilities, locale }) {
+    const target = store.getDraft().hosts[index], status = store.status(), context = hostPreflightContext(store, index);
+    const [state, setState] = useState({ context, inventory: null, loading: false, error: '' });
+    const current = state.context === context ? state : { context, inventory: null, loading: false, error: '' }, active = useRef(null), alive = useRef(false);
+    useEffect(() => { alive.current = true; return () => { alive.current = false; active.current?.control.abort(); }; }, []);
+    useEffect(() => { let cancelled = false; if (active.current && (active.current.context !== context || status.saving)) { active.current.control.abort(); active.current = null; cancelled = true; } setState(previous => previous.context === context ? cancelled ? { ...previous, loading: false } : previous : { context, inventory: null, loading: false, error: '' }); }, [context, status.saving]);
+    useEffect(() => {
+      if (!current.inventory) return;
+      const timeout = setTimeout(() => setState(previous => previous.inventory === current.inventory ? { ...previous, inventory: null, error: 'SSH_DEVICE_SELECTION_EXPIRED' } : previous), Math.max(0, Date.parse(current.inventory.expiresAt) - Date.now()));
+      return () => clearTimeout(timeout);
+    }, [current.inventory]);
+    async function load() {
+      if (!client || status.saving || status.readOnly || current.loading || capabilities?.classes?.disk?.inventory !== true || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(target?.hostId)) return;
+      active.current?.control.abort(); const job = { context, control: new AbortController() }; active.current = job;
+      setState({ context, inventory: null, loading: true, error: '' });
+      const valid = () => alive.current && active.current === job && !job.control.signal.aborted;
+      const timeout = setTimeout(() => { if (valid()) { active.current = null; job.control.abort(); setState({ context, inventory: null, loading: false, error: 'SSH_DEVICE_INVENTORY_TIMEOUT' }); } }, 8000);
+      try {
+        const value = await client('/ssh-channel/device-inventory?hostId=' + encodeURIComponent(target.hostId) + '&category=disk', 'GET', undefined, { signal: job.control.signal });
+        const inventory = validateDeviceInventory(value, target.hostId);
+        if (valid()) setState({ context, inventory, loading: false, error: '' });
+      } catch { if (valid()) setState({ context, inventory: null, loading: false, error: 'SSH_DEVICE_INVENTORY_UNAVAILABLE' }); }
+      finally { clearTimeout(timeout); if (active.current === job) active.current = null; }
+    }
+    return target && h(DeviceScopeEditor, { hostId: target.hostId, policy: target.devicePolicy, locale, capabilities, inventory: current.inventory, loading: current.loading, inventoryError: current.error,
+      disabled: status.saving || status.readOnly || status.outcomeUnknown,
+      onLoad: load,
+      onChange: devicePolicy => store.update({ hosts: store.getDraft().hosts.map((row, n) => n === index ? { ...row, devicePolicy } : row) }),
+      onSelect: ids => { try { if (hostPreflightContext(store, index) !== context) throw new Error('SSH_DEVICE_SELECTION_EXPIRED'); store.selectDevices({ hostId: target.hostId, ids, inventory: current.inventory }); } catch { setState(previous => ({ ...previous, inventory: null, error: 'SSH_DEVICE_SELECTION_EXPIRED' })); } } });
+  };
+}
+
 export function createSshConnectionSettings(React) {
-  const h = React.createElement, { useEffect, useState } = React, HostPreflight = createHostPreflight(React);
+  const h = React.createElement, { useEffect, useState } = React, HostPreflight = createHostPreflight(React), HostDeviceScope = createHostDeviceScope(React), { BulkHostPicker } = createSshTargetSettings(React);
   const CSS = `
 .pk-ssh-connections{margin-top:22px;padding-top:18px;border-top:1px solid #dfe8f3}.pk-ssh-connections .c89-section-heading,.pk-ssh-connections .c89-exception-heading,.pk-ssh-connections .c89-rule-top{display:flex;align-items:center;justify-content:space-between;gap:10px}.pk-ssh-connections .c89-section-heading h4{margin:0}.pk-ssh-connections .c89-exception-heading{margin:20px 0 10px}.pk-ssh-connections .pk-ssh-draft-badge{font-size:11px;color:#71849b}.pk-ssh-connections fieldset.pk-ssh-draft{border:0;padding:0;margin:0;min-width:0}.pk-ssh-connections .c89-setting{border:1px solid #dfe8f2;border-radius:8px;padding:14px;background:#fff}.pk-ssh-connections .c89-setting-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.pk-ssh-connections .c89-rule{border:1px solid #dfe8f2;border-radius:8px;padding:12px;margin:12px 0;background:#fbfcff}.pk-ssh-connections .c89-rule-top{font-size:12px;color:#637d9a;margin-bottom:10px}.pk-ssh-connections .c89-rule-fields.pk-ssh-rule-fields{display:grid;grid-template-columns:110px minmax(0,1fr);gap:10px}.pk-ssh-connections .pk-ssh-credential-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(100px,.8fr) minmax(0,1fr);gap:10px}.pk-ssh-connections .pk-ssh-credential-editor{padding-top:12px}.pk-ssh-connection-field{display:flex;flex-direction:column;gap:5px;margin:6px 0;font-size:12px;color:#71849b}.pk-ssh-connection-field input,.pk-ssh-connection-field select,.pk-ssh-connection-field textarea{font:inherit;color:#243650;padding:8px;border:1px solid #d7e3f0;border-radius:6px;min-width:0;width:100%;max-width:100%;box-sizing:border-box;background:#fff}.pk-ssh-connections .c89-remove-rule{display:inline-flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;height:28px;border:0;border-radius:5px;padding:5px;color:#d9363e;background:transparent;cursor:pointer}.pk-ssh-connections .c89-remove-rule:hover{background:#fff1f0}.pk-ssh-connections .c89-remove-rule:focus-visible{outline:2px solid #d9363e;outline-offset:2px}.pk-ssh-connections .c89-add-rule{color:#117ad4;border:1px solid #d2e5f9;background:#f4f9ff;border-radius:6px;padding:6px 10px;cursor:pointer}.pk-ssh-connections .c89-empty-rules{padding:16px;border:1px dashed #d8e3ef;border-radius:7px;color:#8495aa;font-size:12px;margin-top:12px}.pk-ssh-connections .c89-rule-help{display:inline-flex;position:relative;vertical-align:middle;margin-left:4px}.pk-ssh-connections .c89-disclaimer-icon{display:inline-flex;align-items:center;justify-content:center;padding:2px!important;width:21px;height:21px;border:0!important;background:transparent!important;color:#71849b;cursor:help}.pk-ssh-connections .pk-ssh-priority-popup{display:none;position:absolute;left:0;top:26px;width:300px;max-width:65vw;box-sizing:border-box;padding:12px;background:#fff;border:1px solid #dce5ef;border-radius:8px;box-shadow:0 5px 20px #1f3d601a;font-size:12px;line-height:1.7;color:#42566f;font-weight:400;z-index:5}.pk-ssh-connections .c89-rule-help:hover .pk-ssh-priority-popup,.pk-ssh-connections .c89-rule-help:focus-within .pk-ssh-priority-popup,.pk-ssh-connections .pk-ssh-priority-popup.pk-open{display:block}.pk-ssh-connections .pk-ssh-rule-note{font-size:12px;color:#71849b;line-height:1.6;margin:8px 0}.pk-ssh-connections .pk-ssh-notice{padding:10px 12px;border-radius:6px;background:#fff8e8;color:#80551b;line-height:1.6}.pk-ssh-connections .pk-ssh-target{border:1px solid #dfe8f2;border-radius:8px;margin:10px 0;background:#fff}.pk-ssh-connections .pk-ssh-target>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;cursor:pointer;font-size:12px;font-weight:600;color:#42566f}.pk-ssh-connections .pk-ssh-target-name{min-width:0;overflow-wrap:anywhere}.pk-ssh-connections .pk-ssh-target-body{border-top:1px solid #e7edf5;padding:12px}.pk-ssh-connections .pk-ssh-target-grid{display:grid;grid-template-columns:minmax(0,1fr) 110px;gap:10px}.pk-ssh-connections .pk-ssh-target-grid .pk-ssh-pin{grid-column:1/-1}.pk-ssh-device{border-left:3px solid #e0e7f0;padding:0 0 0 12px;margin:12px 0}.pk-ssh-connections .pk-ssh-device-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 28px;gap:10px;align-items:end}.pk-ssh-connections .pk-ssh-inventory{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px;color:#71849b;margin:12px 0}.pk-ssh-connections .pk-ssh-global-title{font-size:13px;font-weight:600;color:#42566f}.pk-ssh-connections .pk-ssh-map-edit{margin-top:10px;font-size:12px;color:#71849b}.pk-ssh-connections .pk-ssh-map-edit summary{cursor:pointer}.pk-ssh-connections button:disabled{cursor:default;opacity:.5}@media(max-width:620px){.pk-ssh-connections .pk-ssh-credential-fields,.pk-ssh-connections .c89-rule-fields.pk-ssh-rule-fields,.pk-ssh-connections .pk-ssh-target-grid,.pk-ssh-connections .pk-ssh-device-fields{grid-template-columns:minmax(0,1fr)}.pk-ssh-connections .c89-setting-row,.pk-ssh-connections .pk-ssh-inventory{align-items:flex-start;flex-wrap:wrap}.pk-ssh-connections .pk-ssh-priority-popup{width:245px}}
 `;
@@ -180,6 +265,18 @@ export function createSshConnectionSettings(React) {
     const [, render] = useState(0), en = locale === 'en-US', t = (zh, english) => en ? english : zh;
     const [inventory, setInventory] = useState({ clusters: [], hosts: [] }), [inventoryError, setInventoryError] = useState(''), [inventoryBusy, setInventoryBusy] = useState(false);
     const [priorityOpen, setPriorityOpen] = useState(false), [notice, setNotice] = useState('');
+    const [bulkOpen, setBulkOpen] = useState(false), [capabilities, setCapabilities] = useState(null);
+    useEffect(() => {
+      if (!client) return;
+      let alive = true; const control = new AbortController();
+      const timeout = setTimeout(() => control.abort(), 8000);
+      client('/ssh-channel/policy-capabilities', 'GET', undefined, { signal: control.signal }).then(value => {
+        if (!object(value) || value.version !== 1 || value.connectionsVersion !== 2 || !Number.isSafeInteger(value.maxTargets) || value.maxTargets < 1 || value.maxTargets > 100 || !object(value.classes) || Object.keys(value.classes).sort().join() !== 'disk,gpu,pcie,usb' || !['disk', 'gpu', 'usb', 'pcie'].every(category => { const item = value.classes[category]; return object(item) && typeof item.inventory === 'boolean' && typeof item.custom === 'boolean' && Array.isArray(item.operations) && item.operations.every(operation => category === 'disk' && operation === 'disk.smart.read') && (!item.custom || item.inventory); }) || !object(value.execution) || typeof value.execution.manual !== 'boolean' || typeof value.execution.scheduled !== 'boolean' || !['SSH_POLICY_RESOLVER_UNAVAILABLE', 'SSH_BACKGROUND_INVENTORY_AUTH_UNAVAILABLE', null, undefined].includes(value.execution.reason)) throw new Error('SSH_POLICY_CAPABILITIES_INVALID');
+        if (value.execution.scheduled && !value.execution.manual || value.execution.reason === 'SSH_POLICY_RESOLVER_UNAVAILABLE' && (value.execution.manual || value.execution.scheduled) || value.execution.reason === 'SSH_BACKGROUND_INVENTORY_AUTH_UNAVAILABLE' && value.execution.scheduled || ['gpu', 'usb', 'pcie'].some(category => value.classes[category].inventory || value.classes[category].custom || value.classes[category].operations.length)) throw new Error('SSH_POLICY_CAPABILITIES_INVALID');
+        if (alive && !control.signal.aborted) setCapabilities(value);
+      }).catch(() => { if (alive) setCapabilities(null); }).finally(() => clearTimeout(timeout));
+      return () => { alive = false; clearTimeout(timeout); control.abort(); };
+    }, [client]);
     useEffect(() => {
       if (!client) return;
       let alive = true; const control = new AbortController();
@@ -198,8 +295,8 @@ export function createSshConnectionSettings(React) {
     }
     useEffect(() => { const unsubscribe = store.subscribe(() => render(value => value + 1)); store.load(); return unsubscribe; }, [store]);
     const status = store.status(), draft = store.getDraft(), saved = store.get();
-    const blankTarget = connection => ({ hostId: '', clusterId: '', address: '', port: 22, hostKeySha256: '', devices: [], connection });
-    const pristine = row => !row.hostId && !row.clusterId && !row.address && !row.hostKeySha256 && !row.devices.length;
+    const blankTarget = connection => ({ hostId: '', clusterId: '', address: '', port: 22, hostKeySha256: '', devicePolicy: defaultDevicePolicy(), connection });
+    const pristine = row => !row.hostId && !row.clusterId && !row.address && !row.hostKeySha256 && Object.values(row.devicePolicy.classes).every(value => value.mode === 'all' && !value.ids.length);
     const rules = [...draft.clusters.map((row, index) => ({ scope: 'cluster', index, targetId: row.clusterId, connection: row.connection })),
       ...draft.hosts.map((row, index) => ({ scope: 'host', index, targetId: row.hostId, connection: row.connection })).filter(rule => rule.connection !== null)];
     const hosts = [...inventory.hosts, ...draft.hosts.filter(row => row.hostId && !inventory.hosts.some(item => item.id === row.hostId)).map(row => ({ id: row.hostId, name: t('已配置映射', 'Configured mapping'), clusterId: row.clusterId, address: row.address }))];
@@ -262,11 +359,20 @@ export function createSshConnectionSettings(React) {
     }
     const priority = t('优先级：主机例外 > 集群例外 > 全局默认。保留只保留当前对象自己的秘密。更改范围或对象不会迁移已保存秘密，须为新对象明确替换或保留其已有凭据。', 'Priority: host > cluster > global. Keep retains only the current scope’s own secret. Changing scope or target does not transfer saved secrets; explicitly replace or keep the new target’s existing credential.');
     const sourceNames = { host: t('主机例外', 'Host override'), cluster: t('集群例外', 'Cluster override'), global: t('全局默认', 'Global default'), none: t('无可用配置', 'No configuration') };
+    const saveHint = status.error === 'SSH_CONNECTION_REVISION_CONFLICT' ? t('服务器已有新版本，草稿已保留。请重新读取并核对差异；不会自动覆盖。', 'The server has a newer revision. The draft is retained; reload and compare without overwriting automatically.')
+      : ['SSH_DEVICE_SELECTION_EXPIRED', 'SSH_DEVICE_IDENTITY_CHANGED', 'SSH_DEVICE_IDENTITY_UNVERIFIED'].includes(status.error) ? t('设备身份或选择证据需要重新核验。请刷新磁盘清单并明确重选，草稿已保留。', 'Device identity or selection proof needs verification. Refresh and explicitly reselect; the draft is retained.')
+      : status.error === 'SSH_CONNECTION_OUTCOME_UNKNOWN' ? t('保存结果待确认，草稿已保留并暂停编辑及重复提交。请核对保存结果或联系管理员。', 'The save outcome is unknown. The draft is retained; editing and repeat submission are paused. Check the save result or contact an administrator.')
+      : status.error === 'SSH_CONNECTION_VERSION_UNSUPPORTED' ? t('当前服务端不支持连接 v2，请先完成框架升级与显式迁移。', 'This backend does not support connections v2. Upgrade the framework and explicitly migrate first.') : '';
     return h('section', { className: 'pk-ssh-connections', 'aria-label': t('SSH 全局与例外', 'SSH defaults and overrides') }, h('style', null, CSS + '.pk-ssh-preflight{border-top:1px solid #e7edf5;margin-top:16px;padding-top:4px}.pk-ssh-preflight-actions{display:flex;gap:8px;flex-wrap:wrap}.pk-ssh-candidate{padding:12px;border:1px solid #f1d59e;border-radius:7px;background:#fffaf0;margin-top:12px}.pk-ssh-candidate code{overflow-wrap:anywhere}.pk-ssh-pin-ack{display:flex;gap:8px;align-items:flex-start;font-size:12px;line-height:1.7;margin:12px 0}.pk-ssh-verified{padding:10px 12px;border:1px solid #a3d7af;border-radius:6px;background:#f1fbf3;color:#26723c;font-size:12px}'),
       h('div', { className: 'c89-section-heading' }, h('h4', null, t('SSH 连接设置', 'SSH connection settings')), h('span', { className: 'pk-ssh-draft-badge' }, status.dirty ? t('未保存的连接草稿', 'Unsaved connection draft') : t('已保存的连接设置', 'Saved connection settings'))),
       h('p', { className: 'pk-ssh-rule-note' }, t('所有编辑仅为草稿，使用插件中心“保存”或“保存并退出”后生效；保存会撤销全部 SSH 授权并中止在途连接。', 'Edits are drafts until Plugin center Save or Save and exit. Saving revokes all SSH approvals and cancels in-flight connections.')),
-      status.error && h('p', { className: 'pk-ssh-error', role: 'alert' }, t('连接设置操作未完成：', 'Connection settings incomplete: ') + status.error),
-      !status.loaded ? h('p', null, status.loading ? t('正在读取连接设置…', 'Loading connection settings…') : t('无法读取连接设置。', 'Connection settings unavailable.')) : h('fieldset', { className: 'pk-ssh-draft', disabled: status.saving },
+      status.error && h('p', { className: 'pk-ssh-error', role: 'alert' }, t('连接设置操作未完成：', 'Connection settings incomplete: ') + status.error, saveHint && h('span', null, ' · ' + saveHint)),
+      status.outcomeUnknown && h('button', { type: 'button', className: 'c89-text-button', disabled: status.loading || status.saving, onClick: () => store.load() }, t('核对保存结果', 'Check save result')),
+      status.readOnly && h('p', { className: 'pk-ssh-notice', role: 'status' }, t('旧连接配置尚未显式迁移，当前为只读预览。请由管理员使用支持 v2 的工具完成备份与迁移；不会自动扩大原设备范围。', 'Legacy connections require explicit migration. This is a read-only preview. An administrator must back up and migrate with v2-aware tools; existing device scopes are not widened.')),
+      status.remoteRevision !== null && h('p', { className: 'pk-ssh-notice' }, t('服务器配置已更新。本地草稿与原保存基线保留，请核对差异；不会自动覆盖新版本。', 'Server settings changed. The local draft and original revision are retained; review the differences before proceeding.')),
+      status.notice && h('p', { className: 'pk-ssh-notice' }, t('本次保存已有成功回执，但服务器已有更新版本；当前显示最新服务器配置。', 'This save has a success receipt, but a newer server revision exists. The latest server settings are displayed.')),
+      h('p', { className: 'pk-ssh-rule-note' }, !capabilities?.execution.manual ? t('分类设备策略的执行能力尚未就绪；保存范围不会启用采集。', 'Device-policy execution is not ready. Saving scope does not enable collection.') : !capabilities.execution.scheduled ? t('当前支持手动操作；缺少后台库存认证能力，分类设备计划不会运行。', 'Manual operations are available. Device-policy schedules cannot run without background inventory authentication.') : t('执行仍须经过独立命令审核。', 'Execution still requires a separate command review.')),
+      !status.loaded ? h('p', null, status.loading ? t('正在读取连接设置…', 'Loading connection settings…') : t('无法读取连接设置。', 'Connection settings unavailable.')) : h('fieldset', { className: 'pk-ssh-draft', disabled: status.saving || status.readOnly || status.outcomeUnknown },
         h('div', { className: 'c89-setting pk-ssh-global' }, h('div', { className: 'c89-setting-row' }, h('strong', { className: 'pk-ssh-global-title' }, t('全局默认凭据', 'Global default credentials')),
           h('label', null, h('input', { type: 'checkbox', checked: Boolean(draft.global), onChange: event => store.update({ global: event.target.checked ? newConnection() : null }) }), t(' 配置全局凭据', ' Configure global credentials'))),
           h('p', { className: 'pk-ssh-rule-note' }, t('未命中例外时使用此配置。空表单保留已有秘密，只有明确替换或清除才修改；已保存秘密不回显。', 'Used when no override matches. Blank fields keep existing secrets; only explicit Replace or Clear changes them. Saved secrets are never returned.')),
@@ -296,18 +402,17 @@ export function createSshConnectionSettings(React) {
             rule.scope === 'host' && !draft.hosts[rule.index].hostKeySha256 && h('p', { className: 'pk-ssh-notice' }, t('此主机尚缺可信指纹，请在下方独立目标设置中完成核验。不会自动连接。', 'This host needs a trusted pin. Complete verification in the separate target settings below. No connection is started.')),
             connectionEditor(rule.connection, previous, connection => updateCredential(rule, connection)));
         }),
-        h('div', { className: 'c89-exception-heading' }, h('strong', null, t('主机目标设置', 'Host target settings')), h('button', { type: 'button', className: 'c89-add-rule', disabled: draft.hosts.length >= 500, onClick: () => store.update({ hosts: [...draft.hosts, blankTarget(null)] }) }, t('添加主机配置', 'Add host profile'))),
-        h('p', { className: 'pk-ssh-rule-note' }, t('目标仅定义可连接的主机和设备，不改变凭据优先级。地址、端口、指纹和设备映射须逐主机明确配置。', 'Targets define allowed hosts and devices, separately from credential precedence. Configure each host’s address, port, pin and device mappings explicitly.')),
+        h('div', { className: 'c89-exception-heading' }, h('strong', null, t('主机目标设置', 'Host target settings')), h('div', { className: 'pk-ssh-preflight-actions' }, h('button', { type: 'button', className: 'c89-add-rule', disabled: draft.hosts.length >= 500 || inventoryBusy || !inventory.hosts.length || status.outcomeUnknown, onClick: () => setBulkOpen(true) }, t('从清单批量添加', 'Add from inventory')), h('button', { type: 'button', className: 'c89-add-rule', disabled: draft.hosts.length >= 500 || status.outcomeUnknown, onClick: () => store.update({ hosts: [...draft.hosts, blankTarget(null)] }) }, t('添加主机配置', 'Add host profile')))),
+        h('p', { className: 'pk-ssh-rule-note' }, t('批量添加仅创建目标草稿。每台主机仍须独立核验指纹；新目标的四类设备范围默认全部允许，命令另行审核。', 'Bulk adding only creates target drafts. Verify each host key independently. New targets default all four device classes to allow all; commands require a separate review.')),
         !draft.hosts.length && h('div', { className: 'c89-empty-rules' }, t('尚无主机目标；全局凭据或例外本身不会添加连接目标。', 'No host targets. Defaults and overrides alone do not add connection targets.')),
         ...draft.hosts.map((row, index) => {
           const previous = saved.hosts.find(item => item.hostId === row.hostId), display = hosts.find(item => item.id === row.hostId);
-          function devicePatch(n, patch) { patchTarget(index, { devices: row.devices.map((device, i) => i === n ? { ...device, ...patch } : device) }); }
           return h('details', { className: 'pk-ssh-target', key: index },
             h('summary', null, h('span', { className: 'pk-ssh-target-name' }, display ? `${display.name} (${row.hostId})` : row.hostId || t(`主机目标 ${index + 1}`, `Host target ${index + 1}`)), h('span', { className: 'pk-ssh-draft-badge' }, row.hostKeySha256 ? t('已配置指纹', 'Pin configured') : t('待核验指纹', 'Pin required'))),
             h('div', { className: 'pk-ssh-target-body' }, h('div', { className: 'c89-rule-top' }, h('span', null, t('独立目标配置', 'Independent target configuration')), trash(t(`删除主机目标 ${index + 1}`, `Delete host target ${index + 1}`), () => { store.update({ hosts: draft.hosts.filter((_, n) => n !== index) }); setNotice('removeTarget'); })),
               h('label', { className: 'pk-ssh-connection-field' }, h('span', null, t('选择主机', 'Select host')), h('select', { 'aria-label': t('选择主机', 'Select host'), value: row.hostId, onChange: event => {
                 const selected = inventory.hosts.find(item => item.id === event.target.value);
-                if (selected && selected.id !== row.hostId) { patchTarget(index, { hostId: selected.id, clusterId: selected.clusterId, address: selected.address, hostKeySha256: '', devices: [], connection: null }); setNotice('target'); }
+                if (selected && selected.id !== row.hostId) { patchTarget(index, { hostId: selected.id, clusterId: selected.clusterId, address: selected.address, hostKeySha256: '', devicePolicy: defaultDevicePolicy(), connection: null }); setNotice('target'); }
               } }, h('option', { value: '' }, t('请选择主机', 'Select a host')), row.hostId && !inventory.hosts.some(item => item.id === row.hostId) && h('option', { value: row.hostId }, t('已配置映射：', 'Configured mapping: ') + row.hostId), ...inventory.hosts.map(item => h('option', { value: item.id, key: item.id, disabled: draft.hosts.some((other, n) => n !== index && other.hostId === item.id) }, `${item.name} (${item.id})`)))),
               clusterSelector(row.clusterId, clusterId => patchTarget(index, { clusterId })),
               h('details', { className: 'pk-ssh-map-edit' }, h('summary', null, t('高级映射配置', 'Advanced mapping configuration')), field(t('主机映射标识', 'Host mapping ID'), row.hostId, hostId => patchTarget(index, { hostId })), field(t('集群映射标识', 'Cluster mapping ID'), row.clusterId, clusterId => patchTarget(index, { clusterId }))),
@@ -316,9 +421,9 @@ export function createSshConnectionSettings(React) {
               h('p', { className: 'pk-ssh-rule-note' }, t('已保存的有效凭据来源：', 'Saved effective credential source: ') + sourceNames[previous?.effective.source || 'none'] + (previous && !previous.effective.ready ? t('（凭据未就绪）', ' (credential unready)') : '')),
               h('p', { className: 'pk-ssh-rule-note' }, row.connection ? t('此主机有专属例外。请在上方例外卡片修改；删除例外不会删除目标。', 'This host has an override. Edit it in the exception cards above; deleting the override preserves the target.') : t('此主机没有专属例外，将按集群例外或全局默认继承。', 'This host has no host override and inherits its cluster override or global default.')),
               h(HostPreflight, { store, index, client, enabled: preflightEnabled, locale }),
-              h('h5', null, t('可信设备映射', 'Trusted device mappings')),
-              ...row.devices.map((device, n) => h('div', { className: 'pk-ssh-device', key: n }, h('div', { className: 'pk-ssh-device-fields' }, field(t('设备映射标识', 'Device mapping ID'), device.deviceId, deviceId => devicePatch(n, { deviceId })), field(t('设备路径', 'Device path'), device.path, path => devicePatch(n, { path })), field(t('可信序列号', 'Trusted serial number'), device.serial || '', serial => devicePatch(n, serial ? { serial } : { serial: undefined })), trash(t(`删除设备映射 ${n + 1}`, `Delete device mapping ${n + 1}`), () => patchTarget(index, { devices: row.devices.filter((_, i) => i !== n) }))))),
-              h('button', { type: 'button', className: 'c89-add-rule', onClick: () => patchTarget(index, { devices: [...row.devices, { deviceId: '', path: '', serial: '' }] }) }, t('添加设备映射', 'Add device mapping'))));
-        })));
+              previous?.policyState.disk !== 'ready' && previous && h('p', { className: 'pk-ssh-notice' }, t('原设备范围存在未解析或身份变化的项，请刷新清单并明确重选；旧历史仍保留。', 'Existing scope contains unresolved or changed identities. Refresh and explicitly reselect; old history is retained.')),
+              h(HostDeviceScope, { store, index, client, capabilities, locale })));
+        })),
+      bulkOpen && h(BulkHostPicker, { inventory, hosts: draft.hosts, locale, disabled: status.saving || status.readOnly || status.outcomeUnknown, onClose: () => setBulkOpen(false), onAdd: hosts => store.update({ hosts }) }));
   };
 }

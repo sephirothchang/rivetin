@@ -51,5 +51,15 @@ export function createTowerConnection({ baseUrl, fetchImpl = fetch }) {
       return { id: user.id, name: user.username, source: 'tower', role: user.role, admin: ['ROOT', 'ADMIN'].includes(user.role), auth };
     } catch { return null; }
   }
-  return { request, authenticate };
+  async function islandRegistry(actor) {
+    if (!actor?.admin || actor.source !== 'tower' || !actor.auth?.Authorization && !actor.auth?.Cookie) throw new Error('DEPLOYMENT_PROBE_AUTH_UNAVAILABLE');
+    const headers = {};
+    for (const key of ['Authorization', 'Cookie']) if (actor.auth[key]) headers[key] = actor.auth[key];
+    const response = await fetchImpl(new URL('/api/island-registry/sea-maps?refreshCache=true', base), {
+      method: 'GET', redirect: 'error', signal: AbortSignal.timeout(1500), headers,
+    });
+    if (!response.ok) { await response.body?.cancel?.(); throw Object.assign(new Error('ISLAND_REGISTRY_UNAVAILABLE'), { status: response.status }); }
+    return responseJson(response);
+  }
+  return { request, authenticate, islandRegistry };
 }

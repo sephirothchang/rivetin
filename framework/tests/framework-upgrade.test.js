@@ -9,8 +9,29 @@ import { createService } from '../server/service.js';
 import { FRAMEWORK_VERSION } from '../shared/version.js';
 import { runtimeFiles } from '../scripts/runtime-files.mjs';
 
-test('explicit 0.1.0 to 0.2.0 init changes only version metadata and records safe audit', async t => {
-  assert.equal(FRAMEWORK_VERSION, '0.2.0');
+test('0.2.0 to 0.2.2 upgrades only explicit disabled metadata and does not migrate vault bytes', async t => {
+  const { service, directory } = await fixture(t), file = path.join(directory, 'framework/settings.json');
+  await writeFile(file, JSON.stringify({ version: '0.2.0', apiVersion: 1, retained: 'EXAMPLE' }));
+  const vault = path.join(directory, 'ssh-channel/vault'); await mkdir(vault, { recursive: true });
+  const bytes = Buffer.from('EXAMPLE_OPAQUE_V1_CIPHERTEXT'); await writeFile(path.join(vault, 'connections.v1.json'), bytes);
+  assert.equal((await service.initialize(actor, { upgradeFrom: '0.2.0' })).upgraded, true);
+  assert.deepEqual(await readFile(path.join(vault, 'connections.v1.json')), bytes);
+  assert.equal((await service.runtime()).enabled, false);
+});
+
+test('0.2.1 to 0.2.2 preserves v2 ciphertext and changes only explicit disabled metadata', async t => {
+  const { service, directory } = await fixture(t), file = path.join(directory, 'framework/settings.json');
+  const original = { version: '0.2.1', apiVersion: 1, retained: 'EXAMPLE' }; await writeFile(file, JSON.stringify(original));
+  const vault = path.join(directory, 'ssh-channel/vault'); await mkdir(vault, { recursive: true });
+  const bytes = Buffer.from('EXAMPLE_OPAQUE_V2_CIPHERTEXT'); await writeFile(path.join(vault, 'connections.v2.json'), bytes);
+  assert.equal((await service.initialize(actor, { upgradeFrom: '0.2.1' })).upgraded, true);
+  assert.deepEqual(JSON.parse(await readFile(file)), { ...original, version: FRAMEWORK_VERSION });
+  assert.deepEqual(await readFile(path.join(vault, 'connections.v2.json')), bytes);
+  assert.equal((await service.runtime()).enabled, false);
+});
+
+test('explicit 0.1.0 to 0.2.2 init changes only version metadata and records safe audit', async t => {
+  assert.equal(FRAMEWORK_VERSION, '0.2.2');
   const { directory, install } = await fixture(t); await install();
   const settings = path.join(directory, 'framework/settings.json');
   const original = { apiVersion: 1, version: '0.1.0', initializedAt: 'EXAMPLE_ORIGINAL_TIME', towerBuild: '4.9.0', exampleRetained: true };
@@ -24,7 +45,7 @@ test('explicit 0.1.0 to 0.2.0 init changes only version metadata and records saf
   assert.deepEqual(JSON.parse(await readFile(settings)), original);
   const result = await service.initialize(actor, { upgradeFrom: '0.1.0' });
   assert.equal(result.upgraded, true);
-  assert.deepEqual(JSON.parse(await readFile(settings)), { ...original, version: '0.2.0' });
+  assert.deepEqual(JSON.parse(await readFile(settings)), { ...original, version: '0.2.2' });
   assert.deepEqual(await readFile(config), beforeConfig); assert.deepEqual(await readFile(state), beforeState);
   assert.equal(await readFile(vault, 'utf8'), 'EXAMPLE_OPAQUE_BYTES');
   const after = await readFile(settings);
@@ -62,7 +83,7 @@ test('CLI init accepts one explicit upgrade-from argument and rejects malformed 
   }
   const output = await promisify(execFile)(process.execPath, ['cli.mjs', 'init', '--data', directory, '--upgrade-from', '0.1.0']);
   assert.equal(JSON.parse(output.stdout).upgraded, true);
-  assert.deepEqual(JSON.parse(await readFile(file)), { apiVersion: 1, version: '0.2.0', initializedAt: 'EXAMPLE_ORIGINAL_TIME' });
+  assert.deepEqual(JSON.parse(await readFile(file)), { apiVersion: 1, version: '0.2.2', initializedAt: 'EXAMPLE_ORIGINAL_TIME' });
 });
 
 test('explicit CLI metadata migration does not depend on generated builtins in a clean source tree', async t => {
@@ -82,7 +103,7 @@ test('explicit CLI metadata migration does not depend on generated builtins in a
   await assert.rejects(readFile(path.join(code, 'server/builtins/rivetin-ssh-channel.json')), error => error.code === 'ENOENT');
 });
 
-test('explicit 0.1.1 to 0.2.0 preserves metadata/config/approvals and refuses the wrong source', async t => {
+test('explicit 0.1.1 to 0.2.2 preserves metadata/config/approvals and refuses the wrong source', async t => {
   const { service, directory, install } = await fixture(t); await install();
   const file = path.join(directory, 'framework/settings.json');
   const original = { apiVersion: 1, version: '0.1.1', initializedAt: 'EXAMPLE_RETAIN_TIME', towerBuild: '4.9.0' };
@@ -92,15 +113,15 @@ test('explicit 0.1.1 to 0.2.0 preserves metadata/config/approvals and refuses th
   const approvalBytes = '{"EXAMPLE_REVOKED_APPROVAL":"retain-existing-bytes"}'; await writeFile(approvals, approvalBytes);
   await assert.rejects(service.initialize(actor), /FRAMEWORK_MIGRATION_REQUIRED/);
   await assert.rejects(service.initialize(actor, { upgradeFrom: '0.1.0' }), /FRAMEWORK_MIGRATION_REQUIRED/);
-  await assert.rejects(service.initialize(actor, { upgradeFrom: '0.2.0' }), /FRAMEWORK_MIGRATION_REQUIRED/);
+  await assert.rejects(service.initialize(actor, { upgradeFrom: '0.2.2' }), /FRAMEWORK_MIGRATION_REQUIRED/);
   const result = await service.initialize(actor, { upgradeFrom: '0.1.1' }); assert.equal(result.upgraded, true);
-  assert.deepEqual(JSON.parse(await readFile(file)), { ...original, version: '0.2.0' });
+  assert.deepEqual(JSON.parse(await readFile(file)), { ...original, version: '0.2.2' });
   assert.deepEqual(await readFile(config), beforeConfig); assert.equal(await readFile(approvals, 'utf8'), approvalBytes);
   assert.equal((await service.initialize(actor, { upgradeFrom: '0.1.1' })).upgraded, false);
   assert.equal((await service.initialize(actor)).upgraded, false);
 });
 
-test('explicit 0.1.2 to 0.2.0 only changes metadata and never restores SSH approvals or schedules', async t => {
+test('explicit 0.1.2 to 0.2.2 only changes metadata and never restores SSH approvals or schedules', async t => {
   const { service, directory, install } = await fixture(t); await install();
   const settings = path.join(directory, 'framework/settings.json');
   const original = { apiVersion: 1, version: '0.1.2', initializedAt: 'EXAMPLE_ORIGINAL_TIME', towerBuild: '4.9.0', retained: true };
@@ -110,7 +131,7 @@ test('explicit 0.1.2 to 0.2.0 only changes metadata and never restores SSH appro
   const approvals = path.join(directory, 'ssh-channel/approvals.json'); await mkdir(path.dirname(approvals), { recursive: true });
   const revoked = JSON.stringify({ version: 1, approvals: {}, schedules: {}, revocations: { global: 'a'.repeat(32), plugins: {} } });
   await writeFile(approvals, revoked);
-  for (const upgradeFrom of [undefined, '0.1.0', '0.1.1', '0.2.0']) {
+  for (const upgradeFrom of [undefined, '0.1.0', '0.1.1', '0.2.2']) {
     await assert.rejects(service.initialize(actor, { upgradeFrom }), /FRAMEWORK_MIGRATION_REQUIRED/);
     assert.deepEqual(JSON.parse(await readFile(settings)), original);
   }
@@ -118,14 +139,14 @@ test('explicit 0.1.2 to 0.2.0 only changes metadata and never restores SSH appro
   await assert.rejects(service.initialize(actor, { upgradeFrom: '0.1.2' }), /FRAMEWORK_DISABLE_BEFORE_UPGRADE/);
   await writeFile(path.join(directory, 'framework/disabled.json'), '{}');
   assert.equal((await service.initialize(actor, { upgradeFrom: '0.1.2' })).upgraded, true);
-  assert.deepEqual(JSON.parse(await readFile(settings)), { ...original, version: '0.2.0' });
+  assert.deepEqual(JSON.parse(await readFile(settings)), { ...original, version: '0.2.2' });
   assert.deepEqual(await readFile(config), configBytes); assert.deepEqual(await readFile(state), stateBytes);
   assert.equal(await readFile(approvals, 'utf8'), revoked);
   assert.equal((await service.initialize(actor, { upgradeFrom: '0.1.2' })).upgraded, false);
   assert.equal((await service.runtime()).enabled, false);
 });
 
-test('explicit 0.1.3 to 0.2.0 only changes metadata and never restores SSH approvals or schedules', async t => {
+test('explicit 0.1.3 to 0.2.2 only changes metadata and never restores SSH approvals or schedules', async t => {
   const { service, directory, install } = await fixture(t); await install();
   const settings = path.join(directory, 'framework/settings.json');
   const original = { apiVersion: 1, version: '0.1.3', initializedAt: 'EXAMPLE_ORIGINAL_TIME', towerBuild: '4.9.0', retained: true };
@@ -135,7 +156,7 @@ test('explicit 0.1.3 to 0.2.0 only changes metadata and never restores SSH appro
   const approvals = path.join(directory, 'ssh-channel/approvals.json'); await mkdir(path.dirname(approvals), { recursive: true });
   const revoked = JSON.stringify({ version: 1, approvals: {}, schedules: {}, revocations: { global: 'a'.repeat(32), plugins: {} } });
   await writeFile(approvals, revoked);
-  for (const upgradeFrom of [undefined, '0.1.0', '0.1.1', '0.1.2', '0.2.0']) {
+  for (const upgradeFrom of [undefined, '0.1.0', '0.1.1', '0.1.2', '0.2.2']) {
     await assert.rejects(service.initialize(actor, { upgradeFrom }), /FRAMEWORK_MIGRATION_REQUIRED/);
     assert.deepEqual(JSON.parse(await readFile(settings)), original);
   }
@@ -143,14 +164,14 @@ test('explicit 0.1.3 to 0.2.0 only changes metadata and never restores SSH appro
   await assert.rejects(service.initialize(actor, { upgradeFrom: '0.1.3' }), /FRAMEWORK_DISABLE_BEFORE_UPGRADE/);
   await writeFile(path.join(directory, 'framework/disabled.json'), '{}');
   assert.equal((await service.initialize(actor, { upgradeFrom: '0.1.3' })).upgraded, true);
-  assert.deepEqual(JSON.parse(await readFile(settings)), { ...original, version: '0.2.0' });
+  assert.deepEqual(JSON.parse(await readFile(settings)), { ...original, version: '0.2.2' });
   assert.deepEqual(await readFile(config), configBytes); assert.deepEqual(await readFile(state), stateBytes);
   assert.equal(await readFile(approvals, 'utf8'), revoked);
   assert.equal((await service.initialize(actor, { upgradeFrom: '0.1.3' })).upgraded, false);
   assert.equal((await service.runtime()).enabled, false);
 });
 
-test('explicit 0.1.4 to 0.2.0 only changes metadata and never restores SSH approvals or schedules', async t => {
+test('explicit 0.1.4 to 0.2.2 only changes metadata and never restores SSH approvals or schedules', async t => {
   const { service, directory, install } = await fixture(t); await install();
   const settings = path.join(directory, 'framework/settings.json');
   const original = { apiVersion: 1, version: '0.1.4', initializedAt: 'EXAMPLE_ORIGINAL_TIME', towerBuild: '4.9.0', retained: true };
@@ -160,7 +181,7 @@ test('explicit 0.1.4 to 0.2.0 only changes metadata and never restores SSH appro
   const approvals = path.join(directory, 'ssh-channel/approvals.json'); await mkdir(path.dirname(approvals), { recursive: true });
   const revoked = JSON.stringify({ version: 1, approvals: {}, schedules: {}, revocations: { global: 'a'.repeat(32), plugins: {} } });
   await writeFile(approvals, revoked);
-  for (const upgradeFrom of [undefined, '0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.2.0']) {
+  for (const upgradeFrom of [undefined, '0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.2.2']) {
     await assert.rejects(service.initialize(actor, { upgradeFrom }), /FRAMEWORK_MIGRATION_REQUIRED/);
     assert.deepEqual(JSON.parse(await readFile(settings)), original);
   }
@@ -168,14 +189,14 @@ test('explicit 0.1.4 to 0.2.0 only changes metadata and never restores SSH appro
   await assert.rejects(service.initialize(actor, { upgradeFrom: '0.1.4' }), /FRAMEWORK_DISABLE_BEFORE_UPGRADE/);
   await writeFile(path.join(directory, 'framework/disabled.json'), '{}');
   assert.equal((await service.initialize(actor, { upgradeFrom: '0.1.4' })).upgraded, true);
-  assert.deepEqual(JSON.parse(await readFile(settings)), { ...original, version: '0.2.0' });
+  assert.deepEqual(JSON.parse(await readFile(settings)), { ...original, version: '0.2.2' });
   assert.deepEqual(await readFile(config), configBytes); assert.deepEqual(await readFile(state), stateBytes);
   assert.equal(await readFile(approvals, 'utf8'), revoked);
   assert.equal((await service.initialize(actor, { upgradeFrom: '0.1.4' })).upgraded, false);
   assert.equal((await service.runtime()).enabled, false);
 });
 
-test('explicit 0.1.5 to 0.2.0 only changes metadata and never restores SSH approvals or schedules', async t => {
+test('explicit 0.1.5 to 0.2.2 only changes metadata and never restores SSH approvals or schedules', async t => {
   const { service, directory, install } = await fixture(t); await install();
   const settings = path.join(directory, 'framework/settings.json');
   const original = { apiVersion: 1, version: '0.1.5', initializedAt: 'EXAMPLE_ORIGINAL_TIME', towerBuild: '4.9.0', retained: true };
@@ -187,7 +208,7 @@ test('explicit 0.1.5 to 0.2.0 only changes metadata and never restores SSH appro
   const approvals = path.join(directory, 'ssh-channel/approvals.json'); await mkdir(path.dirname(approvals), { recursive: true });
   const revoked = JSON.stringify({ version: 1, approvals: {}, schedules: {}, revocations: { global: 'a'.repeat(32), plugins: {} } });
   await writeFile(approvals, revoked);
-  for (const upgradeFrom of [undefined, '0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.2.0']) {
+  for (const upgradeFrom of [undefined, '0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.2.2']) {
     await assert.rejects(service.initialize(actor, { upgradeFrom }), /FRAMEWORK_MIGRATION_REQUIRED/);
     assert.deepEqual(JSON.parse(await readFile(settings)), original);
   }
@@ -195,7 +216,7 @@ test('explicit 0.1.5 to 0.2.0 only changes metadata and never restores SSH appro
   await assert.rejects(service.initialize(actor, { upgradeFrom: '0.1.5' }), /FRAMEWORK_DISABLE_BEFORE_UPGRADE/);
   await writeFile(path.join(directory, 'framework/disabled.json'), '{}');
   assert.equal((await service.initialize(actor, { upgradeFrom: '0.1.5' })).upgraded, true);
-  assert.deepEqual(JSON.parse(await readFile(settings)), { ...original, version: '0.2.0' });
+  assert.deepEqual(JSON.parse(await readFile(settings)), { ...original, version: '0.2.2' });
   assert.deepEqual(await readFile(config), configBytes); assert.deepEqual(await readFile(state), stateBytes);
   assert.equal(await readFile(approvals, 'utf8'), revoked); assert.deepEqual(await readFile(history), historyBytes);
   assert.equal((await service.initialize(actor, { upgradeFrom: '0.1.5' })).upgraded, false);

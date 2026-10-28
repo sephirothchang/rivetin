@@ -78,21 +78,30 @@ export function createSmartProvider(directory, { readDisk, readDiskInventory = r
       throw failure('SMART_DISK_READ_FAILED');
     } finally { clearTimeout(timer); if (signal && abort) signal.removeEventListener('abort', abort); }
   }
-  async function target(profileHostId, deviceId) {
-    let host; try { host = await vault.get(profileHostId); } catch { throw failure('SMART_PROFILE_UNAVAILABLE'); }
+  async function target(profileHostId, deviceId, actor) {
+    let host; try { host = await vault.get(profileHostId, actor); } catch { throw failure('SMART_PROFILE_UNAVAILABLE'); }
     const device = host.devices?.find(item => item.deviceId === deviceId);
     if (!device || !text(device.serial, 256) || !text(device.path, 256)) throw failure('SMART_DEVICE_UNAVAILABLE');
     return { host, device };
   }
   const publicIdentity = (tower, row) => ({ diskId: tower.id, hostId: tower.hostId, generation: row.generation, deviceId: row.generation, path: '', model: tower.model });
   const summary = row => ({ diskId: row.diskId, hostId: row.hostId, profileHostId: row.profileHostId, deviceId: row.deviceId, generation: row.generation });
-  async function verify(tower, requestedGeneration) {
-    const secret = await key(), data = await bindingsData(secret), row = data.items[keyFor(tower.id)];
-    if (!row) throw failure('SMART_DISK_UNBOUND', 404);
+  async function verify(tower, requestedGeneration, actor) {
+    const secret = await key(), data = await bindingsData(secret); let row = data.items[keyFor(tower.id)];
     const actual = generation(secret, tower);
+    if (requestedGeneration !== undefined && requestedGeneration !== actual) throw failure('SMART_GENERATION_CHANGED', 409);
+    if (await vault.v2?.active() && (!row || row.generation !== actual || row.deviceId !== tower.id || row.profileHostId !== tower.hostId)) {
+      const selected = await target(tower.hostId, tower.id, actor);
+      if (selected.device.serial !== tower.serial || selected.device.path !== tower.path) throw failure('SMART_BINDING_CHANGED', 409);
+      if (!row && Object.keys(data.items).length >= 10000) throw failure('SMART_BINDING_LIMIT');
+      row = { diskId: tower.id, hostId: tower.hostId, profileHostId: tower.hostId, deviceId: tower.id, generation: actual, towerToken: towerToken(secret, tower), targetToken: targetToken(secret, selected.host, selected.device), nonce: randomBytes(32).toString('hex') };
+      row.bindingToken = signBinding(secret, row); data.items[keyFor(tower.id)] = row;
+      await atomic(bindingsFile, data);
+    }
+    if (!row) throw failure('SMART_DISK_UNBOUND', 404);
     if (row.generation !== actual || requestedGeneration !== undefined && requestedGeneration !== actual) throw failure('SMART_GENERATION_CHANGED', 409);
     if (row.hostId !== tower.hostId || !sameToken(row.towerToken, towerToken(secret, tower))) throw failure('SMART_BINDING_CHANGED', 409);
-    const selected = await target(row.profileHostId, row.deviceId);
+    const selected = await target(row.profileHostId, row.deviceId, actor);
     if (!sameToken(row.targetToken, targetToken(secret, selected.host, selected.device))) throw failure('SMART_BINDING_CHANGED', 409);
     return { row, identity: publicIdentity(tower, row) };
   }
@@ -100,7 +109,7 @@ export function createSmartProvider(directory, { readDisk, readDiskInventory = r
     if (!exact(input, ['pluginId', 'diskId', 'generation', 'actor', 'signal', 'limit', 'cursor']) || requireGeneration && !hex(input.generation)) throw failure('SMART_DISK_REQUEST_INVALID', 400);
     actorCheck(input.actor);
     await allowed(input.pluginId); const tower = await authorized(input.diskId, input.actor, input.signal);
-    return disk.locked(async () => { cancelled(input.signal); return verify(tower, input.generation); });
+    return disk.locked(async () => { cancelled(input.signal); return verify(tower, input.generation, input.actor); });
   }
   function snapshot(record, identity) {
     if (!record) return { schemaVersion: 1, source, identity, status: 'unavailable', code: 'SMART_NO_SAMPLE', collectedAt: null };
@@ -132,7 +141,16 @@ export function createSmartProvider(directory, { readDisk, readDiskInventory = r
       if (!exact(input, ['pluginId', 'actor'])) throw failure('SMART_DISK_REQUEST_INVALID', 400);
       admin(input.actor); await allowed(input.pluginId);
       return disk.locked(async () => {
-        const secret = await key(), rows = Object.values((await bindingsData(secret)).items);
+        let allowedTargets;
+        if (await vault.v2?.active()) {
+          allowedTargets = new Set();
+          for (const host of await vault.list(input.actor)) for (const device of host.devices) {
+            allowedTargets.add(host.hostId + '/' + device.deviceId);
+            const tower = await authorized(device.deviceId, input.actor);
+            await verify(tower, undefined, input.actor);
+          }
+        }
+        const secret = await key(), rows = Object.values((await bindingsData(secret)).items).filter(row => !allowedTargets || allowedTargets.has(row.profileHostId + '/' + row.deviceId));
         if (rows.length > 100) throw failure('SMART_BATCH_TARGET_LIMIT', 409);
         return { items: rows.map(row => ({ diskId: row.diskId, generation: row.generation, profileHostId: row.profileHostId, deviceId: row.deviceId, bindingToken: row.bindingToken })) };
       });
@@ -152,7 +170,7 @@ export function createSmartProvider(directory, { readDisk, readDiskInventory = r
       if (!exact(input, ['diskId', 'profileHostId', 'deviceId', 'actor']) || !identifier(input.profileHostId) || !identifier(input.deviceId)) throw failure('SMART_DISK_REQUEST_INVALID', 400);
       admin(input.actor); const tower = await authorized(input.diskId, input.actor);
       return disk.locked(async () => {
-        const secret = await key(), data = await bindingsData(secret), { host, device } = await target(input.profileHostId, input.deviceId);
+        const secret = await key(), data = await bindingsData(secret), { host, device } = await target(input.profileHostId, input.deviceId, input.actor);
         if (tower.serial !== device.serial || tower.path !== device.path) throw failure('SMART_BINDING_IDENTITY_MISMATCH', 409);
         if (Object.values(data.items).some(row => row.diskId !== tower.id && row.profileHostId === input.profileHostId && row.deviceId === input.deviceId)) throw failure('SMART_BINDING_AMBIGUOUS', 409);
         const id = keyFor(tower.id); if (!data.items[id] && Object.keys(data.items).length >= 10000) throw failure('SMART_BINDING_LIMIT');
@@ -170,18 +188,19 @@ export function createSmartProvider(directory, { readDisk, readDiskInventory = r
     },
     async bindings(actor) { admin(actor); return disk.locked(async () => { const secret = await key(); return { items: Object.values((await bindingsData(secret)).items).map(summary) }; }); },
     async prepareResultContext(input) {
+      const actor = input?.actor;
       if (!input || input.operation !== operation) return undefined;
       await allowed(input.pluginId);
       if (!identifier(input.hostId) || !identifier(input.deviceId)) return undefined;
       return disk.locked(async () => {
         const secret = await key(), matches = Object.values((await bindingsData(secret)).items).filter(row => row.profileHostId === input.hostId && row.deviceId === input.deviceId);
         if (matches.length !== 1) return undefined;
-        const row = matches[0], { host, device } = await target(row.profileHostId, row.deviceId);
+        const row = matches[0], { host, device } = await target(row.profileHostId, row.deviceId, actor);
         if (!sameToken(row.targetToken, targetToken(secret, host, device)) || input.host && !sameToken(row.targetToken, targetToken(secret, input.host, input.host.devices?.find(item => item.deviceId === input.deviceId) || {}))) return undefined;
         return { pluginId: input.pluginId, diskId: row.diskId, hostId: row.hostId, profileHostId: row.profileHostId, deviceId: row.deviceId, generation: row.generation, bindingToken: row.bindingToken };
       });
     },
-    async onResult(item, context, { signal, assertActive } = {}) {
+    async onResult(item, context, { signal, assertActive, actor } = {}) {
       if (!context || item?.operation !== operation) return { recorded: false };
       if (!exact(context, ['pluginId', 'diskId', 'hostId', 'profileHostId', 'deviceId', 'generation', 'bindingToken']) || !validId(context.pluginId) || !['diskId', 'hostId', 'profileHostId', 'deviceId'].every(name => identifier(context[name])) || !hex(context.generation) || !hex(context.bindingToken) || item.pluginId !== context.pluginId || item.hostId !== context.profileHostId || item.deviceId !== context.deviceId) throw failure('SMART_RESULT_CONTEXT_INVALID', 409);
       if (typeof assertActive !== 'function') throw failure('SMART_COMMIT_GUARD_REQUIRED');
@@ -189,7 +208,7 @@ export function createSmartProvider(directory, { readDisk, readDiskInventory = r
       return disk.locked(async () => {
         const secret = await key(), row = (await bindingsData(secret)).items[keyFor(context.diskId)];
         if (!row || row.generation !== context.generation || row.hostId !== context.hostId || row.profileHostId !== context.profileHostId || row.deviceId !== context.deviceId || !sameToken(row.bindingToken, context.bindingToken)) throw failure('SMART_BINDING_CHANGED', 409);
-        const { host, device } = await target(row.profileHostId, row.deviceId);
+        const { host, device } = await target(row.profileHostId, row.deviceId, actor);
         if (!sameToken(row.targetToken, targetToken(secret, host, device))) throw failure('SMART_BINDING_CHANGED', 409);
         const record = { pluginId: context.pluginId, diskId: context.diskId, hostId: context.hostId, generation: context.generation, operation, operationId: item.id, collectedAt: item.finishedAt };
         if (item.result === 'success') {
@@ -198,7 +217,7 @@ export function createSmartProvider(directory, { readDisk, readDiskInventory = r
         } else { record.status = 'unavailable'; record.code = smartFailureCode(item.code); }
         const publication = await history.append(record, { beforeCommit: async () => {
           cancelled(signal); await allowed(context.pluginId); await assertActive(); cancelled(signal);
-          const latest = (await bindingsData(secret)).items[keyFor(context.diskId)], selected = await target(row.profileHostId, row.deviceId);
+          const latest = (await bindingsData(secret)).items[keyFor(context.diskId)], selected = await target(row.profileHostId, row.deviceId, actor);
           if (!latest || !sameToken(latest.bindingToken, context.bindingToken) || !sameToken(row.targetToken, targetToken(secret, selected.host, selected.device))) throw failure('SMART_BINDING_CHANGED', 409);
         } });
         return { ...publication, collectedStatus: record.status, ...(record.code ? { collectedCode: record.code } : {}) };

@@ -46,6 +46,23 @@ test('disabled audit page lists registered commands but cannot approve or execut
   assert.match(document.querySelector('.pk-ssh-risk-examples').textContent, /未知操作一律拒绝/);
 });
 
+test('registry separates disk templates from resolved plans and discloses legacy source in review', async t => {
+  const state = snapshot(), command = state.registrations[0].commands[0];
+  Object.assign(command, { operation: 'disk.smart.read', category: 'disk', template: 'sudo -n -- /usr/sbin/smartctl --json=c --all <disk>', argumentSource: 'fresh-host-inventory', expansion: 'each-authorized-disk', resolutionSource: 'configured-device-mappings', expectedCount: 2,
+    preview: ['example-host/disk-a: sudo -n -- /usr/sbin/smartctl --json=c --all /dev/sda', 'example-host/disk-b: sudo -n -- /usr/sbin/smartctl --json=c --all /dev/nvme0n1'], excludedHosts: ['excluded-host'] });
+  const { calls, click } = await mount(t, { state });
+  assert.equal(document.querySelector('[data-command-category="disk"] h5').textContent, '磁盘类命令');
+  assert.match(document.querySelector('.pk-ssh-template').textContent, /<disk>/); assert.doesNotMatch(document.querySelector('.pk-ssh-template').textContent, /\/dev\/sda/);
+  assert.equal(document.querySelector('.pk-ssh-resolved-plans').open, false);
+  assert.match(document.body.textContent, /既有设备映射（不代表已核验当前库存）/);
+  assert.match(document.body.textContent, /排除主机 1/);
+  await click('审核并启用');
+  const dialog = document.querySelector('[role="alertdialog"]'); assert.equal(dialog.querySelector('.pk-ssh-resolved-plans').open, true);
+  assert.match(dialog.querySelector('.pk-ssh-resolved-plans').textContent, /\/dev\/sda/); assert.match(dialog.querySelector('.pk-ssh-resolved-plans').textContent, /\/dev\/nvme0n1/);
+  assert.equal(dialog.querySelector('.pk-ssh-confirm').disabled, true);
+  assert.equal(calls.filter(call => call.body?.action === 'approve' || call.body?.action === 'run').length, 0);
+});
+
 test('review discloses target and schedule, requires explicit acknowledgment, then reads approval back; revoke is independent', async t => {
   const { calls, click } = await mount(t);
   await click('审核并启用');

@@ -30,20 +30,20 @@ async function supportLogs(root) {
   finally { await handle?.close(); }
 }
 
-export function createComponents({ service, dataDirectory, codeDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), readIsland, maintenance } = {}) {
+export function createComponents({ service, dataDirectory, codeDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), readIsland, readGateway, probeReply, maintenance } = {}) {
   const readRuntime = () => service.runtime();
   const readPlugins = ({ actor } = {}) => service.plugins(actor);
   const readConfig = () => service.loadConfig();
   const inspector = createComponentInspector({
     dataDirectory, codeDirectory, version: FRAMEWORK_VERSION, readRuntime, readPlugins, readConfig,
     readCompatibility: ({ actor }) => service.compatibilityStatus(actor),
-    readUpdates: ({ actor }) => service.updateStatus(actor), readIsland,
+    readUpdates: ({ actor }) => service.updateStatus(actor), readIsland, readGateway,
     maintenanceActions: { repair: Boolean(maintenance), reset: Boolean(maintenance) },
     apiRegistry: [
       { id: 'api-runtime', registered: true, probe: async () => typeof (await readRuntime()).enabled === 'boolean' },
       { id: 'api-plugins', registered: true, probe: async () => Array.isArray(await readPlugins()) },
       { id: 'api-config', registered: true, probe: async () => (await readConfig()).version === 1 },
-      { id: 'api-components', registered: true },
+      { id: 'api-components', registered: true, probe: readGateway },
       { id: 'api-support', registered: true, probe: async () => createSupportBundle({ runtime: await readRuntime(), components: [], plugins: [], logs: [] }).bytes > 0 },
       ...['api-ssh', 'api-smart', 'api-resources', 'api-market'].map(id => ({ id, registered: true })),
     ],
@@ -62,6 +62,11 @@ export function createComponents({ service, dataDirectory, codeDirectory = path.
   }
   let exporting = false;
   return {
+    probe(actor, challenge) {
+      admin(actor);
+      if (typeof probeReply !== 'function') throw Object.assign(new Error('COMPONENT_PROBE_UNAVAILABLE'), { status: 503 });
+      return probeReply(challenge);
+    },
     async status(actor, { fresh = false } = {}) { admin(actor); return view(await inspector.inspect({ actor, fresh })); },
     async support(actor) {
       admin(actor);

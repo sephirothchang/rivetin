@@ -61,14 +61,26 @@ export function createComponentMaintenance({ dataDirectory, disableAll, repairMe
     const handle = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
     try {
       const opened = await handle.stat({ bigint: true });
-      // Windows pathname lstat may report dev=0 while handle stat reports its actual volume.
-      const unavailableDevice = process.platform === 'win32' && before.dev === 0n;
-      if (!opened.isFile() || !unavailableDevice && opened.dev !== before.dev || opened.ino !== before.ino || opened.nlink !== 1n || opened.size > BigInt(limit)) throw error('COMPONENT_MAINTENANCE_UNSAFE_PATH');
+      // Windows pathname and handle device IDs differ on both NTFS and ReFS.
+      // Compare volume identity between handles; keep pathname identity checks too.
+      const windows = process.platform === 'win32';
+      if (!opened.isFile() || !windows && opened.dev !== before.dev || opened.ino !== before.ino || opened.nlink !== 1n || opened.size > BigInt(limit)) throw error('COMPONENT_MAINTENANCE_UNSAFE_PATH');
+      async function verifyWindowsPath() {
+        const current = await lstat(file, { bigint: true });
+        if (current.isSymbolicLink() || !current.isFile() || current.nlink !== 1n || current.dev !== before.dev || current.ino !== before.ino || path.resolve(await realpath(file)) !== path.resolve(file)) throw error('COMPONENT_MAINTENANCE_UNSAFE_PATH');
+        const reference = await open(file, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+        try {
+          const info = await reference.stat({ bigint: true });
+          if (!info.isFile() || info.nlink !== 1n || info.dev !== opened.dev || info.ino !== opened.ino) throw error('COMPONENT_MAINTENANCE_UNSAFE_PATH');
+        } finally { await reference.close(); }
+      }
+      if (windows) await verifyWindowsPath();
       const buffer = Buffer.alloc(limit + 1); let size = 0;
       while (size <= limit) { const result = await handle.read(buffer, size, buffer.length - size, size); if (!result.bytesRead) break; size += result.bytesRead; }
       const after = await handle.stat({ bigint: true });
       if (size > limit) throw error('COMPONENT_MAINTENANCE_METADATA_LIMIT');
       if (after.size !== BigInt(size) || opened.size !== after.size || opened.dev !== after.dev || opened.ino !== after.ino || after.nlink !== 1n || opened.mtimeNs !== after.mtimeNs || opened.ctimeNs !== after.ctimeNs) throw error('COMPONENT_MAINTENANCE_UNAVAILABLE');
+      if (windows) await verifyWindowsPath();
       return buffer.subarray(0, size);
     } finally { await handle.close(); }
   }

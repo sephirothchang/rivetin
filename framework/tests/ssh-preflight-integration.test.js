@@ -100,8 +100,9 @@ test('discovery and confirmation use fresh caller inventory and candidate confir
 
 test('saved effective credentials and saved pin alone reach auth-only verify; secrets never appear in HTTP or audit', async t => {
   const f = await fixture(t); await f.ready();
-  const original = await f.service.sshConnections(actor), draft = { version: 1, operationId: randomUUID(), global: { username: 'global-reader', authType: 'password', password: { action: 'replace', value: 'EXAMPLE_GLOBAL_SECRET' }, privateKey: { action: 'keep' } }, clusters: [], hosts: original.hosts.map(({ connection, effective, ...target }) => ({ ...target, connection: null })) };
-  await f.service.sshSaveConnections(draft, actor);
+  // Explicitly seed the legacy vault fixture; public connection writes require v2.
+  const original = await f.service.sshHosts.connections(), draft = { version: 1, operationId: randomUUID(), global: { username: 'global-reader', authType: 'password', password: { action: 'replace', value: 'EXAMPLE_GLOBAL_SECRET' }, privateKey: { action: 'keep' } }, clusters: [], hosts: original.hosts.map(({ connection, effective, ...target }) => ({ ...target, connection: null })) };
+  await f.service.sshHosts.saveConnections(draft);
   const verified = await f.request(route, 'POST', verify()); assert.equal(verified.status, 200); assert.deepEqual(Object.keys(verified.body).sort(), ['checkedAt', 'hostId', 'verified']);
   const call = f.state.verifyCalls.at(-1); assert.equal(call.host.username, 'global-reader'); assert.equal(call.host.password, 'EXAMPLE_GLOBAL_SECRET'); assert.equal(call.host.hostKeySha256, 'a'.repeat(64)); assert.ok(call.timeoutMs <= 5000); assert.equal(Object.hasOwn(call, 'command'), false);
   const audit = await readFile(path.join(f.directory, 'audit.jsonl'), 'utf8');

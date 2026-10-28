@@ -70,6 +70,8 @@ rivetin plugin uninstall --plugin-id rivetin-example
 
 安装或升级成功后子插件保持禁用，需要显式启用；框架全局开关和单插件开关分别管理。子插件卸载保留配置和安装包。CLI 的 `plugin update` 使用 `--package` 指定的本地制品，不自动联网下载更新；Web 中的联网检查与升级是独立入口。当前 CLI 子插件动作不包括配置重置或版本回滚，这些能力继续通过插件中心操作。
 
+0.2.1 安装或升级时，用户显式提供的 `--tls-cert-sha256` 会规范化为小写，并写入仅 Rivetin-owned Deployment 的 `RIVETIN_GATEWAY_CERT_SHA256`，用于准确 `RIVETIN_ORIGINS` 入口的只读组件探针。后端在发送当前管理员认证前核对独立叶证书 DER 指纹和有效期；该显式 pin 身份模式替代此入口的 PKI/SAN 信任，不是关闭所有证书检查。CA 模式不自动派生或学习指纹。错误/过期/无效 pin 不回退放行；轮换需要重新独立核验并明确部署。不会保存管理员 token、修改系统信任库或把 pin 注入官方 Tower Pod。探针范围和限制见[框架说明](../framework/README.md#02-兼容性与组件状态)。
+
 ## 版本、所有权与恢复边界
 
 当前只允许 [profiles.json](profiles.json) 中精确匹配的组合：Tower 服务镜像 `registry.smtx.io/cloudtower/tower:v4.9.0-rc-20260517114030`、Node.js `v20.12.1` 及对应组件布局。该记录来自此前手工部署验收，不代表任意 4.9.x 均兼容，也不构成厂商认证。新版本需要独立适配器和验证记录后才能扩展允许清单。
@@ -94,7 +96,11 @@ Rivetin 只使用 `/api/rivetin/v1`、`RIVETIN_*` 环境变量、`rivetin-*` 插
 
 ## 从源码构建
 
-以下仅为开发机需求，发布客户端不需要这些工具：Node.js 22、npm、Go 1.27.x 与现有框架打包流程使用的 `tar`。依赖使用项目独立锁文件；Go 缓存可通过当前进程的 `GOPATH`、`GOCACHE` 指向项目忽略目录，不需要全局安装。
+以下仅为开发机需求，发布客户端不需要这些工具：Node.js 22、npm、Go 1.27.x 与现有框架打包流程使用的 `tar`。依赖使用项目独立锁文件，不需要全局安装 Go 或修改 PATH。
+
+将完整开发用 Go 工具链解压至仓库根目录的 `.local/toolchains/go/`，使 Windows 下存在 `bin/go.exe`，Linux/macOS 下存在 `bin/go`；源码脚本按自身所在仓库自动定位，不依赖启动目录。工具链缺失时明确失败，不静默使用 PATH 中的其他 Go，也不读取旧的 `RIVETIN_GO`、`GO_BIN` 或 `GOROOT` 路径。脚本不会自动安装或升级 Go；版本仍受 `go.mod` 和 `GOTOOLCHAIN=local` 约束。
+
+模块缓存、编译缓存和临时目录固定在当前工作区的 `cli/.local/go-cache`（含 `pkg/mod`）、`cli/.local/go-build`、`cli/.runtime/go-tmp`。脚本仅为子进程设置这些路径，并使用 `GOENV=off`、`GOWORK=off`，不修改系统配置或当前终端环境，也不继承其他工作区的 Go 缓存或 workspace 文件。
 
 先在仓库根目录执行既有构建：
 
@@ -105,28 +111,34 @@ npm run build
 npm run package
 ```
 
-首次检出不包含忽略的 `cli/payload/`。先在仓库根目录为当前开发进程设置项目缓存，测试与构建均沿用同一设置；PowerShell 示例：
-
-```powershell
-$env:GOPATH = Join-Path (Get-Location).Path 'cli/.local/go-cache'
-$env:GOCACHE = Join-Path (Get-Location).Path 'cli/.local/go-build'
-```
-
-然后进入 `cli/`，使用选定 Go 编译器执行 `go mod download`。下载完成后回到仓库根目录执行（`<GO_EXECUTABLE>` 使用选定编译器的绝对路径）：
+首次检出不包含忽略的 `cli/payload/`。从仓库根目录执行准备命令即可自动选择本地工具链、下载并校验锁定模块、生成许可证与嵌入输入，无需设置缓存环境变量或传入编译器路径：
 
 ```text
-node cli/scripts/prepare.mjs --go <GO_EXECUTABLE>
+node cli/scripts/prepare.mjs
 ```
 
-嵌入输入生成后，才能在 `cli/` 下执行 `go mod verify`、`go test ./...` 和 `python -m unittest -v test_remote.py`。这些命令中的 `go` 指相同的选定编译器，不需要将其加入全局 PATH。Tower 侧 Python 测试的范围见 [验证记录](../docs/portable-cli-validation.md)。
+准备命令会更新 `cli/payload/` 和生成的第三方声明；框架固定版本的发布包必须已由既有流程生成，验证冻结制品时不要重跑准备或构建。仅查看工具链及缓存解析结果可执行 `node cli/scripts/toolchain.mjs --json`，不会生成 payload 或 CLI 二进制。
 
-从仓库根目录构建六个目标（未显式设置缓存时，脚本使用 `cli/.local/` 下的忽略目录）：
+嵌入输入生成后，在仓库根目录运行：
+
+```text
+node cli/scripts/toolchain.mjs --run-go mod verify
+node cli/scripts/toolchain.mjs --run-go test ./...
+node cli/scripts/toolchain.mjs --run-go vet ./...
+node --test cli/scripts/tests/toolchain.test.mjs
+```
+
+`--run-go` 自动在 `cli/` 中执行，使用同一本地编译器和缓存。Tower 侧 Python 测试仍在 `cli/` 下执行 `python -m unittest -v test_remote.py`，范围见 [验证记录](../docs/portable-cli-validation.md)。
+
+从仓库根目录构建六个目标：
 
 ```powershell
-./cli/scripts/build.ps1 -Go '<GO_EXECUTABLE>'
+./cli/scripts/build.ps1
 ```
 
-在 Linux/macOS 开发机使用 `GO_BIN=<GO_EXECUTABLE> sh cli/scripts/build.sh`。构建脚本先在所选缓存中下载并校验锁定模块，再生成完整许可证与嵌入输入，使用 `CGO_ENABLED=0`、`-trimpath`，输出至忽略的 `cli/release/`。Node.js、Go、`tar` 和开发机摘要工具均不随客户端运行流程调用。首次 Go 模块下载可能需要网络；客户端安装资源已经嵌入，安装过程不从网络下载额外客户端组件。
+在 Linux/macOS 开发机执行 `sh cli/scripts/build.sh`。构建脚本先下载并校验锁定模块，再准备许可证与嵌入输入，使用 `CGO_ENABLED=0`、`-trimpath`，输出至忽略的 `cli/release/`。Node.js、Go、`tar` 和开发机摘要工具均不随客户端运行流程调用。首次模块下载可能需要网络；客户端安装资源已经嵌入，安装过程不从网络下载额外客户端组件。
+
+需要明确使用其他开发编译器时，准备与工具链命令接受 `--go <GO_EXECUTABLE>`，PowerShell 构建接受 `-Go '<GO_EXECUTABLE>'`，Linux/macOS 构建接受 `--go <GO_EXECUTABLE>`。这属于显式选择；缓存仍隔离在当前项目，不使用全局 Go 配置。
 
 ## SSH 通道连接管理
 
@@ -143,3 +155,20 @@ rivetin channel remove-host --host-id <configured-host-alias> [Tower connection 
 ## 许可与第三方组件
 
 项目采用仓库 [MIT](../LICENSE) 许可证。CLI 的 [第三方声明](THIRD_PARTY_NOTICES.txt) 保留 Go 运行时、标准库及锁定模块的上游版权、许可证与专利授权原文；框架内嵌资源的运行依赖声明也随发布物分发。修改 Go 工具链或模块版本后必须重新生成并核对，不能用项目 MIT 覆盖上游条款。
+
+
+## Offline connection format maintenance
+
+The 0.2.1 data CLI understands the encrypted v2 vault. The portable install/update still preserves connection data and does not implicitly migrate it. Version metadata upgrades explicitly accept the known earlier versions through 0.2.0; an older framework code rollback is refused while v2 ciphertext or a mutation barrier is active, including retries after version metadata has already been restored. Missing recovery metadata, missing current metadata for an existing installation, or an inconsistent version transition blocks resource restoration and retains the pending record. Legacy recovery records without a version snapshot require controlled inspection; they do not authorize an automatic code restore. Old CLI binaries do not perform v2 recovery.
+
+Before format maintenance, disable Rivetin, stop every old service/writer and retain the exact framework/Island/configuration backups. The operator must verify the process stop independently; the CLI's offline assertion is not a process supervisor. Run the new data CLI against the mounted data directory with the matching runtime:
+
+```sh
+RIVETIN_OFFLINE_WRITERS_STOPPED=yes node cli.mjs ssh-connections-migrate --data <ABSOLUTE_DATA_DIRECTORY> --direction upgrade --operation <UUID_V4>
+```
+
+The command accepts `upgrade`, `rollback` or `recover`. It requires the persistent disabled marker and the explicit offline assertion. Upgrade preserves the existing encryption key, writes a protected ciphertext manifest/backup, revokes approval, creates v2 ciphertext and a v1 tombstone, and remains disabled. No GET, server startup or ordinary install/update migrates the vault. Legacy device references remain unresolved encrypted data until explicit canonical reselection/scope changes; the CLI does not fabricate a fresh inventory or borrow administrator tokens.
+
+Use `rollback` with the original upgrade operation ID only before any successful v2 connection edit. It checks the original key/backup digests, restores v1/legacy ciphertext bytes, retains the v2 archive and keeps approvals revoked. After edits, `SSH_CONNECTION_DOWNGRADE_UNREPRESENTABLE` refuses a conversion that could lose credentials or widen scopes. This format operation does not itself roll back framework code, Island or version metadata; those require the separate exact supported installer recovery record. Never restore a pre-migration whole-data archive over current SMART history or administrator settings.
+
+For a pending connection save, `recover` requires that save's operation ID. It reconciles ciphertext revision/request HMAC with the durable journal, without replaying PUT. Proven precommit failure is marked aborted with approval revoked; proven committed writes receive their receipt. Ambiguous or corrupt state remains blocked for controlled repair. Successful command output is not a reason to enable old approvals or schedules.

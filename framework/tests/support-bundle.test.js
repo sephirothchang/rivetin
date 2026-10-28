@@ -64,6 +64,16 @@ test('credentials, identities, paths, raw diagnostics and arbitrary nested value
   assert.deepEqual(Object.keys(document.plugins.items[0]).sort(), ['active', 'code', 'compatibility', 'compatible', 'configuration', 'enabled', 'id', 'installed', 'packageSha256', 'version']);
 });
 
+test('deployment probe reasons survive export while challenges, instance tokens and raw TLS diagnostics are discarded', () => {
+  const source = fixture();
+  source.components = [{ id: 'gateway', status: 'unknown', code: 'GATEWAY_TLS_UNTRUSTED', challenge: secret, instance: secret, diagnostics: secret },
+    { id: 'island-registration', status: 'failed', code: 'ISLAND_REGISTRATION_MISMATCH', registry: secret }];
+  const { document, bytes } = unpack(source);
+  assert.deepEqual(document.components.items.map(row => row.code), ['GATEWAY_TLS_UNTRUSTED', 'ISLAND_REGISTRATION_MISMATCH']);
+  assert.equal(bytes.includes(Buffer.from(secret)), false);
+  assert.doesNotMatch(bytes.toString(), /challenge|instance|diagnostics|registry/);
+});
+
 test('bundle-local actor and event aliases preserve equality without exposing or hashing private identifiers', () => {
   const input = fixture(); input.logs = [event('EXAMPLE_EVENT_ONE'), event('EXAMPLE_EVENT_TWO'), event('EXAMPLE_EVENT_ONE'), event('EXAMPLE_EVENT_THREE', 'EXAMPLE_OTHER_ACTOR')];
   input.logs.push({ ...event('EXAMPLE_EVENT_FOUR'), actor: { id: 'EXAMPLE_PRIVATE_ACTOR', source: 'cli', name: secret } });

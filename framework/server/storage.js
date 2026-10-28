@@ -13,7 +13,7 @@ export async function atomic(file, value) {
   const temporary = `${file}.${randomUUID()}.tmp`;
   try {
     const handle = await open(temporary, 'wx', 0o600);
-    try { await handle.writeFile(JSON.stringify(value, null, 2) + '\n'); await handle.sync(); } finally { await handle.close(); }
+    try { await handle.writeFile(Buffer.isBuffer(value) ? value : JSON.stringify(value, null, 2) + '\n'); await handle.sync(); } finally { await handle.close(); }
     const deadline = Date.now() + 1500;
     for (;;) {
       try { await rename(temporary, file); break; }
@@ -22,6 +22,10 @@ export async function atomic(file, value) {
         // Preserve the destination while Windows releases transient reader handles.
         await new Promise(resolve => setTimeout(resolve, 20));
       }
+    }
+    if (process.platform !== 'win32') {
+      const parent = await open(path.dirname(file), 'r');
+      try { await parent.sync(); } finally { await parent.close(); }
     }
   } finally { await unlink(temporary).catch(() => {}); }
 }

@@ -8,6 +8,8 @@ import { createUpdateSource } from './updates.js';
 import { createSshTransport } from './ssh-transport.js';
 import { createTowerVersionProvider } from './tower-version.js';
 import { createTowerDiskReader, createTowerDiskInventoryReader } from './tower-disks.js';
+import { createDeploymentProbes } from './deployment-probes.js';
+import { FRAMEWORK_VERSION } from '../shared/version.js';
 
 const data = process.env.RIVETIN_DATA, towerUrl = process.env.RIVETIN_TOWER_URL;
 const origins = (process.env.RIVETIN_ORIGINS || '').split(',').filter(Boolean);
@@ -15,7 +17,9 @@ const port = process.env.RIVETIN_LISTEN_PORT;
 if (!data || !towerUrl || !origins.length) throw new Error('EXPLICIT_DEPLOYMENT_CONFIGURATION_REQUIRED');
 const tower = createTowerConnection({ baseUrl: towerUrl });
 const sshTransport = createSshTransport();
-const service = createService(data, { towerSink: createTowerAuditSink({ request: tower.request }), updateSource: createUpdateSource(), sshRun: sshTransport.run, sshPreflightTransport: sshTransport, towerVersionProvider: createTowerVersionProvider({ request: tower.request }), readDisk: createTowerDiskReader({ request: tower.request }), readDiskInventory: createTowerDiskInventoryReader({ request: tower.request }), towerRequest: tower.request });
+const componentProbes = createDeploymentProbes({ registry: tower.islandRegistry, origins, version: FRAMEWORK_VERSION,
+  certificatePin: process.env.RIVETIN_GATEWAY_CERT_SHA256 });
+const service = createService(data, { towerSink: createTowerAuditSink({ request: tower.request }), updateSource: createUpdateSource(), sshRun: sshTransport.run, sshPreflightTransport: sshTransport, towerVersionProvider: createTowerVersionProvider({ request: tower.request }), readDisk: createTowerDiskReader({ request: tower.request }), readDiskInventory: createTowerDiskInventoryReader({ request: tower.request }), towerRequest: tower.request, componentProbes });
 service.sshChannel.start();
 // No saved browser authentication is used by the monitor. Unknown product evidence fails closed.
 let checkingCompatibility = false;

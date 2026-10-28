@@ -32,6 +32,36 @@ test('SSH commands remain unapproved after install; enabling channel still requi
   assert.equal((await f.broker.results(id, actor)).items[0].stdout, 'Linux x86_64');
 });
 
+test('an explicitly empty fresh disk policy excludes only that host; legacy empty devices remain unavailable', async t => {
+  const executed = [], f = await fixture(t, { run: async input => { executed.push(input.host.hostId); return { stdout: '{}', stderr: '', exitCode: 0 }; } });
+  f.status.plugins[0].manifest.ssh.commands = [{ ...command(), id: 'all-smart', operation: 'disk.smart.read', hostScope: 'configured', hostIds: undefined, deviceScope: 'configured' }];
+  delete f.status.plugins[0].manifest.ssh.commands[0].hostIds;
+  await f.vault.put({ ...host(), hostId: 'excluded-host', devices: [] });
+  await assert.rejects(f.approve(), /SSH_TARGET_UNAVAILABLE/); assert.equal(f.calls(), 0);
+  const originalList = f.vault.list.bind(f.vault);
+  f.vault.list = async actor => (await originalList(actor)).map(row => ({ ...row, diskSelection: { source: 'fresh-host-inventory', mode: row.hostId === 'excluded-host' ? 'custom' : 'all', explicitlyEmpty: row.hostId === 'excluded-host' } }));
+  const status = await f.broker.status(actor), registration = status.registrations[0];
+  assert.equal(registration.reason, null); assert.deepEqual(registration.commands[0].excludedHosts, ['excluded-host']);
+  assert.equal(registration.commands[0].expectedCount, 1); assert.equal(registration.commands[0].targets.length, 1);
+  await f.approve(); const result = await f.broker.run(id, 'all-smart', actor);
+  assert.equal(result.items.length, 1); assert.equal(f.calls(), 1); assert.deepEqual(executed, ['example-host']);
+});
+
+test('disk exclusion metadata cannot be supplied in a legacy host profile', async t => {
+  const f = await fixture(t);
+  assert.throws(() => f.vault.put({ ...host(), devices: [], diskSelection: { source: 'fresh-host-inventory', mode: 'custom', explicitlyEmpty: true } }), /SSH_HOST_INVALID/);
+  assert.equal(f.calls(), 0);
+});
+
+test('all explicitly excluded disk hosts do not create an executable registration', async t => {
+  const f = await fixture(t);
+  f.status.plugins[0].manifest.ssh.commands = [{ id: 'all-smart', operation: 'disk.smart.read', purpose: command().purpose, hostScope: 'configured', deviceScope: 'configured', intervalSeconds: 0 }];
+  await f.vault.put({ ...host(), devices: [] });
+  const originalList = f.vault.list.bind(f.vault);
+  f.vault.list = async actor => (await originalList(actor)).map(row => ({ ...row, diskSelection: { source: 'fresh-host-inventory', mode: 'custom', explicitlyEmpty: true } }));
+  await assert.rejects(f.approve(), /SSH_TARGET_UNAVAILABLE/); assert.equal(f.calls(), 0);
+});
+
 test('approved SMART target execution selects one disk without running other registered daily targets', async t => {
   const inputs = [], f = await fixture(t, { run: async input => { inputs.push(input.command); return { stdout: JSON.stringify({ serial_number: input.command.endsWith('/dev/sdb') ? 'EXAMPLE_SERIAL_B' : 'EXAMPLE_SERIAL', smart_status: { passed: true } }), exitCode: 0 }; } });
   await f.vault.put({ ...host(), devices: [...host().devices, { deviceId: 'second-disk', path: '/dev/sdb', serial: 'EXAMPLE_SERIAL_B' }] });

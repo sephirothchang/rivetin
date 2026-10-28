@@ -15,6 +15,7 @@ import { validId } from '../shared/identity.js';
 import { createDataProviders } from './data-providers.js';
 import { createSshConnectionsStore } from './ssh-connection-settings.js';
 import { createComponentsStatus } from './components-status.js';
+import { RIVETIN_MARK_URL } from './brand.js';
 
 const extraCss = `
 .pk-badge-suspended{color:#946000;background:#fff8e6;border-color:#f0d28d}
@@ -46,7 +47,7 @@ export function createFrameworkHub(options = {}) {
     const dirty = () => stores().some(store => store.status().dirty);
     function finish() { setOpen(false); setUnsaved(false); lastFocus.current?.focus?.(); }
     function close() { if (busy || stores().some(store => store.status().saving)) return; if (dirty()) setUnsaved(true); else finish(); }
-    async function show() { lastFocus.current = document.activeElement; setOpen(true); setError(''); await refresh(); for (const session of sessions.current.values()) session.store.load(); }
+    async function show() { lastFocus.current = document.activeElement; setTab(options.initialTab || 'center'); setOpen(true); setError(''); await refresh(); for (const session of sessions.current.values()) session.store.load(); }
     function stopSession(session) { session.stop?.(); session.stop = null; }
     async function refreshLogs(append = false) {
       const current = await api(`/logs?limit=30${append && logs.next ? '&before=' + encodeURIComponent(logs.next) : ''}`);
@@ -211,6 +212,7 @@ export function createFrameworkHub(options = {}) {
       } finally { setBusy(false); }
     }
     const session = loaded[tab], modal = Boolean(confirmation || unsaved);
+    const settingsRecords = records.filter(record => record.installed && record.id === 'rivetin-ssh-channel').concat(records.filter(record => record.installed && record.id !== 'rivetin-ssh-channel'));
     const floatingState = runtime.connected === undefined ? 'checking' : runtime.connected === false ? 'unavailable' : runtime.enabled && records.some(record => record.active) ? 'enabled' : 'disabled';
     const floatingLabels = { checking: '正在检查插件状态', unavailable: '插件状态不可用', enabled: '插件已启用', disabled: '插件已停用' };
     const descriptions = { enable: '确认启用此插件？', disable: '确认禁用此插件？', 'framework.enable': '确认恢复已启用插件的运行？', reset: '重置将恢复默认配置，并备份当前配置。', uninstall: '卸载将停用并移除插件注册，保留配置与安装包。', update: '更新或回滚后插件保持禁用，请核对后重新启用。', rollback: '更新或回滚后插件保持禁用，请核对后重新启用。', install: '安装后默认禁用，请核对后启用。', 'framework.disable': '全部插件将停止运行，插件中心仍可用于恢复。' };
@@ -220,11 +222,12 @@ export function createFrameworkHub(options = {}) {
         position: prefs.floatingPosition, onPosition: point => personal.update({ floatingPosition: point }), onOpen: show }),
       open && h('div', { className: 'c89-backdrop', onClick: event => { if (event.target === event.currentTarget) close(); } },
         h('section', { className: 'c89-panel', role: 'dialog', 'aria-modal': true, 'aria-hidden': modal || undefined, 'aria-labelledby': 'pk-title', ref: dialog },
-          h('header', null, h('h2', { id: 'pk-title' }, t('插件中心')), h('button', { className: 'c89-close', onClick: close, 'aria-label': t('关闭插件配置') }, '×')),
+          h('header', null, h('h2', { id: 'pk-title' }, h('img', { className: 'pk-brand-mark', src: RIVETIN_MARK_URL, width: 32, height: 32, alt: '', 'aria-hidden': true }), t('Rivetin 插件中心')), h('button', { className: 'c89-close', onClick: close, 'aria-label': t('关闭插件配置') }, '×')),
           h('div', { className: 'c89-panel-body' },
-            h('nav', { className: 'c89-nav' }, ...[['global', '全局偏好'], ['center', '插件管理'], ['market', '插件市场'], ['logs', '操作日志'], ['components', '组件状态']].map(([key, label]) => h('button', { role: 'tab', key, 'data-pk-tab': key, 'aria-selected': tab === key, onClick: () => setTab(key) }, t(label))),
+            h('nav', { className: 'c89-nav' }, ...[['center', '插件管理'], ['market', '插件市场'], ['logs', '操作日志'], ['components', '组件状态']].map(([key, label]) => h('button', { role: 'tab', key, 'data-pk-tab': key, 'aria-selected': tab === key, onClick: () => setTab(key) }, t(label))),
               h('div', { className: 'pk-nav-group' }, t('插件配置')),
-              ...records.filter(record => record.installed).map(record => h('button', { role: 'tab', key: record.id, 'aria-selected': tab === record.id, onClick: () => setTab(record.id) }, record.manifest?.name?.[locale] || record.id)),
+              ...settingsRecords.map(record => h('button', { role: 'tab', key: record.id, 'data-pk-plugin': record.id, 'aria-selected': tab === record.id, onClick: () => setTab(record.id) }, record.manifest?.name?.[locale] || record.id)),
+              h('button', { className: 'pk-preferences-tab', role: 'tab', 'data-pk-tab': 'global', 'aria-selected': tab === 'global', onClick: () => setTab('global') }, t('个人设置')),
               h('button', { className: 'pk-about-tab', role: 'tab', 'aria-selected': tab === 'about', onClick: () => setTab('about') }, t('关于'))),
             h('div', { className: 'c89-content' },
               tab === 'global' ? h(React.Fragment, null,

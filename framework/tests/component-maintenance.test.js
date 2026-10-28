@@ -27,7 +27,7 @@ async function fixture(t, overrides = {}) {
   return { root, settings, calls, audits, opts, module: createComponentMaintenance(opts) };
 }
 
-test('ordinary fixed metadata is backed up byte-for-byte before disable and repair, including Windows lstat device sentinel', async t => {
+test('ordinary fixed metadata is backed up byte-for-byte before disable and repair on NTFS and ReFS', async t => {
   const f = await fixture(t), input = request();
   const original = await readFile(f.settings), info = await lstat(f.settings, { bigint: true });
   assert.equal(typeof info.ino, 'bigint');

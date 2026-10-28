@@ -8,6 +8,8 @@ import { createFrameworkHub } from '../src/hub.js';
 import { createConfigurationStore } from '../src/config-store.js';
 import { CSS } from '../src/style.js';
 import { translator } from '../src/i18n.js';
+import notices from '../src/notices.js';
+import { RIVETIN_MARK_SVG } from '../src/brand.js';
 const { act } = testUtils;
 
 test('Rivetin uses its own SDK and factory identity without creating legacy globals', async () => {
@@ -53,29 +55,70 @@ test('framework UI follows host locale, separates plugin drafts, confirms lifecy
   try {
     await act(async () => { ReactDOM.render(React.createElement(Hub), root); await new Promise(setImmediate); });
     assert.equal(active, 1); await click('.c89-plugin-fab');
-    assert.equal(document.querySelector('#pk-title').textContent, '插件中心');
+    assert.equal(document.querySelector('#pk-title').textContent, 'Rivetin 插件中心');
     const emergencyStyle = window.getComputedStyle(document.querySelector('.pk-emergency'));
     assert.equal(emergencyStyle.backgroundColor, 'rgb(225, 25, 45)');
     assert.equal(emergencyStyle.color, 'rgb(255, 255, 255)'); assert.equal(emergencyStyle.fontWeight, '700');
     assert.equal(document.querySelector('.pk-emergency svg').getAttribute('aria-hidden'), 'true');
     assert.equal(document.querySelector('.pk-emergency').textContent, '紧急禁用全部插件');
     await act(async () => { document.documentElement.lang = 'en-US'; await new Promise(setImmediate); });
-    assert.equal(document.querySelector('#pk-title').textContent, 'Plugin Center');
+    assert.equal(document.querySelector('#pk-title').textContent, 'Rivetin Plugin Center');
     assert.match(document.querySelector('.c89-plugin-fab').textContent, /Plugins enabled/);
-    await click('[role="tab"]:nth-last-child(2)'); await click('[aria-label="EXAMPLE_SETTING"]');
+    await click('[data-pk-plugin="rivetin-example"]'); await click('[aria-label="EXAMPLE_SETTING"]');
     await click('.c89-finish'); assert.equal(document.querySelector('[role="alertdialog"] h3').textContent, 'Unsaved changes');
     await click('.c89-cancel-exit'); assert.ok(document.querySelector('[role="dialog"]'));
     await click('.c89-done'); assert.equal(saves, 1);
-    await click('[role="tab"]:nth-child(2)');
+    await click('[data-pk-tab="center"]');
     await click('.pk-framework button'); assert.equal(enabled, true); await click('.c89-confirm-actions .c89-discard-exit');
-    assert.equal(enabled, false); assert.equal(stopped, 1); assert.ok(document.querySelector('.c89-content').textContent.includes('All plugins suspended'));
+    assert.equal(enabled, false); assert.equal(stopped, 1); assert.ok(document.querySelector('.c89-content').textContent.includes('Framework disabled'));
     assert.match(document.querySelector('.c89-plugin-fab').textContent, /Plugins disabled/);
     await click('.pk-framework button'); await click('.c89-confirm-actions .c89-save-exit'); assert.equal(active, 2);
     await click('[data-pk-tab="logs"]'); assert.ok(document.querySelector('.c89-content').textContent.includes('No activity yet'));
     await click('.pk-about-tab'); assert.match(document.querySelector('.pk-about').textContent, /Facebook/); assert.match(document.querySelector('.pk-about').textContent, /MIT License/);
+    const website = document.querySelector('.pk-about-links .pk-website-link');
+    assert.equal(website.textContent, 'Website'); assert.equal(website.href, 'https://rivetin.dev/');
+    assert.equal(website.target, '_blank'); assert.equal(website.rel, 'noopener noreferrer'); assert.equal(website.tabIndex, 0);
+    const links = [...document.querySelectorAll('.pk-notice-link')]; assert.equal(links.length, notices.components.length);
+    for (const [index, link] of links.entries()) {
+      assert.equal(link.href, notices.components[index].projectUrl); assert.ok(link.href.startsWith('https://'));
+      assert.equal(link.target, '_blank'); assert.equal(link.rel, 'noopener noreferrer'); assert.equal(link.tabIndex, 0);
+      assert.match(link.getAttribute('aria-label'), /Source repository|Website/);
+      assert.equal(link.closest('details').querySelector('pre').textContent, notices.components[index].text);
+      link.addEventListener('click', event => event.preventDefault()); await act(async () => link.click());
+      assert.equal(link.closest('details').open, false);
+    }
+    await click('.c89-finish'); await click('.c89-plugin-fab');
+    assert.equal(document.querySelector('[data-pk-tab="center"]').getAttribute('aria-selected'), 'true');
+    await click('[data-pk-plugin="rivetin-example"]'); await click('[aria-label="EXAMPLE_SETTING"]');
+    await click('.c89-finish'); await click('.c89-discard-exit'); await click('.c89-plugin-fab');
+    assert.equal(document.querySelector('[data-pk-tab="center"]').getAttribute('aria-selected'), 'true'); assert.equal(saves, 1);
   } finally {
     await act(async () => ReactDOM.unmountComponentAtNode(root)); dom.window.close(); delete globalThis.window; delete globalThis.document;
   }
+});
+
+test('navigation puts SSH first, preferences directly before about and locally bundles the existing mark', async () => {
+  const dom = new JSDOM('<html lang="zh-CN"><body><div id="root"></div></body></html>', { url: 'https://tower.example.invalid', pretendToBeVisual: true });
+  globalThis.window = dom.window; globalThis.document = dom.window.document;
+  const ids = ['rivetin-context-menu','rivetin-disk-smart-info','rivetin-ssh-channel','rivetin-ipmi-redirection'];
+  let frameworkEnabled = false;
+  const client = async route => route === '/runtime' ? { enabled: frameworkEnabled } : route === '/plugins' ? { packages: [], items: ids.map(id => ({ id, installed: true, enabled: false, active: false })) } : { items: [], next: null };
+  const Hub = createFrameworkHub({ client }), root = document.getElementById('root');
+  try {
+    await act(async () => { ReactDOM.render(React.createElement(Hub), root); await new Promise(setImmediate); document.querySelector('.c89-plugin-fab').click(); await new Promise(setImmediate); });
+    assert.deepEqual([...document.querySelectorAll('[data-pk-plugin]')].map(node => node.dataset.pkPlugin), [ids[2],ids[0],ids[1],ids[3]]);
+    const about = document.querySelector('.pk-about-tab'); assert.equal(about.previousElementSibling.dataset.pkTab, 'global');
+    assert.equal(about.previousElementSibling.textContent, '个人设置');
+    assert.match(document.querySelector('.pk-toolbar .c89-badge').textContent, /框架已停用/);
+    frameworkEnabled = true;
+    await act(async () => { [...document.querySelectorAll('button')].find(node => node.textContent === '刷新').click(); await new Promise(setImmediate); });
+    assert.equal(document.querySelector('.pk-toolbar .c89-badge').textContent, '框架运行中');
+    assert.equal(document.querySelector('.c89-nav button').dataset.pkTab, 'center');
+    const logo = document.querySelector('#pk-title img'); assert.equal(decodeURIComponent(logo.src.split(',')[1]), RIVETIN_MARK_SVG);
+    assert.equal(logo.alt, ''); assert.equal(logo.getAttribute('aria-hidden'), 'true'); assert.equal(logo.width, 32);
+    await act(async () => about.click()); assert.equal(document.querySelector('.pk-website-link').textContent, '官网');
+    assert.match(document.querySelector('.pk-notice-link').getAttribute('aria-label'), /源码仓库|官网/);
+  } finally { await act(async () => ReactDOM.unmountComponentAtNode(root)); dom.window.close(); delete globalThis.window; delete globalThis.document; }
 });
 
 test('update UI checks versions, offers online/manual methods and requires confirmation before applying a staged package', async () => {
@@ -334,8 +377,8 @@ test('component status is wired after activity logs and uses the same fixed pane
     await click('.c89-plugin-fab');
     const panel = document.querySelector('.c89-panel'), header = panel.querySelector('header'), footer = panel.querySelector('footer');
     const size = () => { const style = window.getComputedStyle(panel); return { width: style.width, height: style.height, maxHeight: style.maxHeight }; };
-    const original = size(); assert.match(original.width, /1220px/); assert.match(original.height, /820px/); assert.match(original.height, /100vh - 48px/);
-    assert.deepEqual([...document.querySelectorAll('.c89-nav [data-pk-tab]')].map(node => node.dataset.pkTab), ['global', 'center', 'market', 'logs', 'components']);
+    const original = size(); assert.match(original.width, /1220px/); assert.match(original.height, /90d?vh/); assert.match(original.height, /100d?vh - 48px/);
+    assert.deepEqual([...document.querySelectorAll('.c89-nav [data-pk-tab]')].map(node => node.dataset.pkTab), ['center', 'market', 'logs', 'components', 'global']);
     const components = document.querySelector('[data-pk-tab="components"]'); assert.equal(components.nextElementSibling.textContent, '插件配置');
     for (const tab of ['global', 'logs', 'components', 'market', 'center']) {
       await click(`[data-pk-tab="${tab}"]`);
@@ -358,7 +401,8 @@ test('component status is wired after activity logs and uses the same fixed pane
 
 test('shared panel geometry has one definition and narrow navigation/content remain independently scrollable', () => {
   const rule = CSS.match(/\.c89-panel\{([^}]+)\}/)?.[1] || '';
-  assert.match(rule, /width:min\(1220px,100%\)/); assert.match(rule, /height:min\(820px,calc\(100vh - 48px\)\)/);
+  assert.match(rule, /width:min\(1220px,100%\)/); assert.match(rule, /height:min\(90vh,calc\(100vh - 48px\)\)/);
+  assert.match(rule, /height:min\(90dvh,calc\(100dvh - 48px\)\)/);
   assert.equal((CSS.match(/\.c89-panel\{/g) || []).length, 1); assert.doesNotMatch(CSS, /pk-panel-logs/);
   assert.match(CSS, /\.c89-panel-body\{[^}]*min-height:0[^}]*overflow:hidden/);
   const mobile = CSS.slice(CSS.indexOf('@media(max-width:620px){.c89-panel-body'));

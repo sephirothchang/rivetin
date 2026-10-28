@@ -57,6 +57,18 @@ test('bilingual status renders compatibility versions, dependencies and details 
   });
 });
 
+test('healthy rows with null codes do not invent unverified reasons; unknown rows retain them', async t => {
+  for (const locale of ['zh-CN', 'en-US']) await t.test(locale, async t => {
+    const data = fixture(); data.components[1].code = null;
+    data.components[1].checks = [{ id: 'file-read', status: 'ok', code: null }];
+    const { root } = await mount(t, () => data, { locale });
+    const rows = root.querySelectorAll('tbody tr');
+    assert.match(rows[1].textContent, locale === 'en-US' ? /This check passed/ : /本项检查已通过/);
+    assert.doesNotMatch(rows[1].textContent, /COMPONENT_UNVERIFIED/);
+    assert.match(rows[0].textContent, /COMPONENT_UNVERIFIED/);
+  });
+});
+
 test('empty/loading and permission failures are explicit; failed refresh retains previous visible data', async t => {
   const first = deferred(); let refreshed = false;
   const view = await mount(t, route => !refreshed ? first.promise : Promise.reject(Object.assign(new Error('EXAMPLE_PRIVATE_RAW'), { status: 403 })));

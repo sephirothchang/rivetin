@@ -29,14 +29,14 @@ audit-delivery/
 
 ## 草稿、集群默认规则与保存
 
-插件拥有独立 store 和配置页面，复用框架保存、丢弃和退出确认。只有明确保存成功才生效；失败保留草稿。PUT 响应不确定时先 GET 核对，不自动重复写。存在任一插件草稿时，生命周期修改会提示先保存或丢弃。
+插件拥有独立 store 和配置页面，复用框架保存、丢弃和退出确认。只有明确保存成功才生效；失败保留草稿。PUT 响应不确定时先 GET 核对，不自动重复写。存在任一插件草稿时，普通生命周期修改会提示先保存或丢弃；紧急禁用例外，不被未保存草稿阻断。
 
 IPMI 插件读取当前可见集群，为每个新集群生成例外草稿，保存后共享。seededClusterIds 防止删除过的规则反复生成；不可见对象的既有规则保留。插件不把局部清单当作整台 Tower 全量清单。主机例外优先于集群例外，再到全局默认。
 
 ## 配置重置与恢复
 
 
-明确重置会备份原文件字节再恢复默认；卸载保留配置。更新时 schema 版本变化会被拒绝；0.1 不执行任意迁移脚本。代码回滚不自动回滚管理员已保存的配置。
+明确重置会备份原文件字节再恢复默认；卸载保留配置。更新时 schema 版本变化会被拒绝；当前实现不执行任意配置迁移脚本。代码回滚不自动回滚管理员已保存的配置。
 
 生命周期、审计、紧急禁用及已知边界见 [框架说明](../framework/README.md)。
 
@@ -44,3 +44,10 @@ IPMI 插件读取当前可见集群，为每个新集群生成例外草稿，保
 ## 命名约束
 
 API、ID 和物理配置目录均使用 Rivetin 命名，不读取旧目录或旧 ID。详见[命名与路径](rivetin-naming.md)。
+
+
+## SSH connection documents in framework 0.2.1
+
+SSH connection secrets and device-policy identities use the dedicated encrypted vault, not the ordinary per-plugin settings collection. Their version 2 does not change the shared `/api/rivetin/v1/config` contract or give a plugin access to credentials.
+
+The connection endpoint uses expectedRevision CAS and actor-bound UUID operation receipts, preserving the draft on conflict and requiring readback after unknown outcomes. It rejects v1 writes once v2 is active and does not silently migrate an old vault on GET. Device scopes are a separate server-owned contract; browser storage must not hold secrets, inventory proofs, serials or server identity material. See [SSH connections](ssh-channel.md#connections-v2) for schema, explicit migration and fail-closed execution boundaries.

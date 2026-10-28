@@ -4,6 +4,12 @@
 
 Rivetin 提供 CloudTower 中统一的插件中心、配置、生命周期和应急开关。功能插件位于仓库 `plugins/`，框架不导入具体插件功能。当前仅支持经过信任与审核的前端插件，**故障隔离按需求保留为 TODO**。
 
+中心标题为“Rivetin 插件中心”（英文 Rivetin Plugin Center），使用与官网一致的本地内嵌 Logo。普通悬浮按钮、菜单和升级提醒入口每次打开默认进入插件管理，不记住上次关闭的页签；集成方显式指定 `initialTab` 时仍直达指定配置页。未保存草稿继续通过取消、丢弃并退出、保存并退出处理。插件配置中内置 SSH 通道优先，其余插件保持原相对顺序；个人设置（Personal settings）紧邻关于之前，只影响当前浏览器。
+
+顶部“框架运行中 / 框架已停用”徽标仅反映 `runtime.enabled`，不依赖子插件启用数量。停用后仍保留管理 API，不表示后端进程退出。旧 compatibility 声明不能授予当前框架下的运行资格，页面会提示升级插件；它与 CloudTower 版本不匹配、设备不可用分别说明。
+
+关于页在 GitHub 同一行提供官网入口，并在各开源组件标题后提供可通过键盘访问的项目链接。组件链接由 `scripts/notices.mjs` 从锁定依赖包的 repository/homepage 元数据生成；许可证正文及版权归属保持上游原文。链接只接受 HTTPS，以新标签打开并设置 `noopener noreferrer`，不影响许可详情展开。
+
 ## 0.2 兼容性与组件状态
 
 兼容性契约见 [版本声明与可信来源](../docs/rivetin-compatibility.md)。框架声明自己的 CloudTower 已测试版本；子插件必须使用机器可校验的 compatibility schema 2，明确框架最低版本、最高版本边界和 CloudTower 精确版本列表。SMTX OS 条件可省略或填写 `none`，有条件时校验全部受管目标产品集群。安装、升级、回滚、启用及资产加载均执行门禁；旧声明不能获得执行资格，旧安装包不原地修改。
@@ -12,11 +18,20 @@ Rivetin 提供 CloudTower 中统一的插件中心、配置、生命周期和应
 
 插件中心的“组件状态”位于操作日志之后，显示框架、插件声明、组件依赖、代码和安装包完整性，以及 API 自检情况。接口登记、API 的只读自检与端到端业务验证是不同证据；无法观测的 Island、网关或未探测接口保持未知，不能显示为正常。服务包的 `integrity.json` 校验已知文件字节，属于本地测量基线，不是发布者签名或恶意篡改防护的独立信任根。
 
+当前源码的部署探针使用本次已认证的 Tower 管理员身份，只读查询实际 Island registry，核对唯一 Rivetin scope、版本及 `PERMANENT_CLUSTER_MANAGER_MODAL` 的 `./Rivetin` 入口。此检查证明注册元数据匹配，不证明 Island 资源字节完整或所有页面都能运行。网关与组件状态 API 通过部署配置中唯一的 HTTPS Origin 各发送一次随机挑战 GET，验证响应来自当前后端进程；不依赖已加载页面，也不递归执行组件检查。它证明该认证入口可达，不证明 Kubernetes 资源配置完整或业务操作成功。不会创建文件、同步 broker、保存管理员认证或新增 RBAC/宿主权限。
+
+每次组件检查读取一次 registry，并为网关、组件 API 各发送一次挑战 GET，不重试；registry 的 refreshCache 参数可能刷新 Tower 注册缓存，普通认证查询与 HTTP 访问可能产生 Tower 访问日志，但不写插件配置、凭据、审批或业务对象。探针不执行 kubectl/exec、不扫描其他 Pod，不注入 sidecar、挂卷或更改 RBAC。安装器部署预检中单独列出的官方 Pod 只读版本查询不属于此运行时探针。
+
+挑战请求的总超时为 1.5 秒，覆盖 DNS、TLS 和响应体；响应体最多 4 KiB，禁止跟随重定向。默认使用正常 TLS CA/主机名校验，自签名、过期或主机名不匹配显示 GATEWAY_TLS_UNTRUSTED，不伪报正常。也支持显式 RIVETIN_GATEWAY_CERT_SHA256：仅接受 64 位小写十六进制 DER 叶证书指纹，仅用于唯一准确的 RIVETIN_ORIGINS HTTPS 入口。这是独立指纹身份加有效期校验，**替代该入口的 PKI/SAN 身份模式**，不能声称通过 CA 链或主机名验证。TLS 握手后指纹恒时比较和有效期检查通过前，不把 socket 交给 HTTP 层，不发送当前管理员的 Authorization/Cookie；错误指纹或无效配置不回退默认 TLS。请求使用独立一次性 Agent，禁会话复用，不更改全局 TLS、系统信任库或自动学习新证书，认证仅在本次请求内存中使用。
+
+便携式 CLI 在用户显式提供并核验 --tls-cert-sha256 时，把规范化后的公开指纹写入仅 Rivetin-owned Deployment 的上述环境变量；CA 模式不隐式派生指纹。轮换须重新独立核验和明确部署，不自动接受服务端新叶子。入口缺失/不唯一、身份不可用、权限拒绝、超时、错误指纹或无效证书保持未知；实际注册缺失、声明或挑战响应不匹配显示失败。旧运行环境不会因修改本地源码自动获得新探针。
+
 管理员接口（均返回 JSON，不缓存）：
 
 | 路径 | 方法 | 用途 |
 |---|---|---|
 | `/api/rivetin/v1/components/status` | GET | 读取组件状态；`?fresh=true` 显式刷新 |
+| `/api/rivetin/v1/components/status?probe=<32位小写十六进制随机值>` | GET | 管理员专用非递归入口健康探针；仅返回 schema、框架版本、原挑战及本进程随机标识，不返回检查报告或认证信息；不能与 `fresh` 混用 |
 | `/api/rivetin/v1/components/repair` | POST | 备份后停用全部插件，修复框架自身版本元数据 |
 | `/api/rivetin/v1/components/reset` | POST | 备份后停用全部插件，重置进程内衍生缓存 |
 | `/api/rivetin/v1/components/support` | GET | 下载统一脱敏支持包的 Base64 信封 |
@@ -120,3 +135,12 @@ Tower 原生对接尝试使用官方 SDK 列出的 `POST /v2/api/create-user-aud
 项目名称与注册 scope 统一为 Rivetin / `rivetin`。插件、制品、API 与存储路径以 [Rivetin 命名与配置路径](../docs/rivetin-naming.md) 为权威说明。Federation 仅暴露 `./Rivetin`；正式 window scope 为 `rivetin`，本地演示为 `rivetinFrameworkDemo`。
 
 前端仅调用 `/api/rivetin/v1`，不探测其他 API、不重写插件身份、不因未知写结果重试。个人偏好仅使用当前浏览器中的 `rivetin.personal.v1`。旧名称和路径没有运行时别名或自动迁移；受控重装须先备份，由管理员明确恢复功能配置，不自动删除历史资料。
+
+
+## 0.2.1 本地候选范围
+
+源码 0.2.1 接通 connections v2 的共享 HTTP、加密 vault、CAS/持久操作回执、fresh 设备选择和审批守卫。旧 v1 配置只读投影，需显式离线迁移；迁移不会自动启用插件、批准命令或扩大旧 custom 范围。缺少合法后台库存身份时，计划采集保持不可用。具体 API、限制和迁移边界见 [SSH 通道](../docs/ssh-channel.md#connections-v2)及 [CLI](../cli/README.md#offline-connection-format-maintenance)。
+
+组件状态正常且无原因码的详情显示本项检查通过，未知/未探测项目仍保留未知。该显示不扩大后端的核验范围。0.2.1 的本地集成使用注入的 Tower/SSH 传输，不等于真实 CloudTower、SSH 或跨日采集验收；历史 [0.2.0 实机证据](../docs/0.2-validation.md)继续对应原固定制品。
+
+固定已有 SSH 内置包时可在仓库根运行 `node framework/scripts/package.mjs --builtin-package <ABSOLUTE_VERIFIED_SSH_PACKAGE>`，先校验该包再复用，避免重建/覆盖旧同版子插件包。未提供此选项时仍走既有子插件构建流程；框架候选必须使用未占用的新版本。

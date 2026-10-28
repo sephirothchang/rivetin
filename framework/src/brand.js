@@ -1,0 +1,3 @@
+// Existing Rivetin website mark, bundled locally to avoid remote image loading.
+export const RIVETIN_MARK_SVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 48 48\"><rect width=\"48\" height=\"48\" rx=\"10\" fill=\"#f8fafb\"/><g transform=\"translate(6 6)\" fill=\"none\" stroke=\"#18232e\" stroke-width=\"2.5\" stroke-linejoin=\"round\"><path d=\"M7 29V7h12c7 0 10 4 10 8s-3 8-10 8H7m12 0 10 6\"/><circle cx=\"7\" cy=\"7\" r=\"2.5\" fill=\"#18232e\" stroke=\"none\"/><circle cx=\"7\" cy=\"29\" r=\"2.5\" fill=\"#18232e\" stroke=\"none\"/></g></svg>";
+export const RIVETIN_MARK_URL = 'data:image/svg+xml,' + encodeURIComponent(RIVETIN_MARK_SVG);

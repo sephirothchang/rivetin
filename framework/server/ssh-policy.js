@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 
 export const SSH_CHANNEL_ID = 'rivetin-ssh-channel';
 export const SSH_OPERATIONS = Object.freeze([
-  { id: 'host.identity', command: '/usr/bin/uname -srm', privilege: 'user', impact: { 'zh-CN': '只读查询主机内核与架构。', 'en-US': 'Read the host kernel and architecture.' } },
-  { id: 'disk.smart.read', command: 'sudo -n -- /usr/sbin/smartctl --json=c --all <device>', privilege: 'sudo-read', impact: { 'zh-CN': '以免交互 sudo 读取指定磁盘 SMART；不启动自检、不修改磁盘设置。', 'en-US': 'Read SMART for the selected disk with non-interactive sudo; no self-test or disk configuration changes.' } },
+  { id: 'host.identity', command: '/usr/bin/uname -srm', category: 'host', argumentSource: 'configured-hosts', expansion: 'each-authorized-host', privilege: 'user', impact: { 'zh-CN': '只读查询主机内核与架构。', 'en-US': 'Read the host kernel and architecture.' } },
+  { id: 'disk.smart.read', command: 'sudo -n -- /usr/sbin/smartctl --json=c --all <disk>', category: 'disk', argumentSource: 'fresh-host-inventory', expansion: 'each-authorized-disk', privilege: 'sudo-read', impact: { 'zh-CN': '以免交互 sudo 读取指定磁盘 SMART；不启动自检、不修改磁盘设置。', 'en-US': 'Read SMART for the selected disk with non-interactive sudo; no self-test or disk configuration changes.' } },
 ]);
 export const SSH_REJECTED_EXAMPLES = Object.freeze([
   { example: 'rm -rf <path>', risk: { 'zh-CN': '删除文件，可能造成不可恢复的数据丢失。', 'en-US': 'Deletes files and can cause irreversible data loss.' } },

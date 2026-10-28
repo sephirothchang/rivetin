@@ -1,6 +1,6 @@
 # Rivetin 命名与配置路径
 
-项目品牌为 **Rivetin**，官网为 https://rivetin.dev。GitHub 仓库为 `sephirothchang/rivetin`；现有本地工作区目录暂保留 `smartx-extensions`，不随远端改名搬动。所有新代码统一命名，不提供旧 PluginKit ID、目录、API 或包格式的兼容别名。
+项目品牌为 **Rivetin**，官网为 https://rivetin.dev。GitHub 仓库为 `sephirothchang/rivetin`；本地检出目录名由开发者选择，不改变品牌、插件 ID 或部署数据路径；工具链根据当前项目位置解析项目内资源。所有新代码统一命名，不提供旧 PluginKit ID、目录、API 或包格式的兼容别名。
 
 | 对象 | 规范 |
 |---|---|

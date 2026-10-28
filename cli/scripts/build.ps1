@@ -1,28 +1,17 @@
-param([Parameter(Mandatory=$true)][string]$Go)
+param([string]$Go)
 $ErrorActionPreference = 'Stop'
-$Go = (Get-Command $Go -CommandType Application -ErrorAction Stop).Source
+$goOptions = @()
+if ($Go) { $goOptions = @('--go', (Get-Command $Go -CommandType Application -ErrorAction Stop).Source) }
 $cliRoot = Split-Path $PSScriptRoot -Parent
 Push-Location $cliRoot
 $previousOS = $env:GOOS
 $previousArch = $env:GOARCH
-$previousCGO = $env:CGO_ENABLED
-$previousGoFlags = $env:GOFLAGS
-$previousExperiment = $env:GOEXPERIMENT
-$previousToolchain = $env:GOTOOLCHAIN
-$previousGoPath = $env:GOPATH
-$previousGoCache = $env:GOCACHE
 try {
-    $env:CGO_ENABLED = '0'
-    $env:GOFLAGS = ''
-    $env:GOEXPERIMENT = ''
-    $env:GOTOOLCHAIN = 'local'
-    if (-not $env:GOPATH) { $env:GOPATH = Join-Path $cliRoot '.local/go-cache' }
-    if (-not $env:GOCACHE) { $env:GOCACHE = Join-Path $cliRoot '.local/go-build' }
-    & $Go mod download
+    & node scripts/toolchain.mjs @goOptions --run-go mod download
     if ($LASTEXITCODE -ne 0) { throw 'Module download failed.' }
-    & $Go mod verify
+    & node scripts/toolchain.mjs @goOptions --run-go mod verify
     if ($LASTEXITCODE -ne 0) { throw 'Module verification failed.' }
-    & node scripts/prepare.mjs --go $Go
+    & node scripts/prepare.mjs @goOptions
     if ($LASTEXITCODE -ne 0) { throw 'Payload preparation failed.' }
     New-Item -ItemType Directory -Force -Path 'release' | Out-Null
     foreach ($targetOS in @('windows', 'linux', 'darwin')) {
@@ -31,7 +20,7 @@ try {
             $env:GOARCH = $targetArch
             $suffix = if ($targetOS -eq 'windows') { '.exe' } else { '' }
             $artifact = "release/rivetin-$targetOS-$targetArch$suffix"
-            & $Go build -trimpath -buildvcs=false -ldflags '-s -w -buildid=' -o $artifact .
+            & node scripts/toolchain.mjs @goOptions --run-go build -trimpath -buildvcs=false -ldflags '-s -w -buildid=' -o $artifact .
             if ($LASTEXITCODE -ne 0) { throw "Build failed: $targetOS/$targetArch" }
         }
     }
@@ -41,11 +30,5 @@ try {
 } finally {
     $env:GOOS = $previousOS
     $env:GOARCH = $previousArch
-    $env:CGO_ENABLED = $previousCGO
-    $env:GOFLAGS = $previousGoFlags
-    $env:GOEXPERIMENT = $previousExperiment
-    $env:GOTOOLCHAIN = $previousToolchain
-    $env:GOPATH = $previousGoPath
-    $env:GOCACHE = $previousGoCache
     Pop-Location
 }

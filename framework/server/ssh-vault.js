@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile, readdir, unlink, lstat } from 'node:fs/prom
 import path from 'node:path';
 import { atomic, storage } from './storage.js';
 import { sshIdentifier } from './ssh-policy.js';
+import { createConnectionsV2 } from './ssh-connections-v2.js';
 import { validateSshTarget, legacyConnections, validateConnectionsDocument, applyConnections, resolveConnection, summarizeConnections } from './ssh-connection-settings.js';
 
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -19,7 +20,7 @@ export function validateSshHost(value) {
   return structuredClone(value);
 }
 
-export function createSshVault(directory) {
+export function createSshVault(directory, { request } = {}) {
   const root = path.join(path.resolve(directory), 'ssh-channel', 'vault'), disk = storage(root);
   const connectionsFile = path.join(root, 'connections.v1.json');
   async function hasConnections() { try { await lstat(connectionsFile); return true; } catch (error) { if (error.code === 'ENOENT') return false; throw error; } }
@@ -33,7 +34,9 @@ export function createSshVault(directory) {
     const filename = path.join(root, 'key.json');
     if (create) {
       // An absent key must be restored from backup, never replaced over existing ciphertext.
-      if ((await names()).length || await hasConnections()) {
+      let v2Exists = false;
+      try { await lstat(path.join(root, 'connections.v2.json')); v2Exists = true; } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if ((await names()).length || await hasConnections() || v2Exists) {
         try { await secureFile(filename); }
         catch (error) { if (error.code === 'ENOENT') throw new Error('SSH_VAULT_KEY_MISSING'); throw error; }
       }
@@ -95,8 +98,16 @@ export function createSshVault(directory) {
       await atomic(connectionsFile, { version: 1, iv: iv.toString('hex'), tag: cipher.getAuthTag().toString('hex'), ciphertext: ciphertext.toString('hex') });
     } finally { plaintext.fill(0); }
   }
-  async function get(hostId) {
+  const v2 = createConnectionsV2({ root, key, legacy: currentConnections, request });
+  async function get(hostId, actor, { connectionOnly = false } = {}) {
     if (!sshIdentifier(hostId)) throw new Error('SSH_HOST_INVALID');
+    if (await v2.active()) {
+      const profile = connectionOnly ? await v2.connection(hostId, actor) : (await v2.targets(actor)).find(row => row.hostId === hostId);
+      if (!profile) throw new Error('SSH_HOST_UNAVAILABLE');
+      if (!profile.password && !profile.privateKey) throw new Error('SSH_CREDENTIAL_REQUIRED');
+      const { diskSelection, ...connection } = profile;
+      return validateSshHost(connection);
+    }
     const document = await readConnections();
     if (!document) return legacyGet(hostId);
     const row = document.hosts.find(item => item.hostId === hostId);
@@ -108,14 +119,16 @@ export function createSshVault(directory) {
   }
   async function revision() {
     const hash = createHash('sha256');
+    if (await v2.active()) { await v2.assertReady(); return hash.update(await readFile(path.join(root, 'connections.v2.json'))).digest('hex'); }
     if (await hasConnections()) { await secureFile(connectionsFile); return hash.update('connections.v1.json').update(await readFile(connectionsFile)).digest('hex'); }
     for (const name of await names()) { const filename = path.join(root, name); await secureFile(filename); hash.update(name); hash.update(await readFile(filename)); }
     return hash.digest('hex');
   }
   return {
-    root, get, revision,
+    root, get, revision, v2,
     async connections() { return summarizeConnections(await currentConnections()); },
     async saveConnections(input) {
+      if (await v2.active()) throw Object.assign(new Error('SSH_CONNECTION_VERSION_UNSUPPORTED'), { status: 409 });
       let request, digest;
       try { request = structuredClone(input); const bytes = JSON.stringify(request); if (Buffer.byteLength(bytes) > 1024 * 1024) throw new Error('SSH_CONNECTION_SETTINGS_TOO_LARGE'); digest = createHash('sha256').update(bytes).digest('hex'); }
       catch (error) { throw new Error(error.message === 'SSH_CONNECTION_SETTINGS_TOO_LARGE' ? error.message : 'SSH_CONNECTION_SETTINGS_INVALID'); }
@@ -129,7 +142,8 @@ export function createSshVault(directory) {
         await writeConnections(next); return summarizeConnections(next);
       });
     },
-    async list() {
+    async list(actor) {
+      if (await v2.active()) return (await v2.targets(actor)).map(({ password, privateKey, ...row }) => ({ ...row, authType: privateKey ? 'private-key' : 'password', credentialConfigured: Boolean(password || privateKey) }));
       const document = await readConnections();
       if (document) return summarizeConnections(document).hosts.map(({ connection, effective, ...target }) => ({ ...target, username: effective.username, authType: effective.authType, credentialConfigured: effective.ready }));
       const items = [];
@@ -142,6 +156,7 @@ export function createSshVault(directory) {
     put(profile) {
       const clean = validateSshHost(profile);
       return disk.locked(async () => {
+        if (await v2.active()) throw Object.assign(new Error('SSH_CONNECTION_VERSION_UNSUPPORTED'), { status: 409 });
         const document = await readConnections();
         if (document) {
           const row = legacyConnections([clean]).hosts[0], index = document.hosts.findIndex(item => item.hostId === clean.hostId);
@@ -158,6 +173,7 @@ export function createSshVault(directory) {
       });
     },
     remove(hostId) { return disk.locked(async () => {
+      if (await v2.active()) throw Object.assign(new Error('SSH_CONNECTION_VERSION_UNSUPPORTED'), { status: 409 });
       file(hostId); const document = await readConnections();
       if (document) await writeConnections({ ...document, hosts: document.hosts.filter(item => item.hostId !== hostId), revision: document.revision + 1, updatedAt: new Date().toISOString(), operationId: null, requestDigest: null });
       else await unlink(file(hostId)).catch(error => { if (error.code !== 'ENOENT') throw error; });
