@@ -1,0 +1,25 @@
+{
+  "manifestVersion": 1,
+  "id": "rivetin-security-policy-converter",
+  "version": "0.1.1",
+  "name": { "zh-CN": "安全策略自动转化工具（离线预览）", "en-US": "Security policy converter (offline preview)" },
+  "description": { "zh-CN": "从清单与流量 CSV 生成 MONITOR 候选策略审查稿；不连接或修改 Everoute。", "en-US": "Generate MONITOR policy review drafts from inventory and traffic CSV. No live Everoute operations." },
+  "author": "Rivetin contributors",
+  "license": "MIT",
+  "repository": "https://github.com/sephirothchang/rivetin",
+  "homepage": "https://github.com/sephirothchang/rivetin/tree/main/plugins/rivetin-security-policy-converter",
+  "compatibility": { "schemaVersion": 1, "frameworkApi": 1, "tower": "Offline preview only; no live CloudTower or Everoute build has been validated.", "towerBuilds": [] },
+  "frontend": { "format": "rivetin-global-v1", "entry": "web/plugin.js" },
+  "permissions": [],
+  "locales": ["zh-CN", "en-US"],
+  "configuration": {
+    "version": 1,
+    "schema": { "type": "object", "additionalProperties": false, "properties": {
+      "version": { "type": "integer", "minimum": 1, "maximum": 1 },
+      "labelKey": { "type": "string", "maxLength": 80 }
+    }, "required": ["version", "labelKey"] },
+    "defaults": { "version": 1, "labelKey": "application" }
+  },
+  "lifecycle": { "reset": "defaults", "uninstall": "retain-config" },
+  "releaseNotes": { "zh-CN": "0.1.1 离线预览：核对构建输入与产物，拒绝覆盖同版制品。无已验收 Tower 构建，真实启用仍受门禁阻止。", "en-US": "0.1.1 offline preview: verify build inputs and outputs, and refuse overwriting fixed releases. No validated Tower builds; live activation remains gated." }
+}

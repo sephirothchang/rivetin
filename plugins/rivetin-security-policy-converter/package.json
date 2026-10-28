@@ -1,0 +1,14 @@
+{
+  "name": "rivetin-security-policy-converter",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "build": "node scripts/build.mjs",
+    "package": "node scripts/package.mjs",
+    "demo": "node demo/server.mjs"
+  },
+  "engines": { "node": ">=22" }
+}

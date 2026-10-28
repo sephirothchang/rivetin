@@ -1,0 +1,28 @@
+const messages = {
+  CSV_SIZE_LIMIT: ['CSV 超过 2 MiB 字符上限。', 'CSV exceeds the 2 MiB character limit.'],
+  CSV_COLUMN_LIMIT: ['CSV 列数超过 40。', 'CSV exceeds 40 columns.'],
+  CSV_ROW_LIMIT: ['CSV 数据行超过 20,000。', 'CSV exceeds 20,000 data rows.'],
+  CSV_QUOTING: ['CSV 引号格式无效。', 'Invalid CSV quoting.'],
+  CSV_EMPTY: ['CSV 至少需要标题与一行数据。', 'CSV needs a header and at least one data row.'],
+  CSV_HEADERS: ['CSV 标题为空或重复。', 'CSV headers are empty or duplicated.'],
+  CSV_WIDTH: ['CSV 行的列数不一致。', 'CSV rows have inconsistent column counts.'],
+  COLUMN_MAPPING: ['请映射四个不同的流量列。', 'Map four distinct traffic columns.'],
+  INVENTORY_SIZE_LIMIT: ['清单超过 2 MiB 字符上限。', 'Inventory exceeds the 2 MiB character limit.'],
+  INVENTORY_JSON: ['清单不是有效 JSON。', 'Inventory is not valid JSON.'],
+  INVENTORY_SCHEMA: ['清单格式无效或超限；请参考演示模板。', 'Invalid inventory schema or capacity; see the sample template.'],
+  EXTERNAL_ADDRESSES: ['外部地址只接受精确 IPv4，每行一个；上限 1,000 个。', 'External addresses require exact IPv4 entries, one per line; maximum 1,000.'],
+  CONVERSION_SCOPE: ['请填写清单中存在的集群 ID 与有效标签键。', 'Enter a cluster ID present in the inventory and a valid label key.'],
+  POLICY_SIZE_LIMIT: ['候选策略或规则超过上限。', 'Candidate policy or rule limit exceeded.'],
+  INVALID_IPV4: ['IPv4 无效或暂不支持该地址类型。', 'Invalid IPv4 or unsupported address type.'],
+  UNSUPPORTED_PROTOCOL: ['协议仅支持 TCP、UDP、ICMP。', 'Only TCP, UDP and ICMP are supported.'],
+  INVALID_PORT: ['TCP/UDP 需要 1–65535 单端口；ICMP 留空或填 -。', 'TCP/UDP needs one port from 1–65535; ICMP needs an empty cell or -.'],
+  AMBIGUOUS_IP: ['同一 IP 匹配多个 VM，不能确定对象。', 'The IP matches multiple VMs; identity is ambiguous.'],
+  UNAPPROVED_EXTERNAL_IP: ['IP 未匹配清单，且未显式声明为外部地址。', 'IP is absent from inventory and not explicitly declared external.'],
+  CROSS_CLUSTER_VM: ['VM 不属于所选集群。', 'VM is outside the selected cluster.'],
+  VM_LABEL_NOT_UNIQUE: ['VM 缺少所选标签键，或该键有多个值。', 'VM lacks the selected label key or has multiple values for it.'],
+  CROSS_CLUSTER_SELECTOR: ['同一标签选择器包含其他集群的 VM。', 'The same label selector includes VMs in another cluster.'],
+  NO_MANAGED_ENDPOINT: ['该流量两端均为外部地址。', 'Both flow endpoints are external.'],
+  FILE_READ: ['无法读取文件，或文件过大。', 'Unable to read the file, or file is too large.'],
+  REVIEW_REQUIRED: ['请先消除全部阻断项，再确认审查。', 'Resolve every blocking issue and acknowledge review first.']
+};
+export function message(locale, code) { const words = messages[code]; return words ? words[locale === 'en-US' ? 1 : 0] : locale === 'en-US' ? 'Unable to process input.' : '无法处理输入。'; }
