@@ -9,6 +9,21 @@ const tree = values => buildActionTree({ resource, snapshot, capabilities: all, 
 const items = result => result.flatMap(group => group.items);
 const find = (id, values) => items(tree(values)).find(action => action.id === id);
 
+test('the initial live disk expansion and within-cluster migration contracts require a stopped VM', () => {
+  for (const id of ['vm.hardware.disk.expand', 'vm.migration.withinCluster']) {
+    assert.equal(find(id).enabled, true);
+    assert.equal(find(id, { snapshot: { ...snapshot, status: 'RUNNING' } }).reasonCode, 'state');
+  }
+});
+
+test('an authoritative active-task flag blocks fresh mutations without hiding safe snapshot reads', () => {
+  const current = { ...snapshot, hasActiveTask: true };
+  for (const id of ['vm.hardware.cpu', 'vm.hardware.memory', 'vm.snapshots.create', 'vm.migration.withinCluster']) {
+    assert.equal(find(id, { snapshot: current }).enabled, false); assert.equal(find(id, { snapshot: current }).reasonCode, 'busy');
+  }
+  assert.equal(find('vm.snapshots.list', { snapshot: current }).enabled, true);
+});
+
 test('VM catalog is complete without a sidebar or any DOM input', () => {
   const result = tree();
   assert.deepEqual(result.map(group => group.id), ['vm.power', 'vm.console', 'vm.hardware', 'vm.snapshots', 'vm.migration', 'vm.management', 'vm.recycle']);

@@ -55,12 +55,12 @@ const groups = [
     action('hardware.memory', '配置内存', 'Configure memory', op('UpdateVm', 'update-vm-basic-info', 'VmUpdateParams'), 'vm-memory', 'warning', stopped),
     action('hardware.disk.add', '添加磁盘', 'Add disk', op('AddVmDisk', 'add-vm-disk', 'VmAddDiskParams'), 'vm-disk-add', 'warning', { ...stopped, selectionType: 'vmVolume' }),
     action('hardware.disk.edit', '编辑磁盘', 'Edit disk', op('UpdateVmDisk', 'update-vm-disk', 'VmUpdateDiskParams'), 'vm-disk-edit', 'warning', { ...stopped, selectionType: 'vmDisk' }),
-    action('hardware.disk.expand', '扩容磁盘', 'Expand disk', op('ExpandVmDisk', 'expand-vm-disk', 'VmExpandVmDiskParams'), 'vm-disk-expand', 'warning', { ...active, targetType: 'vmDisk' }),
+    action('hardware.disk.expand', '扩容磁盘', 'Expand disk', op('ExpandVmDisk', 'expand-vm-disk', 'VmExpandVmDiskParams'), 'vm-disk-expand', 'warning', { ...stopped, targetType: 'vmDisk' }),
     action('hardware.disk.cache', '设置磁盘常驻缓存', 'Set disk cache residency', op('SetVmDiskResidentInCache', 'set-vm-disk-resident-in-cache', 'VmSetVmDiskResidentInCacheParams'), 'vm-disk-cache', 'warning', { ...active, targetType: 'vmDisk' }),
     action('hardware.disk.remove', '卸载磁盘', 'Detach disk', op('RemoveVmDisk', 'remove-vm-disk', 'VmRemoveDiskParams'), 'vm-disk-detach', 'danger', { ...stopped, selectionType: 'vmDisk' }),
     action('hardware.nic.add', '添加网卡', 'Add NIC', op('AddVmNic', 'add-vm-nic', 'VmAddNicParams'), 'vm-nic-add', 'warning', stopped),
-    action('hardware.nic.edit', '编辑网卡', 'Edit NIC', op('UpdateVmNic', 'update-vm-nic', 'VmUpdateNicParams'), 'vm-nic-edit', 'warning', { ...stopped, selectionType: 'vmNic' }),
-    action('hardware.nic.remove', '移除网卡', 'Remove NIC', op('RemoveVmNic', 'remove-vm-nic', 'VmRemoveNicParams'), 'vm-nic-remove', 'danger', { ...stopped, selectionType: 'vmNic' }),
+    action('hardware.nic.edit', '编辑网卡', 'Edit NIC', op('UpdateVmNicAdvanceInfo', 'update-vm-nic-advance-info', 'VmUpdateNicAdvanceInfoParams'), 'vm-nic-edit', 'warning', { ...stopped, selectionType: 'vmNic' }),
+    action('hardware.nic.remove', '移除网卡', 'Remove NIC', op('RemoveVmNicByWhere', 'remove-vm-nic-by-where', 'VmRemoveNicByWhereParams'), 'vm-nic-remove', 'danger', { ...stopped, selectionType: 'vmNic' }),
     action('hardware.nic.qos', '配置网卡 QoS', 'Configure NIC QoS', op('UpdateVmNicQosOption', 'update-vm-nic-qos-option', 'VmUpdateNicQosOptionsParams'), 'vm-nic-qos', 'warning', { ...active, selectionType: 'vmNic' }),
     action('hardware.cdrom.add', '添加 CD-ROM', 'Add CD-ROM', op('AddVmCdRom', 'add-vm-cd-rom', 'VmAddCdRomParams'), 'vm-cdrom-add', 'warning', stopped),
     action('hardware.cdrom.mount', '装载或更换 ISO', 'Mount or replace ISO', op('UpdateVmDisk', 'update-vm-disk', 'VmUpdateDiskParams'), 'vm-cdrom-iso', 'warning', { ...active, selectionType: 'vmDisk' }),
@@ -92,7 +92,7 @@ const groups = [
     action('backup', '备份与容灾', 'Backup and disaster recovery', null, 'vm-backup', 'warning'),
   ]),
   group('vm.migration', '迁移', 'Migration', [
-    action('migration.withinCluster', '集群内迁移', 'Migrate within cluster', op('MigrateVm', 'migrate-vm', 'VmMigrateParams'), 'vm-migrate-host', 'warning', active),
+    action('migration.withinCluster', '集群内迁移', 'Migrate within cluster', op('MigrateVm', 'migrate-vm', 'VmMigrateParams'), 'vm-migrate-host', 'warning', stopped),
     action('migration.acrossCluster', '跨集群迁移', 'Migrate across clusters', op('MigrateVmAcrossCluster', 'migrate-vm-across-cluster', 'VmMigrateAcrossClusterParams'), 'vm-migrate-cluster', 'warning', active),
     action('migration.cutover', '切换迁移中的虚拟机', 'Cut over migrating VM', op('StopVmInCutoverMigration', 'stop-vm-in-cutover-migration', 'StopVmInCutoverMigrationParams'), 'vm-migration-cutover', 'danger', { ...running, migrationControl: 'cutover' }),
     action('migration.abort', '中止跨集群迁移', 'Abort cross-cluster migration', op('AbortMigrateVmAcrossCluster', 'abort-migrate-vm-across-cluster', 'AbortMigrateVmAcrossClusterParams'), 'vm-migration-abort', 'danger', { ...active, migrationControl: 'abort' }),
@@ -121,7 +121,7 @@ function freeze(value) { if (value && typeof value === 'object') { Object.values
 export const VM_ACTION_CATALOG = freeze(groups);
 export const ACTION_CATALOG = VM_ACTION_CATALOG;
 const reasons = {
-  unsupported: text('尚无已验证的宿主操作适配，不能执行。', 'No verified host action binding is available.'),
+  unsupported: text('当前操作提供器没有注册此操作，已阻止执行。请重新打开菜单并检查插件版本。', 'The current action provider has no registration for this operation. Execution was blocked. Reopen the menu and check the plugin version.'),
   preflight: text('尚未取得此虚拟机的可靠最新状态。', 'A reliable current VM snapshot is required.'),
   mismatch: text('对象 ID 与状态快照不一致，请重新读取。', 'The resource ID does not match the snapshot. Refresh it.'),
   stateUnknown: text('虚拟机状态未知，暂不可操作。', 'The VM state is unknown; the action is unavailable.'),
@@ -165,6 +165,7 @@ function blocked(entry, resource, snapshot, capability) {
   }
   const controlsOwnUpdate = entry.migrationControl && snapshot.entityAsyncStatus === 'UPDATING' && snapshot.migration?.ownsVmUpdate === true;
   if (snapshot.entityAsyncStatus && !controlsOwnUpdate) return 'busy';
+  if (entry.mutation && snapshot.hasActiveTask === true && !entry.migrationControl) return 'busy';
   if (entry.mutation && !entry.migrationControl && migrationIsBound(snapshot) &&
     ['PENDING', 'EXECUTING', 'PAUSED'].includes(snapshot.migration.taskStatus)) return 'migrationActive';
   if (entry.mutation && snapshot.protected === true) return 'protected';

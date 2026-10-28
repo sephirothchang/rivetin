@@ -1,33 +1,36 @@
 {
   "manifestVersion": 1,
   "id": "rivetin-context-menu",
-  "version": "0.2.6",
+  "version": "0.5.9",
   "name": {
     "zh-CN": "资源右键菜单",
     "en-US": "Resource context menus"
   },
   "description": {
-    "zh-CN": "按对象提供分组右键操作；真实操作适配开发中，未完成实机验收。",
-    "en-US": "Grouped object context menus. Live action integration is under development and has not passed acceptance."
+    "zh-CN": "资源列表多级右键菜单与虚拟机原生配置快捷入口，复用 CloudTower 官方菜单、对话框和确认流程。",
+    "en-US": "Cascading resource-row menus and VM shortcuts reuse CloudTower native menus, dialogs and confirmation flows."
   },
   "author": "Rivetin contributors",
   "license": "MIT",
   "repository": "https://github.com/sephirothchang/rivetin",
   "homepage": "https://github.com/sephirothchang/rivetin/tree/main/plugins/rivetin-context-menu",
   "compatibility": {
+    "schemaVersion": 2,
     "frameworkApi": 1,
-    "tower": "CloudTower 4.9.0 controlled candidate; read-only API/DOM verified, native UI acceptance pending.",
+    "frameworkMinVersion": "0.2.0",
+    "frameworkMaxVersionExclusive": "0.3.0",
     "towerBuilds": [
       "4.9.0"
-    ]
+    ],
+    "smtx": "none",
+    "tower": "CloudTower 4.9.0 public DOM; framework 0.2 candidate, live validation pending."
   },
   "frontend": {
     "format": "rivetin-global-v1",
     "entry": "web/plugin.js"
   },
   "permissions": [
-    "ui.context-menu",
-    "resource.actions"
+    "ui.context-menu"
   ],
   "locales": [
     "zh-CN",
@@ -53,7 +56,7 @@
         },
         "resourceTypes": {
           "type": "array",
-          "maxItems": 7,
+          "maxItems": 15,
           "items": {
             "type": "string",
             "maxLength": 20,
@@ -64,7 +67,15 @@
               "host",
               "vm",
               "vmVolume",
-              "disk"
+              "disk",
+              "nic",
+              "vmGroup",
+              "vmPlacementGroup",
+              "vmNetwork",
+              "systemNetwork",
+              "vmSnapshot",
+              "snapshotPlan",
+              "vds"
             ]
           }
         }
@@ -87,7 +98,15 @@
         "host",
         "vm",
         "vmVolume",
-        "disk"
+        "disk",
+        "nic",
+        "vmGroup",
+        "vmPlacementGroup",
+        "vmNetwork",
+        "systemNetwork",
+        "vmSnapshot",
+        "snapshotPlan",
+        "vds"
       ]
     }
   },
@@ -96,7 +115,7 @@
     "uninstall": "retain-config"
   },
   "releaseNotes": {
-    "zh-CN": "修复已有磁盘/网卡折叠控件被激活隔离误挡的问题；仅放行重新校验身份的只读展开/收起，保留业务编辑隔离。限定 4.9.0 受控复验，未执行真实虚拟机变更。",
-    "en-US": "Fix activation quarantine blocking pre-existing disk/NIC expansion. Revalidate pure expand/collapse actions without relaxing business editor isolation. Controlled 4.9.0 recheck pending; no live VM changes were tested."
+    "zh-CN": "修复A/B/A后原生入口恢复，并严格限定单次准确原生reset边；外部排队导航和重复边仍使操作失效，不凭当前URL相等继续。保留退休、代次和身份守卫及自身失败提示。0.5.8本地候选未通过独审、未部署，0.5.9待真实环境测试。",
+    "en-US": "Recover native entries after A/B/A using a single exact native reset edge. Queued external navigation and duplicate edges still cancel; current URL equality cannot establish ownership. Preserve retirement, generation and identity checks and visible failure diagnostics. The 0.5.8 local candidate was rejected and never deployed; 0.5.9 awaits real-environment testing."
   }
 }

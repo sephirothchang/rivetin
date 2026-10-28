@@ -25,9 +25,9 @@ function capture(request) {
 // One form confirmation, one host execute call. Authentication, operation
 // whitelisting, task tracking and final readback belong to the injected bridge.
 // A new executor must never be created automatically to retry an unknown result.
-export function createConfirmedExecution({ bridge, validate, buildRequest, win = globalThis, timeoutMs = 120000, pollIntervalMs = 1000, maxPolls = 120, onProgress = () => {} }) {
+export function createConfirmedExecution({ bridge, validate, buildRequest, preflight, win = globalThis, timeoutMs = 120000, pollIntervalMs = 1000, maxPolls = 120, onProgress = () => {} }) {
   if (typeof bridge?.read !== 'function' || typeof bridge?.execute !== 'function' || typeof validate !== 'function' ||
-      (buildRequest !== undefined && typeof buildRequest !== 'function')) throw new Error('INVALID_EXECUTION_BRIDGE');
+      (buildRequest !== undefined && typeof buildRequest !== 'function') || (preflight !== undefined && typeof preflight !== 'function')) throw new Error('INVALID_EXECUTION_BRIDGE');
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 120000) throw new Error('INVALID_EXECUTION_TIMEOUT');
   if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0 || pollIntervalMs > 10000 || !Number.isSafeInteger(maxPolls) || maxPolls < 1 || maxPolls > 1000) throw new Error('INVALID_EXECUTION_POLL_LIMIT');
   let attempt = null, stopped = false;
@@ -82,14 +82,14 @@ export function createConfirmedExecution({ bridge, validate, buildRequest, win =
     let result;
     try {
       progress('reading');
-      const fresh = await bounded(value, () => bridge.read(value.request.resource, { signal: value.controller.signal }));
+      const fresh = await bounded(value, () => preflight ? preflight(value.request, { signal: value.controller.signal }) : bridge.read(value.request.resource, { signal: value.controller.signal }));
       if (!fresh?.snapshot || fresh.snapshot.id !== value.request.resource.id) {
         result = outcome('failed', 'RESOURCE_ID_MISMATCH'); return result;
       }
-      const snapshot = freeze(copy(fresh.snapshot)), capabilities = freeze(copy(fresh.capabilities || {}));
+      const snapshot = freeze(copy(fresh.snapshot)), capabilities = freeze(copy(fresh.capabilities || {})), choices = freeze(copy(fresh.choices || {}));
       progress('validating');
       check(value);
-      const action = validate({ ...value.request, snapshot, capabilities });
+      const action = validate({ ...value.request, snapshot, capabilities, choices });
       if (!action || action.id !== value.request.actionId || action.enabled !== true) {
         result = outcome('failed', 'ACTION_UNAVAILABLE'); return result;
       }
@@ -97,7 +97,7 @@ export function createConfirmedExecution({ bridge, validate, buildRequest, win =
         try {
           // Local schema validation only. The host independently whitelists and
           // builds the action request; no raw operation is passed around it.
-          const built = buildRequest({ ...value.request, action: freeze(copy(action)), snapshot, capabilities });
+          const built = buildRequest({ ...value.request, action: freeze(copy(action)), snapshot, capabilities, choices });
           if (!built || built.then || typeof built.operationId !== 'string' || !Object.hasOwn(built, 'body')) throw new Error('INVALID_REQUEST_BUILDER');
         } catch { result = outcome('failed', 'REQUEST_VALIDATION_FAILED'); return result; }
       }

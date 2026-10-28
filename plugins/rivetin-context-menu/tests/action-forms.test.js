@@ -4,20 +4,25 @@ import { FORM_ACTIONS, actionFields, initialValues, fieldValues } from '../src/a
 import { VM_ACTION_CATALOG } from '../src/actions/catalog.js';
 
 const state = () => ({
-  id: 'vm-a', name: 'VM A', description: 'Existing description', cpu_sockets: 2, cpu_cores: 4,
+  id: 'vm-a', name: 'VM A', description: 'Existing description', vcpu: 8, cpu: { sockets: 2, cores: 4 },
   cluster: { id: 'cluster-a' }, host: { id: 'host-current' },
   snapshots: [{ id: 'snapshot-own', name: 'Owned checkpoint', vm: { id: 'vm-a' } }],
   availableHosts: [{ id: 'host-destination', name: 'Destination', cluster: { id: 'cluster-a' }, status: 'CONNECTED_HEALTHY' }],
+  vm_disks: [{ id: 'disk-a', type: 'DISK', bus: 'VIRTIO', vm: { id: 'vm-a' }, vm_volume: { id: 'volume-a', size: 1000 } }],
+  vm_nics: [{ id: 'nic-a', type: 'VLAN', model: 'VIRTIO', enabled: true, vm: { id: 'vm-a' }, vlan: { id: 'vlan-a' } }],
+  availableVlans: [{ id: 'vlan-a', cluster: { id: 'cluster-a' } }], availableVolumes: [],
+  diskAddModes: ['new', 'existing'],
 });
 const fields = (id, snapshot = state()) => actionFields(id, snapshot);
 const optionIds = (id, snapshot, fieldId) => fields(id, snapshot).find(field => field.id === fieldId).options.map(option => option.value);
 
-test('all fourteen supported production actions have distinct catalog bindings and usable field contracts', () => {
-  assert.equal(FORM_ACTIONS.length, 14); assert.equal(new Set(FORM_ACTIONS).size, 14);
+test('all supported production actions have distinct catalog bindings and usable field contracts', () => {
+  assert.equal(FORM_ACTIONS.length, 22); assert.equal(new Set(FORM_ACTIONS).size, 22);
   const catalogIds = new Set(VM_ACTION_CATALOG.flatMap(group => group.items).map(action => action.id));
   for (const actionId of FORM_ACTIONS) {
     assert.ok(catalogIds.has(actionId), `${actionId} must belong to the action catalog`);
-    const schema = fields(actionId), english = actionFields(actionId, state(), 'en-US');
+    const selection = { vm_disk_id: 'disk-a', vm_nic_id: 'nic-a' };
+    const schema = actionFields(actionId, state(), 'zh-CN', selection), english = actionFields(actionId, state(), 'en-US', selection);
     assert.equal(new Set(schema.map(field => field.id)).size, schema.length);
     assert.deepEqual(english.map(field => ({ id: field.id, type: field.type })), schema.map(field => ({ id: field.id, type: field.type })));
     assert.ok(schema.every(field => field.label && ['text', 'number', 'select', 'checkbox'].includes(field.type)));
@@ -25,7 +30,7 @@ test('all fourteen supported production actions have distinct catalog bindings a
     if (actionId.startsWith('vm.power.')) { assert.deepEqual(schema, []); assert.deepEqual(fieldValues(schema, {}), {}); continue; }
     assert.ok(schema.length > 0, `${actionId} must expose its required business fields`);
     const values = initialValues(schema);
-    for (const field of schema) if (!Object.hasOwn(values, field.id)) {
+    for (const field of schema) if (!Object.hasOwn(values, field.id) || field.type === 'number' && Number(values[field.id]) < field.min) {
       if (field.type === 'select') values[field.id] = field.options[0]?.value;
       else if (field.type === 'number') values[field.id] = field.min || 1;
       else if (field.type === 'checkbox') values[field.id] = true;
@@ -35,32 +40,38 @@ test('all fourteen supported production actions have distinct catalog bindings a
   }
 });
 
-test('CPU values preserve socket/core topology and real API snake_case keys', () => {
+test('CPU fields expose three independent explicit values from the VM and nested CPU snapshot', () => {
   const schema = fields('vm.hardware.cpu');
-  assert.deepEqual(initialValues(schema), { cpu_sockets: 2, cpu_cores: 4 });
-  const input = { cpu_sockets: '2', cpu_cores: '6', vcpu: 12, vm_id: 'other-vm' };
-  assert.deepEqual(fieldValues(schema, input), { cpu_sockets: 2, cpu_cores: 6 });
-  assert.deepEqual(input, { cpu_sockets: '2', cpu_cores: '6', vcpu: 12, vm_id: 'other-vm' });
+  assert.deepEqual(initialValues(schema), { vcpu: 8, cpu_sockets: 2, cpu_cores: 4 });
+  const input = { cpu_sockets: '2', cpu_cores: '6', vcpu: '7', vm_id: 'other-vm' };
+  assert.deepEqual(fieldValues(schema, input), { vcpu: 7, cpu_sockets: 2, cpu_cores: 6 });
+  assert.deepEqual(input, { cpu_sockets: '2', cpu_cores: '6', vcpu: '7', vm_id: 'other-vm' });
+  assert.deepEqual(initialValues(fields('vm.hardware.cpu', { vcpu: 3, cpu_sockets: 99, cpu_cores: 99 })), { vcpu: 3 }, 'flat legacy fields cannot fill a missing authoritative CPU object');
+  for (const omitted of ['vcpu', 'cpu_sockets', 'cpu_cores']) {
+    const values = { vcpu: 8, cpu_sockets: 2, cpu_cores: 4 }; delete values[omitted];
+    assert.throws(() => fieldValues(schema, values), /INVALID_FORM_VALUE/);
+  }
 });
 
-test('memory amount and decimal unit are independent API fields, never implicit binary conversion', () => {
+test('the first production memory form is restricted to bytes without claiming other API units do not exist', () => {
   const schema = fields('vm.hardware.memory');
-  assert.deepEqual(initialValues(schema), { memory_unit: 'MB' });
-  for (const unit of ['B', 'KB', 'MB', 'GB', 'TB', 'PB']) assert.deepEqual(fieldValues(schema, { memory: '4', memory_unit: unit }), { memory: 4, memory_unit: unit });
-  for (const unit of ['MiB', 'GiB', 'mb', 'bytes', '', null, undefined, 1024]) assert.throws(() => fieldValues(schema, { memory: 4, memory_unit: unit }), /INVALID_FORM_VALUE/);
+  assert.deepEqual(initialValues(schema), { memory_unit: 'B' });
+  assert.deepEqual(schema.find(field => field.id === 'memory_unit').options.map(option => option.value), ['B']);
+  assert.deepEqual(fieldValues(schema, { memory: '4', memory_unit: 'B' }), { memory: 4, memory_unit: 'B' });
+  for (const unit of ['KB', 'MB', 'GB', 'TB', 'PB', 'MiB', 'GiB', 'mb', 'bytes', '', null, undefined, 1024]) assert.throws(() => fieldValues(schema, { memory: 4, memory_unit: unit }), /INVALID_FORM_VALUE/);
 });
 
 test('empty, fractional, nonfinite, negative and out-of-range numeric input is rejected', () => {
   const schema = fields('vm.hardware.cpu');
   for (const value of ['', ' ', null, undefined, NaN, Infinity, -Infinity, 0, '0', -1, '-1', 1.5, '1.5', 2147483648, '2147483648']) {
-    assert.throws(() => fieldValues(schema, { cpu_sockets: value, cpu_cores: 2 }), /INVALID_FORM_VALUE/, `invalid CPU value ${String(value)}`);
+    for (const id of ['vcpu', 'cpu_sockets', 'cpu_cores']) assert.throws(() => fieldValues(schema, { vcpu: 8, cpu_sockets: 2, cpu_cores: 2, [id]: value }), /INVALID_FORM_VALUE/, `invalid CPU value ${id}=${String(value)}`);
   }
-  assert.throws(() => fieldValues(fields('vm.hardware.memory'), { memory: Number.MAX_SAFE_INTEGER + 1, memory_unit: 'MB' }), /INVALID_FORM_VALUE/);
-  assert.throws(() => fieldValues(fields('vm.hardware.memory'), { memory: '4096.5', memory_unit: 'MB' }), /INVALID_FORM_VALUE/);
+  assert.throws(() => fieldValues(fields('vm.hardware.memory'), { memory: Number.MAX_SAFE_INTEGER + 1, memory_unit: 'B' }), /INVALID_FORM_VALUE/);
+  assert.throws(() => fieldValues(fields('vm.hardware.memory'), { memory: '4096.5', memory_unit: 'B' }), /INVALID_FORM_VALUE/);
 });
 
 test('numeric inputs cannot coerce boolean or array values into valid CPU topology', () => {
-  for (const value of [true, false, [], [1], ['2'], {}]) assert.throws(() => fieldValues(fields('vm.hardware.cpu'), { cpu_sockets: value, cpu_cores: '2' }), /INVALID_FORM_VALUE/);
+  for (const value of [true, false, [], [1], ['2'], {}]) assert.throws(() => fieldValues(fields('vm.hardware.cpu'), { vcpu: 8, cpu_sockets: value, cpu_cores: '2' }), /INVALID_FORM_VALUE/);
 });
 
 test('snapshot restoration offers only snapshots belonging to the exact current VM and not changing', () => {
@@ -95,11 +106,14 @@ test('unknown current cluster identity cannot authorize orphan migration targets
   assert.deepEqual(optionIds('vm.migration.withinCluster', { id: 'vm-a', availableHosts: [{ id: 'host-orphan', status: 'CONNECTED_HEALTHY' }] }, 'host_id'), []);
 });
 
-test('snapshot consistency is an explicit server enum and invalid choices cannot pass through', () => {
+test('snapshot consistency defaults only to crash and other REST enum values require explicit choices', () => {
   const schema = fields('vm.snapshots.create');
   assert.deepEqual(initialValues(schema), { consistent_type: 'CRASH_CONSISTENT' });
-  for (const value of ['CRASH_CONSISTENT', 'FILE_SYSTEM_CONSISTENT']) assert.deepEqual(fieldValues(schema, { name: 'Checkpoint', consistent_type: value }), { name: 'Checkpoint', consistent_type: value });
-  for (const value of ['', 'crash', 'APPLICATION_CONSISTENT', true, null]) assert.throws(() => fieldValues(schema, { name: 'Checkpoint', consistent_type: value }), /INVALID_FORM_VALUE/);
+  assert.deepEqual(schema.find(field => field.id === 'consistent_type').options.map(option => option.value), ['CRASH_CONSISTENT']);
+  assert.deepEqual(fieldValues(schema, { name: 'Checkpoint', consistent_type: 'CRASH_CONSISTENT' }), { name: 'Checkpoint', consistent_type: 'CRASH_CONSISTENT' });
+  for (const value of ['FILE_SYSTEM_CONSISTENT', '', 'crash', 'APPLICATION_CONSISTENT', true, null]) assert.throws(() => fieldValues(schema, { name: 'Checkpoint', consistent_type: value }), /INVALID_FORM_VALUE/);
+  const explicit = actionFields('vm.snapshots.create', state(), 'zh-CN', {}, { consistentTypes: ['CRASH_CONSISTENT', 'FILE_SYSTEM_CONSISTENT'] });
+  assert.deepEqual(fieldValues(explicit, { name: 'Checkpoint', consistent_type: 'FILE_SYSTEM_CONSISTENT' }), { name: 'Checkpoint', consistent_type: 'FILE_SYSTEM_CONSISTENT' });
 });
 
 test('user-visible names and descriptions respect boundaries without silently trimming or truncating', () => {

@@ -1,5 +1,6 @@
 // DOM adapter for the observed Tower 4.9 tree, table and sidebar structure.
 // Unknown structures deliberately retain the browser's context menu.
+import { RESOURCE_TYPES } from './configuration.js';
 const routes = { datacenters: 'datacenter', clusters: 'cluster', hosts: 'host', vms: 'vm', 'vm-volumes': 'vmVolume', disks: 'disk' };
 const views = { vms: 'vm', hosts: 'host', disks: 'disk', vmVolumes: 'vmVolume' };
 const validId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
@@ -13,7 +14,7 @@ export function resourceUrl(value, origin, primary = false) {
     const params = new URLSearchParams(search);
     if (!primary && params.has('sidebar') && /^\/(overview|datacenters|clusters|hosts|vms|vm-volumes|disks)(\/[A-Za-z0-9_-]{1,128})?\/?$/.test(path)) {
       const sidebar = JSON.parse(params.get('sidebar'));
-      if (!['datacenter', 'cluster', 'host', 'vm', 'vmVolume', 'disk'].includes(sidebar?.type) || !validId(sidebar.id)) return null;
+      if (!RESOURCE_TYPES.includes(sidebar?.type) || sidebar.type === 'organization' || !validId(sidebar.id)) return null;
       return { type: sidebar.type, id: sidebar.id, href: url.href };
     }
     if (!match) return null;
@@ -23,6 +24,46 @@ export function resourceUrl(value, origin, primary = false) {
 }
 export function currentResource(win) { return resourceUrl(win.location.href, win.location.origin); }
 const label = node => (node?.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 200);
+const normalized = value => String(value || '').toLowerCase().replace(/[\s_-]+/g, '');
+const nameHeaders = ['名称', 'name'];
+// Full, distinctive combinations from the supplied Tower screenshots. A generic
+// name/MAC/VLAN column alone cannot distinguish physical and VM-owned objects.
+const tableSignatures = [
+  ['nic', [nameHeaders, ['mac地址', 'mac address'], ['rdma'], ['网口用途', 'nic usage', 'nic purpose']]],
+  ['vmGroup', [nameHeaders, ['组目录', 'group directory'], ['虚拟机数量', 'vm count']]],
+  ['vmPlacementGroup', [nameHeaders, ['状态', 'status'], ['虚拟机数', 'vm count'], ['描述', 'description'], ['创建时间', 'created at', 'creation time']]],
+  ['vmNetwork', [nameHeaders, ['vlan类型', 'vlan type'], ['vlan id'], ['所属虚拟分布式交换机', '所属分布式虚拟交换机', 'distributed virtual switch', 'virtual distributed switch']]],
+  ['systemNetwork', [nameHeaders, ['类型', 'type'], ['子网掩码', 'subnet mask'], ['网关', 'gateway'], ['ip地址', 'ip address']]],
+  ['vmSnapshot', [nameHeaders, ['源虚拟机', 'source vm'], ['独占物理容量', 'exclusive physical capacity'], ['快照时间', 'snapshot time'], ['关联快照计划', 'associated snapshot plan']]],
+  ['vmSnapshot', [nameHeaders, ['独占物理容量', 'exclusive physical capacity', 'size'], ['local_created_at', '快照时间', 'snapshot time'], ['snapshot_group', '关联快照计划', 'associated snapshot plan']]],
+  ['snapshotPlan', [nameHeaders, ['上次快照任务结果', 'last snapshot task result'], ['快照对象数', 'snapshot object count'], ['可用快照组', 'available snapshot groups']]],
+  ['vds', [nameHeaders, ['关联主机数', 'associated host count'], ['网口绑定模式', 'nic bonding mode'], ['网口连通性检测', 'nic connectivity check']]],
+];
+function headerEvidence(row, win) {
+  const table = row.closest('table'), boundary = '.ant-table-container,.ant-table-wrapper,.ant-table', wrapper = table?.closest(boundary), pane = row.closest('.drawer-content-inner');
+  let headers = [...(table?.querySelectorAll('thead th') || [])].filter(node => node.closest('table') === table);
+  if (!headers.length && wrapper) headers = [...wrapper.querySelectorAll('thead th')].filter(node => node.closest(boundary) === wrapper);
+  headers = headers.filter(node => isVisible(node, win) && node.closest('.drawer-content-inner') === pane && !node.closest('[hidden],[aria-hidden="true"]'));
+  const tokens = new Set(headers.flatMap(node => [label(node), node.getAttribute('unique'), ...[...node.classList].filter(name => name.startsWith('cell_')).map(name => name.slice(5))]).filter(Boolean).map(normalized));
+  const has = aliases => aliases.some(value => tokens.has(normalized(value)));
+  const matches = new Set(tableSignatures.filter(([, columns]) => columns.every(has)).map(([type]) => type));
+  // Observed 4.9 snapshot table: name/local_created_at/snapshot_group. It can
+  // live inside the VM drawer while the outer route still says view="vms".
+  const snapshotMarker = has(['快照时间', 'snapshot time', 'snapshot_group']);
+  return { type: matches.size === 1 ? [...matches][0] : null, conflict: matches.size > 1, snapshotMarker };
+}
+function rowType(row, win, evidence) {
+  if (evidence.conflict) return null;
+  if (row.closest('.drawer-content-inner') && currentResource(win)?.type === 'vm' && ['disk', 'nic'].includes(evidence.type)) return null;
+  if (evidence.type) return evidence.type;
+  if (evidence.snapshotMarker) return null;
+  // The surrounding list's view does not identify a child table in a VM pane.
+  if (row.closest('.drawer-content-inner') && currentResource(win)?.type === 'vm') return null;
+  let type;
+  try { type = views[JSON.parse(new URLSearchParams(win.location.hash.split('?')[1]).get('view'))]; } catch {}
+  if (!type) type = { '/vms': 'vm', '/hosts': 'host', '/vm-volumes': 'vmVolume', '/disks': 'disk' }[win.location.hash.slice(1).split('?')[0].replace(/\/$/, '')];
+  return type || null;
+}
 function detailFrame(node) {
   const direct = node.closest('.frame'); if (direct) return direct;
   const pane = node.closest('.drawer-content-inner');
@@ -49,28 +90,36 @@ function treeResource(element, win) {
   return null;
 }
 export function identifyResource(element, win) {
-  if (!element?.closest || element.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="menu"],[role="dialog"],.ant-modal,.ant-dropdown,.c89-plugin-root,[data-rivetin-context-menu]')) return null;
+  if (!element?.closest || element.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="menu"],[role="dialog"],.ant-modal,.ant-dropdown,.c89-plugin-root,[data-rivetin-context-menu],[data-rivetin-object-menu],[data-rivetin-resource-menu]')) return null;
   const tree = treeResource(element, win); if (tree) return tree;
   const collapse = element.closest('.ant-collapse-item,.nic-item'), disk = element.closest('.disk-item');
   const current = currentResource(win);
   if (current?.type === 'vm' && (disk || collapse?.querySelector('[data-testid="Nic24GradientBlueIcon"]'))) {
     const node = disk || collapse, header = node.querySelector('.ant-collapse-header');
     const frame = detailFrame(node), parentName = label(frame?.querySelector('.title-wrapper .header-title'));
-    if (frame && parentName) return { ...current, name: label(node.querySelector('.name') || header || node), parentName, internal: disk ? 'vmDisk' : 'nic', element: node, select: null };
+    if (frame && parentName) return { ...current, name: label(node.querySelector('.name') || header || node), parentName, parentVmId: current.id, internal: disk ? 'vmDisk' : 'nic', element: node, select: null };
   }
-  const anchor = element.closest('a[href]');
-  if (anchor) { const parsed = resourceUrl(anchor.href, win.location.origin); return parsed && label(anchor) ? { ...parsed, name: label(anchor), element: anchor, select: anchor } : null; }
   const row = element.closest('tr[data-row-key]'), cell = row?.querySelector('td[unique="name"],td.cell_name,td[unique="path"],td.cell_path');
+  const evidence = row ? headerEvidence(row, win) : null;
+  const anchor = element.closest('a[href]');
+  if (anchor) {
+    const parsed = resourceUrl(anchor.href, win.location.origin);
+    if (cell?.contains(anchor) && evidence?.conflict) return null;
+    if (cell?.contains(anchor) && evidence?.snapshotMarker && !evidence.type) return null;
+    if (parsed && cell?.contains(anchor) && evidence?.type && (parsed.type !== evidence.type || parsed.id !== row.getAttribute('data-row-key'))) return null;
+    if (parsed && label(anchor)) return { ...parsed, name: label(anchor), element: anchor, select: anchor };
+    if (!cell?.contains(anchor) || !evidence?.type) return null;
+  }
   if (row && cell) {
     const targetCell = element.closest('td'), targetColumn = targetCell?.getAttribute('unique');
     if (element.closest('button') && !['name', 'path', '_action_'].includes(targetColumn)) return null;
     const id = row.getAttribute('data-row-key'); if (!validId(id)) return null;
     const anchors = [...cell.querySelectorAll('a[href]')].map(a => ({ ...resourceUrl(a.href, win.location.origin), a })).filter(a => a.type && a.id === id);
-    let type = anchors.length === 1 ? anchors[0].type : null;
-    if (!type) { try { type = views[JSON.parse(new URLSearchParams(win.location.hash.split('?')[1]).get('view'))]; } catch {} }
-    if (!type) { const path = win.location.hash.slice(1).split('?')[0]; type = { '/vms': 'vm', '/hosts': 'host', '/vm-volumes': 'vmVolume', '/disks': 'disk' }[path]; }
+    const inferred = rowType(row, win, evidence);
+    let type = evidence.conflict ? null : anchors.length === 1 ? anchors[0].type : inferred;
+    if (evidence.type && type !== evidence.type) return null;
     if (!type || !label(cell)) return null;
-    return { type, id, name: label(cell), element: row, select: anchors.length === 1 ? anchors[0].a : cell, href: anchors.length === 1 ? anchors[0].href : null };
+    return { type, id, name: label(cell), ...(type === 'vmSnapshot' && current?.type === 'vm' && row.closest('.drawer-content-inner') ? { parentVmId: current.id } : {}), element: row, select: anchors.length === 1 ? anchors[0].a : cell, href: anchors.length === 1 ? anchors[0].href : null };
   }
   const title = element.closest('.title-wrapper .header-title,.title-wrapper .title-content,.title-wrapper .title-text');
   const titleResource = title?.closest('.frame') ? current : resourceUrl(win.location.href, win.location.origin, true);

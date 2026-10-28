@@ -9,7 +9,10 @@ import { defaults, PLUGIN_ID } from '../src/configuration.js';
 test('context-menu package lifecycle preserves independent settings, disable and rollback', async t => {
   const { service, directory, install } = await fixture(t);
   const manifest = JSON.parse(await readFile(new URL('../rivetin.json', import.meta.url)));
-  assert.equal(manifest.compatibility.schemaVersion, undefined);
+  assert.equal(manifest.compatibility.schemaVersion, 2);
+  assert.equal(manifest.compatibility.frameworkMinVersion, '0.2.0');
+  assert.equal(manifest.compatibility.frameworkMaxVersionExclusive, '0.3.0');
+  assert.equal(manifest.compatibility.smtx, 'none');
   assert.equal(manifest.compatibility.frameworkApi, 1);
   assert.deepEqual(manifest.compatibility.towerBuilds, ['4.9.0']);
   function packageBytes(version) {

@@ -18,6 +18,7 @@ function fixture(t, overrides = {}) {
   const execution = createConfirmedExecution({ bridge, win,
     validate: overrides.validate || (({ actionId, snapshot, capabilities }) => ({ id: actionId, enabled: snapshot.status === 'RUNNING' && capabilities[actionId]?.allowed === true })),
     buildRequest: overrides.buildRequest || (() => ({ operationId: 'ShutDownVm', body: { where: { id: 'vm-a' } } })),
+    preflight: overrides.preflight,
     maxPolls: overrides.maxPolls || 120,
     onProgress(value) { progress.push(value); overrides.onProgress?.(value); },
   });
@@ -152,4 +153,23 @@ test('invalid confirmation values fail locally without invoking a bridge', async
   delete malformed[0].actionId;
   for (const value of malformed) assert.equal((await f.execution.confirm(value)).code, 'INVALID_CONFIRMATION');
   assert.equal(f.reads.length, 0); assert.equal(f.submissions.length, 0);
+});
+
+test('action-specific preflight supplies freshly frozen choices without a stale generic read', async t => {
+  let calls = 0, observed;
+  const source = { ...fresh(), choices: { vm_nics: [{ id: 'nic-a', vm: { id: 'vm-a' } }] } };
+  const f = fixture(t, { preflight: async (captured, { signal }) => {
+    calls++; assert.equal(captured.resource.id, 'vm-a'); assert.equal(signal.aborted, false); return source;
+  }, validate: value => { observed = value; return { id: value.actionId, enabled: value.choices.vm_nics[0].vm.id === value.resource.id }; } });
+  assert.equal((await f.execution.confirm(request())).status, 'succeeded');
+  assert.equal(calls, 1); assert.equal(f.reads.length, 0); assert.equal(f.submissions.length, 1);
+  assert.ok(Object.isFrozen(observed.choices.vm_nics[0])); source.choices.vm_nics[0].vm.id = 'vm-b';
+  assert.equal(observed.choices.vm_nics[0].vm.id, 'vm-a');
+});
+
+test('rejected or cancelled action choices cannot enter the mutation transport', async t => {
+  const pending = deferred(), a = fixture(t, { preflight: async () => { throw new Error('EXAMPLE_PRIVATE_DIAGNOSTIC'); } });
+  assert.equal((await a.execution.confirm(request())).status, 'failed'); assert.equal(a.submissions.length, 0);
+  const b = fixture(t, { preflight: () => pending.promise }), task = b.execution.confirm(request()); await settle(); b.execution.stop();
+  assert.equal((await task).status, 'cancelled'); pending.resolve(fresh()); await settle(); assert.equal(b.submissions.length, 0);
 });

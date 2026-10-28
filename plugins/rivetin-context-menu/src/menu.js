@@ -103,7 +103,7 @@ export function installContextMenu({ win, store, history, getLocale = () => 'zh-
     menu.addEventListener('keydown', event => { event.stopPropagation(); key(event); });
     menu.setAttribute('aria-label', t('资源右键菜单', 'Resource context menu')); menu.dataset.contextHref = win.location.href; active = resource;
     const heading = doc.createElement('div'); heading.className = 'rvcm-heading';
-    const kind = doc.createElement('span'); kind.className = 'rvcm-kind'; kind.textContent = resource.internal ? t(resource.internal === 'vmDisk' ? '虚拟磁盘' : '网卡', resource.internal === 'vmDisk' ? 'Virtual disk' : 'Network adapter') : t(...names[resource.type]); heading.append(kind, doc.createTextNode(resource.name)); menu.append(heading);
+    const kind = doc.createElement('span'); kind.className = 'rvcm-kind'; kind.textContent = resource.internal ? t(resource.internal === 'vmDisk' ? '虚拟磁盘' : '网卡', resource.internal === 'vmDisk' ? 'Virtual disk' : 'Network adapter') : t(...(names[resource.type] || ['资源', 'Resource'])); heading.append(kind, doc.createTextNode(resource.name)); menu.append(heading);
     function item(title, glyph, action, disabled = false, danger = false) {
       const button = doc.createElement('button'); button.type = 'button'; button.setAttribute('role', 'menuitem'); button.disabled = disabled;
       if (danger) button.className = 'rvcm-danger';

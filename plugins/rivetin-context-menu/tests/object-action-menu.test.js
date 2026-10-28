@@ -57,7 +57,7 @@ test('VM menus expose every catalog group and action without sidebar, navigation
     f.group(group.id).click();
     const actions = [...f.doc.querySelectorAll('[data-action-id]')]; count += actions.length;
     assert.deepEqual(actions.map(node => node.dataset.actionId), group.items.map(entry => entry.id));
-    f.doc.querySelector('.rvm-back').click();
+    assert.equal(f.doc.querySelectorAll('[data-group-id]').length, 7, 'parent directory remains visible alongside submenu');
   }
   assert.equal(count, VM_ACTION_CATALOG.flatMap(group => group.items).length);
   assert.equal(f.win.location.href, href); assert.equal(f.doc.querySelector('.frame,.drawer-content-inner'), null);
@@ -66,11 +66,11 @@ test('VM menus expose every catalog group and action without sidebar, navigation
 });
 
 test('without an adapter the complete directory remains readable and every action is disabled', async t => {
-  const f = fixture(t, { noProvider: true }); await f.show(); assert.match(f.root().textContent, /操作适配器尚未接入/);
+  const f = fixture(t, { noProvider: true }); await f.show(); assert.match(f.root().textContent, /provider-unavailable/);
   for (const group of VM_ACTION_CATALOG) {
     f.group(group.id).click();
-    for (const button of f.doc.querySelectorAll('[data-action-id]')) { assert.equal(button.disabled, true); assert.match(button.textContent, /操作适配器尚未接入/); button.click(); }
-    f.doc.querySelector('.rvm-back').click();
+    for (const button of f.doc.querySelectorAll('[data-action-id]')) { assert.equal(button.disabled, true); assert.match(button.textContent, /provider-unavailable/); button.click(); }
+    assert.equal(f.doc.querySelector('.rvm-back'), null, 'there is no drill-down return step');
   }
   assert.equal(f.reads.length, 0); assert.equal(f.opens.length, 0);
 });
@@ -209,7 +209,7 @@ test('hiding a borrowed event container cancels pending work while the source st
   assert.equal(f.opens.length, 0); assert.equal(f.root(), null);
 });
 
-test('keyboard navigation stays inside the menu and supports drilldown and back', async t => {
+test('keyboard navigation stays inside the menu and enters or leaves a cascading submenu', async t => {
   const f = fixture(t, { locale: 'en-US' }); await f.show(); const first = f.group('vm.power'); first.focus();
   const key = value => f.doc.activeElement.dispatchEvent(new f.win.KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true }));
   key('ArrowDown'); assert.equal(f.doc.activeElement.dataset.groupId, 'vm.console'); key('Enter'); assert.ok(f.action('vm.console.open'));
@@ -219,7 +219,7 @@ test('keyboard navigation stays inside the menu and supports drilldown and back'
 
 test('unsupported form results never claim an action completed', async t => {
   const f = fixture(t, { provider: { read: async () => state(), open: async () => ({ status: 'unsupported' }) } });
-  await f.show('vm.power'); f.action('vm.power.shutdown').click(); await settle(); assert.ok(f.root()); assert.match(f.root().textContent, /尚无已验证的表单适配/);
+  await f.show('vm.power'); f.action('vm.power.shutdown').click(); await settle(); assert.ok(f.root()); assert.match(f.root().textContent, /unexpected/);
 });
 
 test('read errors retain a disabled directory and expose only a generic error', async t => {

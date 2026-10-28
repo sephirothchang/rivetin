@@ -33,10 +33,10 @@ async function compileActualDemo() {
   } finally { await new Promise((resolve, reject) => compiler.close(error => error ? reject(error) : resolve())); }
 }
 
-test('actual React 16 demo form accepts select/text changes and preserves snapshot/name confirmation gates', { timeout: 20000 }, async t => {
+test('historical legacy-0.3 React 16 research form accepts pooled select/text events and preserves confirmation gates', { timeout: 20000 }, async t => {
   const bundle = await compileActualDemo();
   const dom = new JSDOM('<!doctype html><div id="demo-root"></div>', {
-    url: 'https://demo.example.invalid/#/clusters/demo-cluster?view=%22vms%22', runScripts: 'outside-only', pretendToBeVisual: true,
+    url: 'https://demo.example.invalid/#/clusters/demo-cluster?view=%22vms%22&forms=legacy-0.3', runScripts: 'outside-only', pretendToBeVisual: true,
   });
   const win = dom.window, doc = win.document, originals = new Map(), failures = [];
   // Use React 16's timer scheduler in Node: its browser branch would retain Node MessagePorts after jsdom closes.
@@ -79,6 +79,7 @@ test('actual React 16 demo form accepts select/text changes and preserves snapsh
   }
   try {
     await flush(() => win.eval(bundle));
+    assert.match(doc.querySelector('[data-demo-legacy-0-3]')?.textContent || '', /旧 0\.3 研究演示.*未采用路线/);
     assert.ok(doc.querySelector('[aria-label="Demo VM state"]'));
     await flush(() => change(doc.querySelector('[aria-label="Demo VM state"]'), 'STOPPED'));
     await openSnapshotAction('vm.snapshots.restore');
@@ -105,7 +106,82 @@ test('actual React 16 demo form accepts select/text changes and preserves snapsh
     await flush(() => change(field('快照名称'), '   ')); assert.equal(confirm().disabled, true, 'blank names remain invalid');
     assertHealthy(); assert.ok(!win.location.hash.includes('sidebar'), 'object preview forms must not open the native sidebar');
   } finally {
-    win.dispatchEvent(new win.Event('pagehide')); act(() => ReactDOM.unmountComponentAtNode(doc.querySelector('#demo-root'))); dom.window.close();
+    win.dispatchEvent(new win.Event('pagehide')); act(() => { ReactDOM.unmountComponentAtNode(doc.querySelector('#demo-root')); }); dom.window.close();
     for (const [key, descriptor] of originals) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; }
+  }
+});
+
+test('default demo and obsolete forms=production open the simulated native CPU dialog directly from a list context menu without HTTP or legacy forms', { timeout: 20000 }, async t => {
+  const bundle = await compileActualDemo();
+  for (const query of ['', '&forms=production']) {
+    const dom = new JSDOM('<!doctype html><div id="demo-root"></div>', {
+      url: `https://demo.example.invalid/#/clusters/demo-cluster?view=%22vms%22${query}`, runScripts: 'outside-only', pretendToBeVisual: true,
+    });
+    const win = dom.window, doc = win.document, originals = new Map(), failures = [], httpCalls = [];
+    for (const [key, value] of Object.entries({ window: win, document: doc, navigator: win.navigator, HTMLElement: win.HTMLElement, Node: win.Node, MessageChannel: undefined })) {
+      originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key)); Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+    }
+    win.HTMLElement.prototype.getClientRects = function () { return this.closest('[hidden]') ? [] : [{ width: 180, height: 100 }]; };
+    win.HTMLElement.prototype.getBoundingClientRect = () => ({ left: 40, top: 50, width: 180, height: 100, right: 220, bottom: 150 });
+    win.fetch = (...args) => { httpCalls.push(args); throw new Error('LOCAL_DEMO_MUST_NOT_USE_HTTP'); };
+    win.XMLHttpRequest.prototype.open = (...args) => { httpCalls.push(args); throw new Error('LOCAL_DEMO_MUST_NOT_USE_HTTP'); };
+    win.addEventListener('error', event => { failures.push(event.error || new Error(event.message)); event.preventDefault(); });
+    const React = require('react'), ReactDOM = require('react-dom'), { act } = require('react-dom/test-utils');
+    win.__TEST_REACT__ = React; win.__TEST_REACT_DOM__ = ReactDOM;
+    const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+    async function flush(action = () => {}) { await act(async () => { action(); await tick(); await tick(); }); }
+    async function until(predicate) {
+      const deadline = Date.now() + 3000;
+      while (!predicate() && Date.now() < deadline) { await flush(); await new Promise(resolve => setTimeout(resolve, 10)); }
+      assert.ok(predicate(), 'the native host dialog did not appear within the bounded wait');
+    }
+    const assertNoSelfForms = () => {
+      assert.equal(doc.querySelector('[data-demo-legacy-0-3]'), null);
+      assert.equal(doc.querySelector('[data-demo-legacy-object-form]'), null);
+      assert.equal(doc.querySelector('[data-rivetin-action-form]'), null);
+      assert.equal(doc.querySelector('[role="dialog"][aria-label="对象操作预览"]'), null);
+      assert.deepEqual(httpCalls, []);
+    };
+    try {
+      await flush(() => win.eval(bundle)); assertNoSelfForms();
+      const source = doc.querySelector('tr[data-row-key="ubuntu-demo"] td[unique="name"]'); assert.ok(source);
+      await flush(() => source.dispatchEvent(new win.MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 150, clientY: 100 })));
+      const menu = doc.querySelector('[data-rivetin-object-menu]'); assert.ok(menu, 'the default provider must expose native entry points');
+      assert.match(menu.querySelector('[role="status"]')?.textContent || '', /CloudTower 官方原生界面/);
+      assert.equal(doc.querySelector('.drawer-content-inner'), null, 'right-click alone must not open the sidebar');
+      assert.equal(doc.querySelector('.ant-modal'), null, 'right-click alone must not open an official configuration dialog');
+      assertNoSelfForms();
+      const hardwareGroup = doc.querySelector('[data-group-id="vm.hardware"]'); assert.ok(hardwareGroup);
+      await flush(() => hardwareGroup.click());
+      const cpu = doc.querySelector('[data-action-id="vm.hardware.cpu"]'); assert.ok(cpu); assert.equal(cpu.disabled, false);
+      await flush(() => cpu.click());
+      await until(() => Boolean(doc.querySelector('[data-demo-host-native-dialog] .ant-modal-title')));
+      assert.equal(doc.querySelector('[data-demo-host-native-dialog] .ant-modal-title').textContent, '编辑虚拟机');
+      assert.ok(doc.querySelector('[data-demo-host-native-dialog].ant-modal [role="alertdialog"]'));
+      assert.match(doc.querySelector('[data-demo-host-native-dialog]').textContent, /模拟宿主官方界面/);
+      assert.equal(doc.querySelector('[data-rivetin-object-menu]'), null);
+      const sidebar = JSON.parse(new URLSearchParams(win.location.hash.split('?')[1]).get('sidebar'));
+      assert.deepEqual({ type: sidebar.type, id: sidebar.id }, { type: 'vm', id: 'ubuntu-demo' });
+      const migration = doc.querySelector('.drawer-content-inner .toolbar button[title="迁移"]'); assert.ok(migration?.disabled); assert.ok(migration.querySelector('svg[data-testid="Migrate16GradientBlueIcon"]'));
+      assert.ok(!doc.querySelector('.demo-status').textContent.includes('模拟操作已确认'), 'opening the host dialog must not activate its final confirmation');
+      assertNoSelfForms();
+      await flush(() => [...doc.querySelectorAll('[data-demo-host-native-dialog] button')].find(button => button.textContent === '取消').click());
+      assert.equal(doc.querySelector('.ant-modal'), null);
+      await flush(() => source.dispatchEvent(new win.MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 150, clientY: 100 })));
+      const snapshotsGroup = doc.querySelector('[data-group-id="vm.snapshots"]'); assert.ok(snapshotsGroup);
+      await flush(() => snapshotsGroup.click());
+      const snapshots = doc.querySelector('[data-action-id="vm.snapshots.list"]'); assert.ok(snapshots); assert.equal(snapshots.disabled, false);
+      await flush(() => snapshots.click());
+      await until(() => {
+        const target = JSON.parse(new URLSearchParams(win.location.hash.split('?')[1]).get('sidebar'));
+        return target?.id === 'ubuntu-demo' && target.view === 'snapshot' && [...doc.querySelectorAll('.detail-tabs .tab-item.active')].some(tab => tab.textContent === '快照' && tab.getAttribute('aria-selected') === 'true');
+      });
+      assert.equal(doc.querySelector('.ant-modal'), null, 'browsing snapshots changes the native tab without opening a configuration dialog');
+      assertNoSelfForms();
+      assert.equal(failures.length, 0, failures.map(error => error.stack || String(error)).join('\n'));
+    } finally {
+      win.dispatchEvent(new win.Event('pagehide')); act(() => { ReactDOM.unmountComponentAtNode(doc.querySelector('#demo-root')); }); win.close();
+      for (const [key, descriptor] of originals) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; }
+    }
   }
 });
