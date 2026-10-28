@@ -12,7 +12,10 @@ if (index < 0 || !args[index + 1]) {
     if (!path.isAbsolute(directory)) throw new Error('ABSOLUTE_DATA_PATH_REQUIRED');
     const service = createService(directory, { builtinPackages: await builtinPackages({ required: command === 'init' }) }), actor = { id: 'local-operator', name: 'Local CLI operator', source: 'cli', admin: true };
     let result;
-    if (command === 'init') result = await service.initialize(actor);
+    if (command === 'init') {
+      if (args.length && (args.length !== 2 || args[0] !== '--upgrade-from' || !args[1])) throw new Error('INVALID_INIT_ARGUMENTS');
+      result = await service.initialize(actor, args.length ? { upgradeFrom: args[1] } : {});
+    }
     else if (command === 'status') result = await service.runtime();
     else if (command === 'disable') result = await service.disable(actor);
     else if (command === 'enable') result = args[0] ? await service.change('enable', args[0], null, actor) : await service.enable(actor);

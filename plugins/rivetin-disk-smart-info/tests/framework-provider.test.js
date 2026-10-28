@@ -19,6 +19,7 @@ import { createDataProviders } from '../../../framework/src/data-providers.js';
 import createPlugin from '../src/definition.js';
 import { PLUGIN_ID } from '../src/configuration.js';
 import { loadDiskData, readHistoryPage } from '../src/provider.js';
+import { collectDisk, createRequestId } from '../src/collection.js';
 import { sample, disks } from '../demo/fixtures.js';
 
 const requireFramework = createRequire(new URL('../../../framework/package.json', import.meta.url));
@@ -54,7 +55,7 @@ async function setup(t) {
     },
   });
   t.after(async () => {
-    await service.sshChannel.stop();
+    await Promise.all([service.smartCollection.stop(), service.sshChannel.stop()]);
     const target = path.resolve(directory); if (!target.startsWith(base + path.sep)) throw new Error('TEST_PATH_OUTSIDE_WORKSPACE');
     await rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   });
@@ -190,4 +191,48 @@ test('official shared fixture exposes a failed day followed by a recovered daily
   f.failRun(false); await f.collect(); const recovered = await loadDiskData(f.provider, 'example-disk', abort());
   assert.equal(recovered.latest.status, 'ok'); assert.equal(recovered.latest.gapCode, 'SMART_EXECUTION_TIMEOUT');
   assert.equal(recovered.history.length, 1); assert.equal(recovered.previous, null); assert.equal(f.runs(), 2);
+});
+
+test('collect now crosses the real shared HTTP adapter and executes only the selected approved disk', async t => {
+  const f = await smartFixture(t, { twoDevices: true }), before = await loadDiskData(f.provider, 'example-disk', abort());
+  await f.approve(); let posts = 0, gets = 0;
+  const provider = { ...f.provider, collect: args => { posts++; return f.provider.collect(args); }, collection: args => { gets++; return f.provider.collection(args); } };
+  const outcome = await collectDisk(provider, { identity: before.identity, requestId: createRequestId(globalThis.crypto), signal: abort(), intervalMs: 1, timeoutMs: 5000 });
+  assert.equal(outcome.status, 'succeeded'); assert.equal(posts, 1); assert.ok(gets >= 1); assert.equal(f.runs(), 1);
+  assert.deepEqual(f.commands, ['sudo -n -- /usr/sbin/smartctl --json=c --all /dev/sda']);
+  const refreshed = await loadDiskData(f.provider, 'example-disk', abort());
+  assert.equal(refreshed.latest.status, 'ok'); assert.equal(refreshed.latest.metrics.find(metric => metric.id === 'power_on_hours').value, '123'); assert.equal(refreshed.history.length, 1);
+  const repeated = await collectDisk(provider, { identity: refreshed.identity, requestId: createRequestId(globalThis.crypto), signal: abort(), intervalMs: 1, timeoutMs: 5000 });
+  assert.equal(repeated.status, 'succeeded');
+  const newer = await loadDiskData(f.provider, 'example-disk', abort());
+  assert.ok(Date.parse(newer.latest.collectedAt) > Date.parse(refreshed.latest.collectedAt)); assert.equal(newer.history.length, 1);
+  assert.equal(posts, 2); assert.equal(f.runs(), 2); assert.ok(f.commands.every(command => command.endsWith('/dev/sda')));
+});
+
+test('shared collection without approval is diagnostic and executes no mock SSH command', async t => {
+  const f = await smartFixture(t), before = await loadDiskData(f.provider, 'example-disk', abort());
+  const outcome = await collectDisk(f.provider, { identity: before.identity, requestId: createRequestId(globalThis.crypto), signal: abort(), intervalMs: 1, timeoutMs: 5000 });
+  assert.equal(outcome.status, 'failed'); assert.equal(outcome.code, 'SSH_APPROVAL_REQUIRED'); assert.equal(f.runs(), 0);
+  assert.equal((await loadDiskData(f.provider, 'example-disk', abort())).latest.code, 'SMART_NO_SAMPLE');
+});
+
+test('shared polling rechecks authorization for the pinned identity', async t => {
+  const f = await smartFixture(t), before = await loadDiskData(f.provider, 'example-disk', abort()); await f.approve();
+  const provider = { ...f.provider, collection: args => { f.deny(); return f.provider.collection(args); } };
+  await assert.rejects(collectDisk(provider, { identity: before.identity, requestId: createRequestId(globalThis.crypto), signal: abort(), intervalMs: 1, timeoutMs: 5000 }), { code: 'SMART_DISK_FORBIDDEN' });
+});
+
+test('actual plugin button rejects unapproved execution then refreshes through shared HTTP after local approval', async t => {
+  const f = await setup(t); await f.bind();
+  const plugin = createPlugin({ React: requireFramework('react'), win: f.win, getLocale: () => 'zh-CN', options: { diskSmartInfo: { provider: f.provider } } });
+  let stop; t.after(() => { stop?.(); plugin.store.dispose(); }); await plugin.store.load(); stop = plugin.activate();
+  const waitFor = async check => { const end = Date.now() + 5000; while (!check() && Date.now() < end) await new Promise(resolve => setTimeout(resolve, 20)); assert.ok(check()); };
+  f.win.document.querySelector('[data-pk-smart-tab]').click(); await waitFor(() => f.win.document.querySelector('[data-smart-collect]')?.disabled === false);
+  f.win.document.querySelector('[data-smart-collect]').click(); await waitFor(() => f.win.document.querySelector('.pk-smart-collection')?.textContent.includes('尚未审核'));
+  assert.equal(f.state.runs, 0);
+  const review = await f.service.sshChannel.review(PLUGIN_ID, admin); await f.service.sshChannel.approve({ pluginId: PLUGIN_ID, challenge: review.challenge, digest: review.digest, acknowledged: true }, admin);
+  f.win.document.querySelector('[data-smart-collect]').click();
+  await waitFor(() => f.win.document.querySelector('.pk-smart-table') && f.win.document.querySelector('.pk-smart-collection')?.textContent.includes('已完成'));
+  assert.equal(f.state.runs, 1); assert.match(f.win.document.querySelector('[data-pk-smart-panel]').textContent, /host-smartctl/);
+  assert.doesNotMatch(f.win.document.querySelector('[data-pk-smart-panel]').textContent, /本地模拟数据/);
 });

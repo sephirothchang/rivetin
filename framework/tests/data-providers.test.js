@@ -55,3 +55,19 @@ test('client propagates fixed HTTP status and caller abort without retrying writ
   await assert.rejects(client('/resource-actions/execute', 'POST', { pluginId }, { signal: controller.signal }), error => error.status === 403 && error.code === 'RESOURCE_ACTION_DENIED');
   assert.equal(calls, 1);
 });
+
+test('manual SMART bridge preserves single POST identity and validates poll operation IDs', async () => {
+  const calls = [], requestId = 'b5715eb5-d21a-49d0-89d5-18a059162010', operationId = 'f71f89ab-43c7-4696-a193-4d01eb76575a';
+  const controller = new AbortController();
+  const bridge = createDataProviders(async (...args) => { calls.push(args); return { schemaVersion: 1, operationId, status: 'running' }; }, pluginId).diskSmart;
+  await bridge.collect({ identity, requestId, signal: controller.signal });
+  await bridge.collection({ identity, operationId, signal: controller.signal });
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0].slice(0, 3), ['/data/disk-smart/collect', 'POST', { pluginId, diskId: identity.diskId, generation: identity.generation, requestId }]);
+  const params = new URL('http://example.invalid' + calls[1][0]).searchParams;
+  assert.equal(params.get('operationId'), operationId); assert.equal(params.get('generation'), identity.generation);
+  assert.ok(calls.every(call => call[3].signal === controller.signal));
+  await assert.rejects(bridge.collect({ identity, requestId: 'bad' }), /SMART_COLLECTION_REQUEST_INVALID/);
+  const invalid = createDataProviders(async () => ({ schemaVersion: 1, operationId: requestId, status: 'running' }), pluginId).diskSmart;
+  await assert.rejects(invalid.collection({ identity, operationId }), /SMART_COLLECTION_RESPONSE_INVALID/);
+});

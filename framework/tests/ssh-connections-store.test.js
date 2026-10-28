@@ -16,8 +16,12 @@ async function fixture(t) {
   await vault.saveConnections({ version: 1, operationId: randomUUID(), global: { username: 'example-reader', authType: 'password', password: { action: 'replace', value: 'EXAMPLE_SAVED_PASSWORD' }, privateKey: { action: 'keep' } }, clusters: [],
     hosts: [{ hostId: 'example-host', clusterId: 'example-cluster', address: '192.0.2.10', port: 22, hostKeySha256: 'a'.repeat(64), devices: [{ deviceId: 'example-disk', path: '/dev/sda', serial: 'EXAMPLE_SERIAL' }], connection: null }] });
   const failures = { load: false, put: '', inventory: false, malformed: false }, calls = [];
-  const client = async (route, method = 'GET', body) => {
-    calls.push({ route, method, body: body === undefined ? undefined : structuredClone(body) });
+  const client = async (route, method = 'GET', body, options = {}) => {
+    calls.push({ route, method, body: body === undefined ? undefined : structuredClone(body), signal: options.signal });
+    if (route === '/ssh-channel/preflight') {
+      assert.equal(method, 'POST'); if (failures.preflight) return failures.preflight(body, options);
+      throw new Error('SSH_PREFLIGHT_UNAVAILABLE');
+    }
     if (route === '/ssh-channel/inventory') {
       if (failures.inventory) throw new Error('EXAMPLE_PRIVATE_INVENTORY_ERROR');
       return { clusters: [{ id: 'tower-cluster-1', name: 'Example cluster' }], hosts: [{ id: 'tower-host-1', name: 'Example host', clusterId: 'tower-cluster-1', address: '192.0.2.20' }] };
@@ -106,16 +110,19 @@ test('SSH an edit made during a slow reload is retained without replacing its sa
   assert.equal(store.get().global.username, original.global.username); assert.equal(store.getDraft().global.password.value, 'EXAMPLE_NEW_PASSWORD'); assert.equal(store.status().dirty, true);
 });
 
-async function mount(t, f, locale = 'zh-CN') {
+async function mount(t, f, locale = 'zh-CN', options = {}) {
   const dom = new JSDOM('<div id="root"></div>', { url: 'https://tower.example.invalid' });
   globalThis.window = dom.window; globalThis.document = dom.window.document;
   const root = document.getElementById('root'), Settings = createSshConnectionSettings(React);
-  const render = async value => act(async () => { ReactDOM.render(React.createElement(Settings, { store: f.store, client: f.client, locale: value }), root); await new Promise(setImmediate); });
+  let enabled = options.preflightEnabled === true;
+  const render = async (value, nextEnabled = enabled) => act(async () => { enabled = nextEnabled; ReactDOM.render(React.createElement(Settings, { store: f.store, client: f.client, locale: value, preflightEnabled: enabled }), root); await new Promise(setImmediate); });
   await render(locale);
+  await act(async () => { for (let n = 0; n < 50 && f.store.status().loading; n++) await new Promise(resolve => setTimeout(resolve, 5)); });
+  assert.equal(f.store.status().loading, false, 'connection fixture reload completed');
   t.after(async () => { await act(async () => ReactDOM.unmountComponentAtNode(root)); dom.window.close(); delete globalThis.window; delete globalThis.document; });
   const label = text => [...document.querySelectorAll('label')].find(row => row.querySelector('span')?.textContent === text);
   const change = async (element, value) => act(async () => { testUtils.Simulate.change(element, { target: { value } }); await new Promise(setImmediate); });
-  return { render, label, change };
+  return { render, label, change, root };
 }
 
 test('SSH inventory names and existing aliases coexist; choosing a different host clears its pin and devices only in the draft', async t => {
@@ -143,4 +150,237 @@ test('SSH inventory failure or refresh never discards a secret draft or echoes s
   f.failures.inventory = false;
   await act(async () => { [...document.querySelectorAll('button')].find(button => button.textContent === '刷新目标清单').click(); await new Promise(setImmediate); });
   assert.equal(f.store.getDraft().global.password.value, 'EXAMPLE_NEW_PASSWORD'); assert.match(document.body.textContent, /Example host/);
+});
+
+async function savedOverrides(f, { cluster = true, host = true } = {}) {
+  const credential = (username, value) => ({ username, authType: 'password', password: { action: 'replace', value }, privateKey: { action: 'keep' } });
+  const draft = f.store.getDraft();
+  if (cluster) draft.clusters = [{ clusterId: 'tower-cluster-1', connection: credential('cluster-reader', 'EXAMPLE_CLUSTER_PASSWORD') }];
+  if (host) draft.hosts[0].connection = credential('host-reader', 'EXAMPLE_HOST_PASSWORD');
+  await f.vault.saveConnections({ ...draft, operationId: randomUUID() }); await f.store.load();
+}
+const scopeControl = index => document.querySelector(`select[aria-label="例外 ${index} 范围"]`);
+const targetControl = index => document.querySelector(`select[aria-label="例外 ${index} 对象"]`);
+async function clickButton(text) { await act(async () => { const button = [...document.querySelectorAll('button')].find(row => row.textContent === text); assert.ok(button, text); button.click(); await new Promise(setImmediate); }); }
+
+test('SSH unified exception cards project saved cluster and host overrides without changing the document or fetching secrets', async t => {
+  const f = await fixture(t); await savedOverrides(f); const before = f.store.getDraft(); const puts = f.calls.filter(call => call.method === 'PUT').length;
+  const ui = await mount(t, f);
+  assert.deepEqual(f.store.getDraft(), before); assert.equal(f.store.status().dirty, false);
+  assert.deepEqual([...document.querySelectorAll('.pk-ssh-exception')].map(row => row.dataset.sshScope), ['cluster', 'host']);
+  assert.equal(document.querySelectorAll('.pk-ssh-credential-editor').length, 3);
+  assert.equal(document.querySelectorAll('.pk-ssh-target .pk-ssh-credential-editor').length, 0);
+  assert.equal(document.querySelectorAll('input[type="password"],textarea').length, 0);
+  assert.equal(f.calls.filter(call => call.method === 'PUT').length, puts);
+  assert.doesNotMatch(document.body.textContent, /EXAMPLE_(SAVED|CLUSTER|HOST)_PASSWORD/);
+  await ui.render('en-US'); assert.match(document.body.textContent, /Exception rules|Host target settings/); assert.deepEqual(f.store.getDraft(), before);
+});
+
+test('SSH add-exception defaults to one unselected cluster rule without creating targets or saving', async t => {
+  const f = await fixture(t); await mount(t, f); const targets = f.store.getDraft().hosts;
+  await clickButton('+ 添加例外'); const draft = f.store.getDraft();
+  assert.equal(scopeControl(1).value, 'cluster'); assert.equal(targetControl(1).value, '');
+  assert.equal(draft.clusters.length, 1); assert.deepEqual(draft.hosts, targets); assert.equal(draft.clusters[0].connection.password.action, 'keep');
+  assert.equal(f.store.status().dirty, true); assert.equal(f.calls.filter(call => call.method === 'PUT').length, 0);
+  assert.equal([...targetControl(1).options].find(row => row.value === 'tower-cluster-1').textContent, 'Example cluster (tower-cluster-1)');
+});
+
+test('SSH deleting a host exception restores inheritance without deleting its target, pin or devices', async t => {
+  const f = await fixture(t); await savedOverrides(f); await mount(t, f);
+  const { connection, ...target } = f.store.getDraft().hosts[0];
+  const button = document.querySelector('button[aria-label="删除例外 2"]'); assert.ok(button.querySelector('svg'));
+  await act(async () => button.click());
+  assert.deepEqual(f.store.getDraft().hosts[0], { ...target, connection: null }); assert.equal(f.store.getDraft().clusters.length, 1);
+  assert.match(document.querySelector('[role="status"]').textContent, /指纹和设备映射保留/);
+  assert.equal((await f.vault.get('example-host')).password, 'EXAMPLE_HOST_PASSWORD');
+  assert.equal(f.calls.filter(call => call.method === 'PUT').length, 0);
+});
+
+test('SSH switching a host exception to cluster explicitly restores host inheritance and keeps its target intact', async t => {
+  const f = await fixture(t); await savedOverrides(f); const ui = await mount(t, f);
+  const { connection, ...target } = f.store.getDraft().hosts[0];
+  await ui.change(scopeControl(2), 'cluster'); const draft = f.store.getDraft();
+  assert.deepEqual(draft.hosts[0], { ...target, connection: null }); assert.equal(draft.clusters.length, 2);
+  assert.equal(draft.clusters[1].clusterId, ''); assert.deepEqual(draft.clusters[1].connection, connection);
+  assert.match(document.querySelector('[role="status"]').textContent, /已保存秘密不会迁移/);
+  assert.equal(targetControl(2).value, ''); assert.equal(f.calls.filter(call => call.method === 'PUT').length, 0);
+  assert.equal((await f.vault.get('example-host')).password, 'EXAMPLE_HOST_PASSWORD');
+});
+
+test('SSH switching cluster to an existing host merges only the exception and does not transfer saved cluster secrets', async t => {
+  const f = await fixture(t); await savedOverrides(f, { host: false }); const ui = await mount(t, f);
+  const before = f.store.getDraft().hosts[0]; await ui.change(scopeControl(1), 'host');
+  assert.equal(f.store.getDraft().hosts.length, 2); assert.equal(targetControl(1).value, '');
+  await ui.change(targetControl(1), 'example-host'); const draft = f.store.getDraft();
+  assert.equal(draft.clusters.length, 0); assert.equal(draft.hosts.length, 1);
+  const { connection, ...target } = draft.hosts[0], { connection: inherited, ...original } = before;
+  assert.deepEqual(target, original); assert.equal(connection.username, 'cluster-reader'); assert.deepEqual(connection.password, { action: 'keep' });
+  assert.equal(await f.store.save(), true);
+  assert.equal((await f.vault.connections()).hosts[0].effective.ready, false);
+  await assert.rejects(f.vault.get('example-host'), /^Error: SSH_CREDENTIAL_REQUIRED$/);
+});
+
+test('SSH a new host exception creates only a draft target and requires an independently verified pin', async t => {
+  const f = await fixture(t), ui = await mount(t, f); await clickButton('+ 添加例外'); await ui.change(scopeControl(1), 'host');
+  await ui.change(targetControl(1), 'tower-host-1'); const draft = f.store.getDraft(), target = draft.hosts.find(row => row.hostId === 'tower-host-1');
+  assert.equal(target.clusterId, 'tower-cluster-1'); assert.equal(target.address, '192.0.2.20'); assert.equal(target.hostKeySha256, ''); assert.deepEqual(target.devices, []);
+  assert.match(document.querySelector('.pk-ssh-exception').textContent, /尚缺可信指纹/);
+  assert.equal(await f.store.save(), false); assert.equal(f.store.status().dirty, true); assert.equal((await f.vault.list()).length, 1);
+});
+
+test('SSH duplicate exception targets are unavailable while configured aliases stay visible', async t => {
+  const f = await fixture(t); await savedOverrides(f); const ui = await mount(t, f);
+  assert.match(targetControl(2).textContent, /已配置映射|Configured mapping/);
+  await clickButton('+ 添加例外'); assert.equal(scopeControl(2).value, 'cluster');
+  assert.equal([...targetControl(2).options].find(row => row.value === 'tower-cluster-1').disabled, true);
+  await ui.change(scopeControl(2), 'host');
+  const emptyRule = [...document.querySelectorAll('.pk-ssh-exception')].find(row => row.querySelector('select[aria-label$="对象"]').value === '');
+  assert.equal([...emptyRule.querySelector('select[aria-label$="对象"]').options].find(row => row.value === 'example-host').disabled, true);
+});
+
+test('SSH removing an incomplete host exception leaves no empty target or accidental profile removal', async t => {
+  const f = await fixture(t), ui = await mount(t, f); const targets = f.store.getDraft().hosts;
+  await clickButton('+ 添加例外'); await ui.change(scopeControl(1), 'host');
+  await act(async () => document.querySelector('button[aria-label="删除例外 1"]').click());
+  assert.deepEqual(f.store.getDraft().hosts, targets); assert.equal(f.store.getDraft().clusters.length, 0);
+  assert.equal(document.querySelectorAll('.pk-ssh-exception').length, 0);
+});
+
+test('SSH typed replacement survives scope selection while existing secret summaries are never invented', async t => {
+  const f = await fixture(t), ui = await mount(t, f); await clickButton('+ 添加例外');
+  const card = document.querySelector('.pk-ssh-exception');
+  await ui.change(card.querySelector('select[aria-label="凭据操作"]'), 'replace');
+  await ui.change(card.querySelector('input[type="password"]'), 'EXAMPLE_NEW_SCOPE_PASSWORD');
+  await ui.change(scopeControl(1), 'host'); await ui.change(targetControl(1), 'example-host');
+  const current = document.querySelector('.pk-ssh-exception');
+  assert.equal(current.querySelector('input[type="password"]').value, 'EXAMPLE_NEW_SCOPE_PASSWORD');
+  assert.match(current.textContent, /此对象已保存凭据：未配置/);
+  assert.equal(f.store.getDraft().hosts[0].connection.password.value, 'EXAMPLE_NEW_SCOPE_PASSWORD');
+  assert.equal(f.calls.filter(call => call.method === 'PUT').length, 0); assert.doesNotMatch(JSON.stringify(f.store.get()), /EXAMPLE_NEW_SCOPE_PASSWORD/);
+});
+
+test('SSH exception priority tooltip and editor labels follow the host language without persisting UI-only fields', async t => {
+  const f = await fixture(t), ui = await mount(t, f); const before = f.store.getDraft();
+  await act(async () => document.querySelector('button[aria-label="规则优先级"]').click());
+  assert.equal(document.querySelector('button[aria-label="规则优先级"]').getAttribute('aria-expanded'), 'true');
+  assert.match(document.querySelector('[role="tooltip"]').textContent, /主机例外 > 集群例外 > 全局默认/);
+  await ui.render('en-US'); assert.match(document.querySelector('[role="tooltip"]').textContent, /host > cluster > global/);
+  assert.deepEqual(f.store.getDraft(), before); assert.equal(f.calls.filter(call => call.method === 'PUT').length, 0);
+  assert.deepEqual(Object.keys(f.store.getDraft()).sort(), ['clusters', 'global', 'hosts', 'version']);
+});
+
+const discoverText = '获取候选指纹（不认证）', verifyText = '验证 SSH（不执行命令）', confirmText = '二次确认并写入指纹草稿';
+const preflightCalls = f => f.calls.filter(call => call.route === '/ssh-channel/preflight');
+const preflightButton = text => [...document.querySelectorAll('button')].find(button => button.textContent === text);
+function observed(body, patch = {}) {
+  const sha256Hex = 'c'.repeat(64);
+  return { hostId: body.hostId, address: body.address, port: body.port, algorithm: 'ssh-ed25519', fingerprint: 'SHA256:' + Buffer.from(sha256Hex, 'hex').toString('base64').replace(/=+$/, ''), sha256Hex, challenge: 'example-preflight-challenge', expiresAt: new Date(Date.now() + 60000).toISOString(), ...patch };
+}
+async function acknowledge() { await act(async () => document.querySelector('.pk-ssh-pin-ack input').click()); }
+
+test('SSH preflight is gated by framework/plugin state and never runs automatically', async t => {
+  const f = await fixture(t), ui = await mount(t, f);
+  assert.equal(preflightButton(discoverText).disabled, true); assert.equal(preflightButton(verifyText).disabled, true); assert.equal(preflightCalls(f).length, 0);
+  assert.match(document.querySelector('.pk-ssh-preflight').textContent, /先启用框架与 SSH 通道插件/);
+  await ui.render('zh-CN', true);
+  assert.equal(preflightButton(discoverText).disabled, false); assert.equal(preflightButton(verifyText).disabled, false); assert.equal(preflightCalls(f).length, 0);
+});
+
+test('SSH fingerprint discovery reveals a consistent candidate without trusting it or writing a draft', async t => {
+  const f = await fixture(t); f.failures.preflight = body => observed(body); await mount(t, f, 'zh-CN', { preflightEnabled: true });
+  const original = f.store.getDraft(); await clickButton(discoverText);
+  assert.equal(preflightCalls(f).length, 1); assert.deepEqual(preflightCalls(f)[0].body, { action: 'discover', hostId: 'example-host', address: '192.0.2.10', port: 22 });
+  assert.match(document.querySelector('.pk-ssh-candidate').textContent, /尚未受信任|ssh-ed25519|SHA256:/);
+  assert.equal(document.querySelector('.pk-ssh-pin-ack input').checked, false); assert.equal(preflightButton(confirmText).disabled, true);
+  assert.deepEqual(f.store.getDraft(), original); assert.equal(f.calls.filter(call => call.method === 'PUT').length, 0);
+  await act(async () => preflightButton(confirmText).click()); assert.equal(preflightCalls(f).length, 1);
+});
+
+test('SSH fingerprint confirmation requires independent acknowledgment and updates only the pin draft before shared save', async t => {
+  const f = await fixture(t); let candidate;
+  f.failures.preflight = body => {
+    if (body.action === 'discover') { candidate = observed(body); return candidate; }
+    assert.deepEqual(body, { action: 'confirm', hostId: 'example-host', address: '192.0.2.10', port: 22, challenge: candidate.challenge, acknowledged: true });
+    return { hostId: body.hostId, address: body.address, port: body.port, sha256Hex: candidate.sha256Hex, confirmed: true };
+  };
+  await mount(t, f, 'zh-CN', { preflightEnabled: true }); const original = f.store.getDraft();
+  await clickButton(discoverText); await acknowledge(); assert.equal(preflightButton(confirmText).disabled, false); await clickButton(confirmText);
+  assert.deepEqual(f.store.getDraft(), { ...original, hosts: original.hosts.map(row => ({ ...row, hostKeySha256: 'c'.repeat(64) })) });
+  assert.equal((await f.vault.get('example-host')).hostKeySha256, 'a'.repeat(64)); assert.equal(f.calls.filter(call => call.method === 'PUT').length, 0);
+  assert.match(document.querySelector('.pk-ssh-preflight').textContent, /指纹已写入连接草稿，尚未保存/); assert.equal(preflightButton(verifyText).disabled, true);
+  assert.equal(document.querySelector('.pk-ssh-candidate'), null);
+  await act(async () => { assert.equal(await f.store.save(), true); });
+  assert.equal((await f.vault.get('example-host')).hostKeySha256, 'c'.repeat(64)); assert.equal(preflightButton(verifyText).disabled, false);
+});
+
+test('SSH authentication verification sends only the saved host ID and never creates approvals, schedules or commands', async t => {
+  const f = await fixture(t); f.failures.preflight = body => ({ hostId: body.hostId, verified: true, checkedAt: new Date().toISOString() });
+  const ui = await mount(t, f, 'zh-CN', { preflightEnabled: true }), before = f.store.getDraft(); await clickButton(verifyText);
+  assert.deepEqual(preflightCalls(f)[0].body, { action: 'verify', hostId: 'example-host' }); assert.deepEqual(f.store.getDraft(), before);
+  assert.match(document.querySelector('.pk-ssh-verified').textContent, /认证验证成功，未执行命令/);
+  assert.equal(f.calls.filter(call => call.method === 'PUT').length, 0);
+  assert.ok(f.calls.every(call => !['approve', 'run', 'schedule'].includes(call.body?.action)));
+  await ui.render('en-US'); assert.match(document.querySelector('.pk-ssh-verified').textContent, /no commands executed/);
+});
+
+test('SSH preflight never sends unsaved secrets and verification stays disabled for a dirty draft', async t => {
+  const f = await fixture(t); f.failures.preflight = body => observed(body); replace(f.store, 'EXAMPLE_UNSAVED_PREFLIGHT_SECRET');
+  await mount(t, f, 'zh-CN', { preflightEnabled: true }); assert.equal(preflightButton(verifyText).disabled, true);
+  await act(async () => preflightButton(verifyText).click()); assert.equal(preflightCalls(f).length, 0);
+  await clickButton(discoverText); assert.equal(preflightCalls(f).length, 1); assert.doesNotMatch(JSON.stringify(preflightCalls(f).map(call => call.body)), /EXAMPLE_UNSAVED_PREFLIGHT_SECRET|password|privateKey|command/);
+  assert.equal(f.store.getDraft().global.password.value, 'EXAMPLE_UNSAVED_PREFLIGHT_SECRET');
+});
+
+for (const field of ['hostId', 'address', 'port', 'revision']) test(`SSH ${field} changes invalidate in-flight candidate discovery and ignore late responses`, async t => {
+  const f = await fixture(t); let release, request;
+  const waiting = new Promise(resolve => { release = resolve; }); f.failures.preflight = body => { request = body; return waiting; };
+  await mount(t, f, 'zh-CN', { preflightEnabled: true }); await clickButton(discoverText); const call = preflightCalls(f)[0];
+  await act(async () => {
+    if (field === 'revision') { await f.vault.put({ ...(await f.vault.get('example-host')), username: 'new-reader' }); await f.store.load(); }
+    else f.store.update({ hosts: f.store.getDraft().hosts.map(row => ({ ...row, [field]: field === 'port' ? 2222 : field === 'address' ? '192.0.2.20' : 'different-host' })) });
+    await new Promise(setImmediate);
+  });
+  assert.equal(call.signal.aborted, true);
+  await act(async () => { release(observed(request)); await new Promise(setImmediate); });
+  assert.equal(document.querySelector('.pk-ssh-candidate'), null); assert.equal(f.store.getDraft().hosts[0].hostKeySha256, 'a'.repeat(64));
+  assert.equal(preflightCalls(f).filter(item => item.body.action === 'confirm').length, 0);
+});
+
+test('SSH disabling preflight during authentication discards the late success result', async t => {
+  const f = await fixture(t); let release; const waiting = new Promise(resolve => { release = resolve; }); f.failures.preflight = () => waiting;
+  const ui = await mount(t, f, 'zh-CN', { preflightEnabled: true }); await clickButton(verifyText); const call = preflightCalls(f)[0];
+  await ui.render('zh-CN', false); assert.equal(call.signal.aborted, true);
+  await act(async () => { release({ hostId: 'example-host', verified: true, checkedAt: new Date().toISOString() }); await new Promise(setImmediate); });
+  assert.equal(document.querySelector('.pk-ssh-verified'), null); assert.equal(preflightButton(verifyText).disabled, true);
+});
+
+test('SSH an expired fingerprint cannot be confirmed even after acknowledgment', async t => {
+  const f = await fixture(t); f.failures.preflight = body => observed(body); await mount(t, f, 'zh-CN', { preflightEnabled: true });
+  await clickButton(discoverText); await acknowledge(); const original = Date.now;
+  try { Date.now = () => original() + 120000; await clickButton(confirmText); } finally { Date.now = original; }
+  assert.equal(preflightCalls(f).length, 1); assert.equal(document.querySelector('.pk-ssh-candidate'), null);
+  assert.match(document.querySelector('.pk-ssh-preflight [role="alert"]').textContent, /SSH_PREFLIGHT_CANDIDATE_EXPIRED/);
+});
+
+for (const kind of ['wrong-host', 'inconsistent-fingerprint', 'private-error']) test(`SSH discovery rejects ${kind} without trusting a candidate or exposing diagnostics`, async t => {
+  const f = await fixture(t); f.failures.preflight = body => { if (kind === 'private-error') throw new Error('EXAMPLE_PRIVATE_PASSWORD at /private/location'); return observed(body, kind === 'wrong-host' ? { hostId: 'other-host' } : { fingerprint: 'SHA256:' + 'A'.repeat(43) }); };
+  await mount(t, f, 'zh-CN', { preflightEnabled: true }); await clickButton(discoverText);
+  assert.equal(document.querySelector('.pk-ssh-candidate'), null); assert.equal(f.store.status().dirty, false);
+  assert.match(document.querySelector('.pk-ssh-preflight [role="alert"]').textContent, /SSH_PREFLIGHT_(RESPONSE_INVALID|REQUEST_FAILED)/);
+  assert.doesNotMatch(document.body.textContent, /EXAMPLE_PRIVATE_PASSWORD|\/private\/location/);
+});
+
+test('SSH a mismatched confirm response cannot replace a host pin', async t => {
+  const f = await fixture(t); f.failures.preflight = body => body.action === 'discover' ? observed(body) : { hostId: body.hostId, address: body.address, port: body.port, sha256Hex: 'd'.repeat(64), confirmed: true };
+  await mount(t, f, 'zh-CN', { preflightEnabled: true }); await clickButton(discoverText); await acknowledge(); await clickButton(confirmText);
+  assert.equal(f.store.getDraft().hosts[0].hostKeySha256, 'a'.repeat(64)); assert.equal(f.store.status().dirty, false); assert.equal(document.querySelector('.pk-ssh-candidate'), null);
+  assert.match(document.querySelector('.pk-ssh-preflight [role="alert"]').textContent, /SSH_PREFLIGHT_RESPONSE_INVALID/);
+});
+
+test('SSH unmount aborts candidate discovery and prevents late writes into a disposed view', async t => {
+  const f = await fixture(t); let release, request; const waiting = new Promise(resolve => { release = resolve; }); f.failures.preflight = body => { request = body; return waiting; };
+  const ui = await mount(t, f, 'zh-CN', { preflightEnabled: true }); await clickButton(discoverText); const call = preflightCalls(f)[0];
+  await act(async () => ReactDOM.unmountComponentAtNode(ui.root)); assert.equal(call.signal.aborted, true);
+  await act(async () => { release(observed(request)); await new Promise(setImmediate); });
+  assert.equal(f.store.status().dirty, false); assert.equal(f.calls.filter(item => item.method === 'PUT').length, 0);
 });

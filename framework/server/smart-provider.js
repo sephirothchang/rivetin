@@ -117,6 +117,11 @@ export function createSmartProvider(directory, { readDisk, vault, history = crea
   }
   return {
     async resolveDisk(input) { const { identity } = await readContext(input, false); return identity; },
+    async collectionTarget(input) {
+      admin(input?.actor);
+      const { row } = await readContext(input);
+      return { profileHostId: row.profileHostId, deviceId: row.deviceId, generation: row.generation, bindingToken: row.bindingToken };
+    },
     async readLatest(input) {
       const { identity } = await readContext(input);
       const { record } = await historyRead(() => history.latest({ pluginId: input.pluginId, diskId: identity.diskId, hostId: identity.hostId, generation: identity.generation }));
@@ -176,11 +181,12 @@ export function createSmartProvider(directory, { readDisk, vault, history = crea
           try { record.smart = sanitizeSmartOutput(item.stdout, item.exitCode, { expectedSerial: device.serial }); record.status = 'ok'; }
           catch (error) { record.status = error.message === 'SMART_UNSUPPORTED' ? 'unsupported' : 'unavailable'; record.code = smartFailureCode(error.message); }
         } else { record.status = 'unavailable'; record.code = smartFailureCode(item.code); }
-        return history.append(record, { beforeCommit: async () => {
+        const publication = await history.append(record, { beforeCommit: async () => {
           cancelled(signal); await allowed(context.pluginId); await assertActive(); cancelled(signal);
           const latest = (await bindingsData(secret)).items[keyFor(context.diskId)], selected = await target(row.profileHostId, row.deviceId);
           if (!latest || !sameToken(latest.bindingToken, context.bindingToken) || !sameToken(row.targetToken, targetToken(secret, selected.host, selected.device))) throw failure('SMART_BINDING_CHANGED', 409);
         } });
+        return { ...publication, collectedStatus: record.status, ...(record.code ? { collectedCode: record.code } : {}) };
       });
     },
   };

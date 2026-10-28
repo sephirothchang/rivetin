@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 
 const require = createRequire(import.meta.url);
@@ -16,8 +16,62 @@ function validateHost(host) {
   if (password === privateKey || (host.password !== undefined && !password) || (host.privateKey !== undefined && !privateKey)) throw fail('SSH_INVALID_CREDENTIAL');
 }
 
+async function handshake(Client, input, discovery) {
+  const { signal, timeoutMs = 5000 } = input || {}, host = discovery ? { address: input?.address, port: input?.port } : input?.host;
+  if (discovery) {
+    if (!object(input) || Object.keys(input).some(key => !['address', 'port', 'signal', 'timeoutMs'].includes(key)) || !host || !isIP(host.address) || !Number.isInteger(host.port) || host.port < 1 || host.port > 65535) throw fail('SSH_INVALID_HOST');
+  } else validateHost(host);
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 5000) throw fail('SSH_INVALID_LIMIT');
+  if (signal !== undefined && !(signal instanceof AbortSignal)) throw fail('SSH_INVALID_SIGNAL');
+  if (signal?.aborted) throw fail('SSH_ABORTED');
+  let Constructor = Client;
+  if (!Constructor) { try { Constructor = require('./vendor/ssh2.cjs').Client; } catch { throw fail('SSH_UNAVAILABLE'); } }
+  if (typeof Constructor !== 'function') throw fail('SSH_UNAVAILABLE');
+  return new Promise((resolve, reject) => {
+    let connection, timer, settled = false, verified = false, rejectedKey = false, attempted = false;
+    function finish(code, value) {
+      if (settled) return;
+      settled = true; clearTimeout(timer); signal?.removeEventListener('abort', abort);
+      try { if (discovery || code) connection?.destroy(); else connection?.end(); } catch { /* No transport diagnostics are public. */ }
+      if (code) reject(fail(code)); else resolve(value);
+    }
+    const abort = () => finish('SSH_ABORTED');
+    try {
+      connection = new Constructor();
+      connection.on('error', error => finish(rejectedKey ? 'SSH_HOST_KEY_MISMATCH' : error?.level === 'client-authentication' ? 'SSH_AUTHENTICATION_FAILED' : 'SSH_CONNECTION_FAILED'));
+      connection.on('close', () => finish(rejectedKey ? 'SSH_HOST_KEY_MISMATCH' : 'SSH_CONNECTION_CLOSED'));
+      connection.once('ready', () => { if (discovery || !verified || rejectedKey) finish('SSH_HOST_KEY_MISMATCH'); else finish(null, { verified: true }); });
+      timer = setTimeout(() => finish('SSH_TIMEOUT'), timeoutMs);
+      signal?.addEventListener('abort', abort, { once: true }); if (signal?.aborted) { abort(); return; }
+      const credential = discovery ? {} : host.password !== undefined ? { password: host.password } : { privateKey: host.privateKey };
+      connection.connect({ host: host.address, port: host.port, username: discovery ? 'rivetin-key-discovery' : host.username, ...credential,
+        ...(discovery ? {} : { hostHash: 'sha256' }), readyTimeout: timeoutMs, keepaliveInterval: 0, agentForward: false, tryKeyboard: false,
+        hostVerifier(value) {
+          if (discovery) {
+            if (!Buffer.isBuffer(value) || value.length < 8 || value.length > 65536) { finish('SSH_KEY_UNAVAILABLE'); return false; }
+            const length = value.readUInt32BE(0), algorithm = value.subarray(4, 4 + length).toString('ascii');
+            if (length < 1 || length > 96 || length > value.length - 4 || !/^[A-Za-z0-9][A-Za-z0-9@._+-]*$/.test(algorithm)) { finish('SSH_KEY_UNAVAILABLE'); return false; }
+            const hash = createHash('sha256').update(value).digest();
+            finish(null, { algorithm, sha256Hex: hash.toString('hex'), fingerprint: 'SHA256:' + hash.toString('base64').replace(/=+$/, '') });
+            // Reject the key deliberately: discovery never reaches authentication.
+            return false;
+          }
+          verified = typeof value === 'string' && /^[a-f0-9]{64}$/.test(value) && timingSafeEqual(Buffer.from(value, 'hex'), Buffer.from(host.hostKeySha256, 'hex'));
+          rejectedKey = !verified; return verified;
+        },
+        authHandler(methods, partialSuccess, callback) {
+          if (discovery || !verified || rejectedKey || attempted || partialSuccess) return callback(false);
+          attempted = true; callback(host.password !== undefined ? 'password' : 'publickey');
+        },
+      });
+    } catch { finish(rejectedKey ? 'SSH_HOST_KEY_MISMATCH' : 'SSH_CONNECTION_FAILED'); }
+  });
+}
+
 export function createSshTransport({ Client } = {}) {
   return {
+    discover: input => handshake(Client, input, true),
+    verify: input => handshake(Client, input, false),
     async run({ host, command, signal, maxBytes = 1048576, timeoutMs = 30000 } = {}) {
       validateHost(host);
       if (typeof command !== 'string' || !command.length || command.length > 1024 || /[\r\n\0]/.test(command)) throw fail('SSH_INVALID_COMMAND');

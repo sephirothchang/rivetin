@@ -8,6 +8,8 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import tarfile
 import tempfile
 import unittest
@@ -102,8 +104,18 @@ class KubernetesFixture:
             return b''
         if args[:2] == ('exec', 'deployment/rivetin'):
             settings = remote.BASE / 'data' / 'framework' / 'settings.json'
+            deployment = self.items['deployment']
+            code = Path(deployment['spec']['template']['spec']['volumes'][0]['hostPath']['path'])
+            version = json.loads((code / 'package.json').read_text())['version']
             if not settings.exists():
-                settings.write_text('{"apiVersion":1,"version":"0.1.0"}')
+                settings.write_text(json.dumps(dict(apiVersion=1, version=version)))
+            else:
+                stored = json.loads(settings.read_text())
+                if stored['version'] != version:
+                    if args[-2:] != ('--upgrade-from', '0.1.0') or stored['version'] != '0.1.0' or version != '0.1.1':
+                        raise RuntimeError('FRAMEWORK_MIGRATION_REQUIRED')
+                    stored['version'] = version
+                    settings.write_text(json.dumps(stored))
             return b''
         raise AssertionError('Unexpected fixture call: %r' % (args,))
 
@@ -180,14 +192,15 @@ class RemoteTests(unittest.TestCase):
                 remote.validate_manifest(wanted, 'a' * 64)
 
     def test_service_archive_accepts_shared_runtime_and_new_builtin_only(self):
-        for forbidden in ['server/builtins/pluginkit-ssh-channel.json', 'shared/unknown.js']:
+        for forbidden in ['server/builtins/pluginkit-ssh-channel.json', 'shared/unknown.js', 'shared/version-extra.js', 'shared/nested/version.js']:
             with self.assertRaisesRegex(RuntimeError, 'SERVICE_ARCHIVE_INVALID'):
                 remote.extract_release(archive([('server/main.js', b'// EXAMPLE'), (forbidden, b'{}')]), self.directory / 'rejected')
         target = self.directory / 'new-service'
         target.mkdir()
-        content = remote.extract_release(archive([('server/main.js', b'// EXAMPLE'), ('shared/identity.js', b'// EXAMPLE'),
+        content = remote.extract_release(archive([('server/main.js', b'// EXAMPLE'), ('shared/identity.js', b'// EXAMPLE'), ('shared/version.js', b'// EXAMPLE_VERSION'),
             ('server/builtins/rivetin-ssh-channel.json', b'{}'), ('server/vendor/ssh2.cjs', b'// EXAMPLE')]), target)
-        self.assertEqual(len(content), 4)
+        self.assertEqual(len(content), 5)
+        self.assertEqual((target / 'shared/version.js').read_bytes(), b'// EXAMPLE_VERSION')
 
     def test_probe_is_read_only(self):
         result = remote.handle({'action': 'probe'})
@@ -263,6 +276,97 @@ class RemoteTests(unittest.TestCase):
             self.begin('update')
         self.assertFalse(remote.pending())
         self.assertFalse(self.kube.writes)
+
+    def test_explicit_patch_upgrade_and_rollback_only_restore_version(self):
+        config = self.installed()
+        before_config = config.read_bytes()
+        settings = self.base / 'data/framework/settings.json'
+        settings.write_text(json.dumps(dict(apiVersion=1, version='0.1.0', initializedAt='EXAMPLE_ORIGINAL_TIME', towerBuild='4.9.0')))
+        self.op = 'b' * 32
+        self.begin('update')
+        backup = self.base / 'backups' / self.op
+        self.assertEqual(json.loads((backup / 'framework-version-before.json').read_text()), dict(apiVersion=1, version='0.1.0'))
+        data = archive([('server/main.js', b'// NEXT'), ('cli.mjs', b'// NEXT_CLI'), ('package.json', b'{"name":"rivetin","version":"0.1.1"}')])
+        self.apply('update', service=data)
+        self.assertIn(('--upgrade-from', '0.1.0'), [args[-2:] for args, _ in self.kube.calls])
+        value = json.loads(settings.read_text())
+        self.assertEqual(value['version'], '0.1.1')
+        value['EXAMPLE_RETAINED_SETTING'] = True
+        settings.write_text(json.dumps(value))
+        remote.handle({'action': 'rollback', 'operation': self.op})
+        restored = json.loads(settings.read_text())
+        self.assertEqual(restored['version'], '0.1.0')
+        self.assertTrue(restored['EXAMPLE_RETAINED_SETTING'])
+        self.assertEqual(restored['initializedAt'], 'EXAMPLE_ORIGINAL_TIME')
+        self.assertEqual(config.read_bytes(), before_config)
+        self.assertTrue((settings.parent / 'disabled.json').exists())
+
+    def test_same_patch_version_needs_no_migration_argument_and_downgrade_refused(self):
+        self.installed()
+        settings = self.base / 'data/framework/settings.json'
+        settings.write_text('{"apiVersion":1,"version":"0.1.1"}')
+        self.op = 'b' * 32
+        self.begin('update')
+        self.kube.calls.clear()
+        with self.assertRaisesRegex(RuntimeError, 'FRAMEWORK_MIGRATION_REQUIRED'):
+            self.apply('update')
+        self.assertFalse(self.kube.writes)
+        # A rejected package retains its stage and recovery record; recovery first.
+        remote.handle({'action': 'rollback', 'operation': self.op})
+        self.op = 'c' * 32
+        self.begin('update')
+        data = archive([('server/main.js', b'// NEXT'), ('package.json', b'{"name":"rivetin","version":"0.1.1"}')])
+        self.apply('update', service=data)
+        self.assertNotIn('--upgrade-from', self.kube.calls[-1][0])
+        self.assertEqual(json.loads(settings.read_text())['version'], '0.1.1')
+
+    def test_unknown_framework_version_refused_before_pending_or_kube_write(self):
+        self.installed()
+        settings = self.base / 'data/framework/settings.json'
+        for value in [dict(apiVersion=1, version='0.2.0'), dict(apiVersion=True, version='0.1.0')]:
+            settings.write_text(json.dumps(value))
+            self.op = 'b' * 32
+            self.kube.calls.clear()
+            with self.assertRaisesRegex(RuntimeError, 'FRAMEWORK_MIGRATION_REQUIRED'):
+                self.begin('update')
+            self.assertFalse(remote.pending())
+            self.assertFalse(self.kube.writes)
+
+    def test_python_upgrade_exec_contract_runs_real_node_init_and_failed_apply_rolls_back(self):
+        node = shutil.which('node')
+        if node is None:
+            self.skipTest('Development-only Node contract unavailable; portable clients never invoke local Node')
+        config = self.installed()
+        before = config.read_bytes()
+        settings = self.base / 'data/framework/settings.json'
+        settings.write_text('{"apiVersion":1,"version":"0.1.0","initializedAt":"EXAMPLE_TIME","towerBuild":"4.9.0"}')
+        self.op = 'b' * 32
+        self.begin('update')
+        cli = ROOT.parent / 'framework/cli.mjs'
+
+        def execute(*args, **kw):
+            if args[:2] == ('exec', 'deployment/rivetin'):
+                self.kube.calls.append((args, kw))
+                local_args = list(args[5:])
+                self.assertEqual(local_args[:3], ['init', '--data', '/var/lib/rivetin'])
+                local_args[2] = str(self.base / 'data')
+                result = subprocess.run([node, str(cli)] + local_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15, check=False)
+                self.assertEqual(result.returncode, 0, 'Actual Node init rejected Python adapter contract')
+                self.assertTrue(json.loads(result.stdout)['upgraded'])
+                raise RuntimeError('EXAMPLE_POST_INIT_TRANSPORT_FAILURE')
+            return self.kube(*args, **kw)
+
+        data = archive([('server/main.js', b'// NEXT'), ('package.json', b'{"name":"rivetin","version":"0.1.1"}')])
+        with patch.object(remote, 'kube', execute):
+            with self.assertRaisesRegex(RuntimeError, 'EXAMPLE_POST_INIT_TRANSPORT_FAILURE'):
+                self.apply('update', service=data)
+        self.assertEqual(json.loads(settings.read_text())['version'], '0.1.1')
+        self.assertEqual(json.loads((self.base / 'backups' / self.op / 'state.json').read_text())['phase'], 'applying')
+        remote.handle({'action': 'rollback', 'operation': self.op})
+        self.assertEqual(json.loads(settings.read_text()), dict(apiVersion=1, version='0.1.0', initializedAt='EXAMPLE_TIME', towerBuild='4.9.0'))
+        self.assertEqual(config.read_bytes(), before)
+        self.assertFalse(remote.pending())
+        self.assertTrue((settings.parent / 'disabled.json').exists())
 
     def test_unmanaged_resources_and_owner_marker_refused(self):
         item = manifest('0' * 64)['items'][1]

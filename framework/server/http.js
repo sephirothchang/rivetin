@@ -36,11 +36,12 @@ export function createApi(service, { authenticate, origins = [] } = {}) {
         };
         if (route.startsWith('/data/disk-smart/')) {
           const operation = route.slice('/data/disk-smart/'.length);
-          if (!['identity', 'latest', 'history'].includes(operation)) return send(res, 404, { error: 'NOT_FOUND' });
-          const values = parameters(operation === 'identity' ? ['pluginId', 'diskId'] : operation === 'latest' ? ['pluginId', 'diskId', 'generation'] : ['pluginId', 'diskId', 'generation', 'limit', 'cursor']);
+          if (!['identity', 'latest', 'history', 'collection'].includes(operation)) return send(res, 404, { error: 'NOT_FOUND' });
+          const values = parameters(operation === 'identity' ? ['pluginId', 'diskId'] : operation === 'latest' ? ['pluginId', 'diskId', 'generation'] : operation === 'collection' ? ['pluginId', 'diskId', 'generation', 'operationId'] : ['pluginId', 'diskId', 'generation', 'limit', 'cursor']);
           if (Object.hasOwn(values, 'limit')) { if (!/^[1-9][0-9]?$/.test(values.limit)) throw new Error('INVALID_REQUEST'); values.limit = Number(values.limit); }
           const input = { ...values, actor };
           if (operation === 'identity') return send(res, 200, { schemaVersion: 1, identity: await service.smartData.resolveDisk(input) });
+          if (operation === 'collection') return send(res, 200, await service.smartData.collection(input));
           return send(res, 200, await service.smartData[operation === 'latest' ? 'readLatest' : 'readHistory'](input));
         }
         if (route === '/inventory/disk-bindings') return send(res, 200, await service.smartData.bindings(actor));
@@ -75,6 +76,22 @@ export function createApi(service, { authenticate, origins = [] } = {}) {
         }
       }
       if (req.method === 'POST' && route === '/disable') return send(res, 200, await service.disable(actor));
+      if (req.method === 'POST' && route === '/ssh-channel/preflight') {
+        const value = JSON.parse(await body(req, 4096));
+        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('INVALID_REQUEST');
+        const { action, ...input } = value;
+        const fields = Object.keys(value).sort().join();
+        if (action === 'discover' && fields === 'action,address,hostId,port') return send(res, 200, await service.sshPreflight.discover({ ...input, actor }));
+        if (action === 'confirm' && fields === 'acknowledged,action,address,challenge,hostId,port') return send(res, 200, await service.sshPreflight.confirm({ ...input, actor }));
+        if (action === 'verify' && fields === 'action,hostId') return send(res, 200, await service.sshPreflight.verify({ ...input, actor }));
+        throw new Error('INVALID_REQUEST');
+      }
+      if (req.method === 'POST' && route === '/data/disk-smart/collect') {
+        const value = JSON.parse(await body(req, 8192));
+        if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join() !== 'diskId,generation,pluginId,requestId') throw new Error('INVALID_REQUEST');
+        const result = await service.smartData.collect({ ...value, actor });
+        return send(res, result.status === 'running' ? 202 : 200, result);
+      }
       if (req.method === 'PUT' && route === '/ssh-channel/connections') {
         const { audit, ...summary } = await service.sshSaveConnections(JSON.parse(await body(req, 1024 * 1024)), actor);
         return send(res, 200, summary);

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -8,9 +9,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 type Bundle struct {
@@ -19,18 +23,84 @@ type Bundle struct {
 }
 
 func payload() (Bundle, map[string][]byte, error) {
-	raw, err := assets.ReadFile("payload/bundle.json")
+	return readPayload(assets)
+}
+
+var requiredPayloadFiles = [...]string{"service.tar.gz", "island.tar.gz", "remoteEntry.js"}
+
+func decodeBundle(raw []byte) (Bundle, error) {
+	invalid := func() (Bundle, error) { return Bundle{}, errors.New("BUNDLE_INVALID") }
+	if len(raw) == 0 || len(raw) > 4096 || !utf8.Valid(raw) {
+		return invalid()
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	first, err := decoder.Token()
+	if err != nil || first != json.Delim('{') {
+		return invalid()
+	}
+	var bundle Bundle
+	seen := make(map[string]bool, 2)
+	for decoder.More() {
+		token, err := decoder.Token()
+		key, ok := token.(string)
+		if err != nil || !ok || seen[key] {
+			return invalid()
+		}
+		seen[key] = true
+		switch key {
+		case "version":
+			if decoder.Decode(&bundle.Version) != nil || !pluginVersionPattern.MatchString(bundle.Version) {
+				return invalid()
+			}
+		case "files":
+			start, err := decoder.Token()
+			if err != nil || start != json.Delim('{') {
+				return invalid()
+			}
+			bundle.Files = make(map[string]string, len(requiredPayloadFiles))
+			for decoder.More() {
+				token, err := decoder.Token()
+				name, ok := token.(string)
+				if err != nil || !ok || (name != "service.tar.gz" && name != "island.tar.gz" && name != "remoteEntry.js") {
+					return invalid()
+				}
+				if _, exists := bundle.Files[name]; exists {
+					return invalid()
+				}
+				var checksum string
+				if decoder.Decode(&checksum) != nil || !pluginDigestPattern.MatchString(checksum) {
+					return invalid()
+				}
+				bundle.Files[name] = checksum
+			}
+			end, err := decoder.Token()
+			if err != nil || end != json.Delim('}') || len(bundle.Files) != len(requiredPayloadFiles) {
+				return invalid()
+			}
+		default:
+			return invalid()
+		}
+	}
+	last, err := decoder.Token()
+	if err != nil || last != json.Delim('}') || len(seen) != 2 || decoder.Decode(new(any)) != io.EOF {
+		return invalid()
+	}
+	return bundle, nil
+}
+
+func readPayload(source fs.FS) (Bundle, map[string][]byte, error) {
+	raw, err := fs.ReadFile(source, "payload/bundle.json")
 	if err != nil {
 		return Bundle{}, nil, errors.New("PAYLOAD_NOT_BUILT")
 	}
-	var bundle Bundle
-	if json.Unmarshal(raw, &bundle) != nil || bundle.Version != "0.1.0" {
-		return bundle, nil, errors.New("BUNDLE_INVALID")
+	bundle, err := decodeBundle(raw)
+	if err != nil {
+		return bundle, nil, err
 	}
 	result := map[string][]byte{}
-	for _, name := range []string{"service.tar.gz", "island.tar.gz", "remoteEntry.js"} {
-		data, err := assets.ReadFile("payload/" + name)
-		if err != nil || digest(data) != bundle.Files[name] {
+	for _, name := range requiredPayloadFiles {
+		data, err := fs.ReadFile(source, "payload/"+name)
+		if err != nil || len(data) == 0 || digest(data) != bundle.Files[name] {
 			return bundle, nil, errors.New("BUNDLE_CHECKSUM_FAILED")
 		}
 		result[name] = data

@@ -1,4 +1,5 @@
 import { actionLabel } from './i18n.js';
+import { FRAMEWORK_VERSION } from '../shared/version.js';
 import { logDetail } from './log-detail.js';
 const versionPattern = /^(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})$/;
 function newerVersion(candidate, current) {
@@ -23,7 +24,7 @@ export function createManagement(React) {
       logs.next && h('button', { disabled: busy, onClick: onMore }, t('加载更多')));
     return h(React.Fragment, null,
       h('div', { className: 'pk-toolbar' }, h('h3', null, 'Rivetin'), h('span', { className: `c89-badge ${runtime.enabled ? 'c89-badge-enabled' : 'c89-badge-disabled'}` }, t(runtime.enabled ? '框架运行' : '插件已全部停用'))),
-      h('div', { className: 'pk-framework' }, h('span', null, `${t('版本')} ${runtime.version || '0.1.0'}`),
+      h('div', { className: 'pk-framework' }, h('span', null, `${t('版本')} ${runtime.version || FRAMEWORK_VERSION}`),
         h('button', { disabled: busy, className: runtime.enabled ? 'pk-emergency' : '', onClick: () => onAction(runtime.enabled ? 'framework.disable' : 'framework.enable') },
           runtime.enabled && h('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': 'true', focusable: 'false', style: { verticalAlign: 'middle', marginRight: 6 } },
             h('path', { d: 'M10.3 3.7 1.8 18.4A2 2 0 0 0 3.5 21h17a2 2 0 0 0 1.7-2.6L13.7 3.7a2 2 0 0 0-3.4 0Z' }),

@@ -6,7 +6,7 @@ release_dir="$(cd "$(dirname "$0")/.." && pwd)"
 : "${TOWER_ORIGINS:?Set allowed HTTPS origins, comma separated}"
 : "${RIVETIN_BASE:?Set RIVETIN_BASE to the existing dedicated installation directory}"
 case "$RIVETIN_BASE" in /var/cache/appcache/rivetin) ;; *) echo 'Use the dedicated /var/cache/appcache/rivetin directory.' >&2; exit 1;; esac
-code="$RIVETIN_BASE/releases/0.1.0"
+code="$RIVETIN_BASE/releases/0.1.1"
 data="$RIVETIN_BASE/data"
 mkdir -p "$code" "$data" "$RIVETIN_BASE/backups"
 if [ -e "$code/server/main.js" ]; then

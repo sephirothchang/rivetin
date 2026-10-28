@@ -1,11 +1,12 @@
 import notices from './notices.js';
+import { FRAMEWORK_VERSION } from '../shared/version.js';
 import { githubIcon } from '../vendor/octicons/mark-github.js';
 export function createAbout(React) {
   const h = React.createElement;
   return function About({ locale }) {
     const en = locale === 'en-US';
     return h('div', { className: 'pk-about' }, h('h3', null, en ? 'About Rivetin' : '关于 Rivetin'),
-      h('p', null, 'Rivetin 0.1.0 · MIT'),
+      h('p', null, `Rivetin ${FRAMEWORK_VERSION} · MIT`),
       h('p', null, en ? 'Developed and maintained by Sephiroth Chang & Rivetin contributors. Individual contributions are recorded in the repository history.' : '开发与维护：Sephiroth Chang & Rivetin contributors。具体贡献者以仓库提交记录为准。'),
       h('a', { className: 'pk-github-link', href: 'https://github.com/sephirothchang/rivetin', target: '_blank', rel: 'noopener noreferrer' },
         githubIcon(h), h('span', null, 'GitHub'),

@@ -1,4 +1,4 @@
-import { hash, validatePackage, MAX_PACKAGE_BYTES } from './manifest.js';
+import { hash, validatePackage, MAX_PACKAGE_BYTES, FRAMEWORK_VERSION } from './manifest.js';
 import { validateCompatibility } from './compatibility.js';
 import { validId, assertId } from '../shared/identity.js';
 const repository = '/repos/sephirothchang/rivetin';
@@ -29,7 +29,7 @@ export function createUpdateSource({ fetchImpl = fetch, token = '', now = Date.n
         if (url.protocol !== 'https:' || url.username || url.password || url.port ||
           !(api && url.pathname.startsWith(repository + '/') || binary && url.hostname === 'release-assets.githubusercontent.com')) throw new Error('UPDATE_REDIRECT_REJECTED');
         response = await fetchImpl(url.href, { method: 'GET', redirect: 'manual', signal,
-          headers: { Accept: binary ? 'application/octet-stream' : 'application/vnd.github+json', 'User-Agent': 'Rivetin/0.1.0', ...(api && token ? { Authorization: `Bearer ${token}` } : {}) } });
+          headers: { Accept: binary ? 'application/octet-stream' : 'application/vnd.github+json', 'User-Agent': `Rivetin/${FRAMEWORK_VERSION}`, ...(api && token ? { Authorization: `Bearer ${token}` } : {}) } });
         if ([301, 302, 303, 307, 308].includes(response.status)) { const next = response.headers.get('location'); await response.body?.cancel(); if (!next) throw new Error('UPDATE_REDIRECT_REJECTED'); url = new URL(next, url); continue; }
         break;
       }

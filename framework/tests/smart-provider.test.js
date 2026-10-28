@@ -33,6 +33,13 @@ test('unbound disks are not exposed as integrated; binding is admin-only and no-
   assert.ok(!JSON.stringify(identity).includes('EXAMPLE_SERIAL')); assert.ok(!JSON.stringify(identity).includes('192.0.2.10'));
 });
 
+test('private collection target requires administrator and exact current binding generation', async t => {
+  const f = await fixture(t); await f.bind(); const identity = await f.resolve(), args = { pluginId, diskId: identity.diskId, generation: identity.generation };
+  await assert.rejects(f.provider.collectionTarget({ ...args, actor: reader }), { status: 403 });
+  const target = await f.provider.collectionTarget({ ...args, actor }); assert.equal(target.profileHostId, 'ssh-profile'); assert.equal(target.deviceId, 'disk-device'); assert.match(target.bindingToken, /^[a-f0-9]{64}$/);
+  await assert.rejects(f.provider.collectionTarget({ ...args, generation: 'b'.repeat(64), actor }), { message: 'SMART_GENERATION_CHANGED', status: 409 });
+});
+
 test('every read independently verifies exact caller disk permissions and plugin active capability', async t => {
   const f = await fixture(t); await f.bind(); const identity = await f.resolve(); const count = f.state.calls.length;
   await f.provider.readLatest({ pluginId, diskId: identity.diskId, generation: identity.generation, actor: reader });

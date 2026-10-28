@@ -13,7 +13,7 @@ export default function createDiskSmartInfoPlugin({ React, win, options = {}, ge
       h('div', { className: 'c89-setting' }, h('div', { className: 'c89-setting-row' },
         h('label', { htmlFor: 'pk-smart-enabled' }, t('显示 Smart 信息子页', 'Show SMART information tab')),
         h('input', { id: 'pk-smart-enabled', type: 'checkbox', checked: preferences.enabled, onChange: event => store.update({ enabled: event.target.checked }) }))),
-      h('p', { role: 'status' }, t('插件声明每日只读 SMART 采集；需要管理员配置统一 SSH 通道并独立审核批准。页面只读取采样，重新读取不会触发采集。真实主机采集尚未验收。', 'The plugin declares daily read-only SMART collection, requiring configured SSH channels and separate administrator approval. Reload reads samples without triggering collection. Live host collection has not been accepted.')),
+      h('p', { role: 'status' }, t('每日采集与“立即采集”均需要可信设备配置和独立人工审核。“重新读取”只刷新已有采样；离开侧栏只停止页面等待，后台任务可能继续。真实主机采集尚未验收。', 'Daily collection and Collect now require trusted device configuration and explicit administrator approval. Reload only reads existing samples. Leaving the sidebar stops waiting; a background task may continue. Live host collection has not been accepted.')),
       h('p', null, t('功能配置复用框架的保存、丢弃和退出流程；关闭本页显示不会删除历史记录。', 'Settings use the framework save, discard and exit flow. Hiding the tab does not delete historical records.')));
   }
   return { id: PLUGIN_ID, store, Settings, activate() {

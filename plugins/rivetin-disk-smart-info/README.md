@@ -1,10 +1,10 @@
 # 磁盘健康展示 / Disk SMART information
 
-`rivetin-disk-smart-info` 0.1.1 受控验收候选：物理盘详情的 Smart 信息子页、本地化指标、历史快照对比和黄／红／深红风险展示。采用 Rivetin API 1 的前端包和统一配置生命周期。独立社区项目，非 SmartX 官方产品，按 [MIT](LICENSE) 提供。
+`rivetin-disk-smart-info` 0.1.2 受控验收候选：物理盘详情的 Smart 信息子页、本地化指标、历史快照对比和黄／红／深红风险展示。采用 Rivetin API 1 的前端包和统一配置生命周期。独立社区项目，非 SmartX 官方产品，按 [MIT](LICENSE) 提供。
 
 ## Rivetin 命名与配置
 
-插件目录、包名、ID、注册入口和制品前缀统一为 `rivetin-disk-smart-info`；描述文件为 `rivetin.json`，包格式为 `rivetin-package-v1`，前端格式为 `rivetin-global-v1`，工厂注册为 `window.RivetinPlugins['rivetin-disk-smart-info']`。当前版本为 0.1.1，`compatibility.towerBuilds` 仅包含 `4.9.0`，按主协调确认的准确目标进入受控验收。依据是公开 4.9 API 字段核对、真实集群／主机侧栏 DOM 的只读匹配复核，以及 56 项本地回归。此声明仅限定验收构建，非生产保证；真实主机 SMART、SSH 登录与审批、跨日调度仍未实测，SSH 默认关闭且没有自动授权。真实挂载与生命周期验收由主协调安排。旧 0.1.0 包原样保留。
+插件目录、包名、ID、注册入口和制品前缀统一为 `rivetin-disk-smart-info`；描述文件为 `rivetin.json`，包格式为 `rivetin-package-v1`，前端格式为 `rivetin-global-v1`，工厂注册为 `window.RivetinPlugins['rivetin-disk-smart-info']`。当前版本为 0.1.2，要求框架版本至少 `0.1.1`（立即采集依赖其异步单盘采集接口），`compatibility.towerBuilds` 仅包含 `4.9.0`，按主协调确认的准确目标进入受控验收。依据是公开 4.9 API 字段核对、真实集群／主机侧栏 DOM 的只读匹配复核，以及既有本地适配回归。此声明仅限定验收构建，非生产保证；真实主机 SMART、SSH 登录与审批、跨日调度仍未实测，SSH 默认关闭且没有自动授权。真实挂载与生命周期验收由主协调安排。旧 0.1.0／0.1.1 包原样保留。
 
 插件使用 `/api/rivetin/v1/config` 与新 ID 接入共享配置客户端，只使用 Rivetin ID、配置路径和包格式。旧品牌的 ID、包格式和前端格式不再接收；不读取或映射旧配置，不做旧 API 回退，也不实施配置迁移。插件不复制配置、不双写，配置路径由共享存储接口确定。当前约定为 Rivetin-only，与改名初期的兼容草案不同。
 
@@ -37,7 +37,7 @@ npm run demo
 
 演示仅监听本地开发回环地址 `http://127.0.0.1:43181`，数据全部人工构造，配置保存在进程内存。提供 NVMe／ATA／不支持设备，集群／主机范围、中英文、数据过期／读取失败／最新采集失败但有历史、65 日分页和历史选择、草稿保存／丢弃与插件启停场景。停止演示后配置不保留；这不是生产配置服务。
 
-产物：`release/rivetin-disk-smart-info-0.1.1.rivetin.json`。包只包含 `web/plugin.js` 和 `LICENSE`，不含演示、测试、调查资料或后端可执行入口。React 由 Rivetin factory 参数提供。
+产物：`release/rivetin-disk-smart-info-0.1.2.rivetin.json`。包只包含 `web/plugin.js` 和 `LICENSE`，不含演示、测试、调查资料或后端可执行入口。React 由 Rivetin factory 参数提供。
 
 真实安装由协调方通过插件中心上传／安装／明确启用，卸载通过框架管理操作执行，配置默认保留。升级遵循相同配置 schema，新增迁移需框架支持。当前 `enabled` 设置仅控制子页显示，使用框架保存、丢弃与退出确认；它不是后台采样开关。后台任务必须依据框架全局开关及插件安装／启用状态停启。
 
@@ -60,6 +60,18 @@ smart 为主框架白名单脱敏后的 smartctl JSON 字段子集；不含原�
 历史按同一 generation 和 UTC 日保存，每日最多一条，服务端最多保留 365 日；采集操作幂等，失败后成功可替换，当天成功后不被失败覆盖。旧 generation 历史保留但不自动拼接。浏览器每次最多读 30 条、手动“读取更早记录”，内存最多 365 条；可选择任一天查看指标，失败日也可查看时间与状态。只与同代且严格早于所选样本的最近有效成功采样比较；失败、缺失和最新样本自身均不是基线。如果基线尚未加载，显示无基线，可以继续翻页。浏览器不存历史到 localStorage 或配置集合。
 
 换盘或身份变化 SMART_GENERATION_CHANGED 会清空旧展示，需重新读取；SMART_HISTORY_CURSOR_STALE 保留已读页并禁止继续拼页，提示重读首页。权限、绑定和未知读取错误清空展示；只有网络失败或 HTTP 408、429、5xx 可以保留刚取得的当前值，并明确历史不可用、未计算劣化。来源、generation、UTC 日唯一性、页大小、顺序和总量均校验，不混用跨盘记录。超过 36 小时的成功快照标为过期，超过本地时间 5 分钟的未来采样拒绝；这是展示策略，不能作为后端采集 SLA。
+
+## 立即采集（0.1.2 受控候选）
+
+“重新读取”只读已有采样，“立即采集”请求框架对当前可信绑定磁盘执行一次已审核的只读采集。未绑定时按钮禁用并显示诊断；未配置、未审核或权限不足时显示本地固定文案，不展示原始异常。框架尚无该能力时安全禁用。真实SSH联调的命令和计划须先提交用户审核，本插件不批准命令、不传地址、命令或设备路径。
+
+提供器增加 `collect({identity,requestId,signal})` 和 `collection({identity,operationId,signal})`，返回 `{schemaVersion:1,operationId,status,code?}`。requestId每次显式点击生成一个随机UUID，单次操作只提交一次POST；operationId为稳定UUID，状态为running、succeeded、failed或unknown。查询始终携带原diskId/generation，不能只凭operationId读状态。
+
+前端默认每1500毫秒查询一次，最多30次且总等待不超过45秒。超时、网络异常或unknown不代表远端取消，也不自动重发POST；用户可只读刷新并核实状态。没有收到POST确认时，页面内部可记录未知结果且没有operationId，不编造任务ID或发起无目标查询。只有新的明确点击才生成新requestId。
+
+读取和采集互斥，运行时按钮禁用。切盘、关闭侧栏、原生标签切换或停用时取消页面等待，不声称撤销远端任务。框架仅在采样已持久化后报告succeeded；页面随后重新读取当前盘latest/history，严格复核原identity/generation/source，变化时清空展示。所有数据、任务授权和单盘范围由共享后端重新检查；浏览器不自行建立SSH或实现后端。
+
+本地演示增加未审核、失败、结果未知和持续运行场景，均明确为模拟。共享HTTP回归通过真实框架客户端／提供器／服务，仅模拟Tower查询与SSH执行，不能称真实主机采集通过。
 
 ## 挂载与生命周期
 
@@ -90,7 +102,7 @@ smart 为主框架白名单脱敏后的 smartctl JSON 字段子集；不含原�
 
 采集通道的公开 API／指标／Fisheye／SSH 对比与实测边界见 [采集路径研究](docs/collection-research.md)。
 
-描述文件声明 permissions: inventory.read、ssh.channel.use、disk.smart.read，且仅声明 daily-smart / disk.smart.read / hostScope=configured / deviceScope=configured / intervalSeconds=86400。默认 SSH 关闭，需管理员配置可信设备与单独审计批准；安装、打开页面、重新读取或修改显示设置均不立即采集。框架按全局、SSH 通道、消费插件与审批状态控制后台任务；停用／卸载阻止新增，历史与配置分离，重置／卸载不删除历史。身份绑定、主机读取、UTC 日去重、持久保留及每次对象权限验证均由共享后端负责。
+描述文件声明 permissions: inventory.read、ssh.channel.use、disk.smart.read，且仅声明 daily-smart / disk.smart.read / hostScope=configured / deviceScope=configured / intervalSeconds=86400。默认 SSH 关闭，需管理员配置可信设备与单独审计批准；安装、打开页面、重新读取或修改显示设置均不立即采集；只有明确点击“立即采集”才请求单盘任务。框架按全局、SSH 通道、消费插件与审批状态控制后台任务；停用／卸载阻止新增，历史与配置分离，重置／卸载不删除历史。身份绑定、主机读取、UTC 日去重、持久保留及每次对象权限验证均由共享后端负责。
 
 `tests/framework-provider.test.js` 通过真实 createDataProviders、createClient、createService、createApi 的回环 HTTP 验证消费链路；包含主框架官方测试 fixture，以及使用本插件描述文件的隔离 fixture。只模拟 Tower 库存响应和 SSH 执行，不连接外部网络。覆盖绑定／无样本、审批后采集和失败恢复、35 日历史分页与劣化、逐请求调用者认证、latest 后撤权、换盘、过期游标、取消后的迟到响应，以及插件工厂通过实际 API 读取数据后的 DOM 渲染与清理。这些测试不依赖已构建的制品；包内工厂执行另由 verify:package 检查。
 

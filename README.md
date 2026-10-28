@@ -28,8 +28,8 @@ smartx-extensions/
 |---|---|---|
 | [Rivetin](framework/README.md) | 插件中心、生命周期、独立配置、紧急禁用、操作日志 | 0.1；故障隔离 TODO |
 | [rivetin-ipmi-redirection](plugins/rivetin-ipmi-redirection/README.md) | 主机 IPMI 跳转、BMC 协议配置 | 0.1；真实 BMC 自动登录未完成 |
-| [rivetin-ssh-channel](plugins/rivetin-ssh-channel/README.md) | 全局及例外凭据、只读命令审计、独立授权和调度 | 0.1.1；连接设置界面已实机验证，真实主机采集待验收 |
-| [rivetin-disk-smart-info](plugins/rivetin-disk-smart-info/README.md) | 物理盘 SMART 页面、采集数据与每日历史 | 0.1.1；共享接口和页面已受控验证，真实采样待验收 |
+| [rivetin-ssh-channel](plugins/rivetin-ssh-channel/README.md) | 全局及例外凭据、只读命令审计、独立授权和调度 | 0.1.1；真实指纹、认证与一次只读主机标识验证通过 |
+| [rivetin-disk-smart-info](plugins/rivetin-disk-smart-info/README.md) | 物理盘 SMART 页面、立即采集与每日历史 | 0.1.2；真实单盘失败路径及每日计划登记已验证，有效 SMART 样本尚未取得 |
 | [rivetin-context-menu](plugins/rivetin-context-menu/README.md) | 按资源提供分组菜单与受控操作表单 | 0.2.6；菜单与表单的实机只读验收通过，实际资源写入待验收 |
 
 ## 本地开发

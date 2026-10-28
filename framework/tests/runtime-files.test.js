@@ -32,6 +32,7 @@ test('release rejects modules outside the declared server/shared source scope', 
 
 test('current runtime graph includes shared identity, SMART storage and resource operation services', async () => {
   const files = await runtimeFiles(path.resolve('.'));
-  assert.ok(files.includes('shared/identity.js')); assert.ok(files.includes('server/ssh-broker.js'));
-  for (const name of ['smart-data', 'smart-history', 'smart-provider', 'tower-disks', 'resource-actions']) assert.ok(files.includes(`server/${name}.js`), name);
+  assert.ok(files.includes('shared/identity.js')); assert.ok(files.includes('shared/version.js'));
+  assert.ok(files.includes('server/ssh-broker.js')); assert.ok(files.includes('server/ssh-preflight.js'));
+  for (const name of ['smart-data', 'smart-history', 'smart-provider', 'smart-collection', 'tower-disks', 'resource-actions']) assert.ok(files.includes(`server/${name}.js`), name);
 });

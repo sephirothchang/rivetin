@@ -21,6 +21,7 @@ import (
 )
 
 const recoveryTimeout = 4 * time.Minute
+const cliVersion = "0.1.1"
 
 var diagnosticMessages = map[string][2]string{
 	"PLUGIN_INCOMPATIBLE":                           {"该插件不支持当前 CloudTower 或框架版本，操作已停止。", "The plugin does not support the current CloudTower or framework version; the operation stopped."},
@@ -196,7 +197,7 @@ func requestedLanguage(args []string) (string, error) {
 
 func printHelp(out io.Writer, lang string) {
 	if lang == "en-US" {
-		fmt.Fprintln(out, `Rivetin portable CLI 0.1.0
+		fmt.Fprintln(out, "Rivetin portable CLI "+cliVersion+`
 Usage: rivetin <install|update|uninstall|enable|disable|reset-config|detect|status|plan|recover> [options]
        rivetin plugin <install|update|enable|disable|uninstall|list> [options]
        rivetin channel <status|import-host|remove-host> [options]
@@ -224,7 +225,7 @@ Uninstall retains data, code releases and backups. Updates leave plugins disable
 reset-config archives settings only after the framework is fully uninstalled.`)
 		return
 	}
-	fmt.Fprintln(out, `Rivetin 便携式 CLI 0.1.0
+	fmt.Fprintln(out, "Rivetin 便携式 CLI "+cliVersion+`
 用法：rivetin <install|update|uninstall|enable|disable|reset-config|detect|status|plan|recover> [参数]
       rivetin plugin <install|update|enable|disable|uninstall|list> [参数]
       rivetin channel <status|import-host|remove-host> [参数]
@@ -404,7 +405,7 @@ func run(args []string, out io.Writer) error {
 	}
 	mode := args[0]
 	if mode == "version" {
-		fmt.Fprintln(out, "rivetin 0.1.0")
+		fmt.Fprintln(out, "rivetin "+cliVersion)
 		return nil
 	}
 	if mode == "licenses" {

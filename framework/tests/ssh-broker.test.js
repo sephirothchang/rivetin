@@ -31,6 +31,29 @@ test('SSH commands remain unapproved after install; enabling channel still requi
   const status = await f.broker.status(actor); assert.equal(status.registrations[0].approved, true); assert.ok(!JSON.stringify(status).includes('Linux x86_64'));
   assert.equal((await f.broker.results(id, actor)).items[0].stdout, 'Linux x86_64');
 });
+
+test('approved SMART target execution selects one disk without running other registered daily targets', async t => {
+  const inputs = [], f = await fixture(t, { run: async input => { inputs.push(input.command); return { stdout: JSON.stringify({ serial_number: input.command.endsWith('/dev/sdb') ? 'EXAMPLE_SERIAL_B' : 'EXAMPLE_SERIAL', smart_status: { passed: true } }), exitCode: 0 }; } });
+  await f.vault.put({ ...host(), devices: [...host().devices, { deviceId: 'second-disk', path: '/dev/sdb', serial: 'EXAMPLE_SERIAL_B' }] });
+  f.status.plugins[0].manifest.ssh.commands = [{ ...command(), id: 'daily-smart', operation: 'disk.smart.read', deviceScope: 'configured' }];
+  await assert.rejects(f.broker.selectSmartTarget(id, { hostId: 'example-host', deviceId: 'second-disk' }, actor), /SSH_APPROVAL_REQUIRED/);
+  await f.approve(); const selection = await f.broker.selectSmartTarget(id, { hostId: 'example-host', deviceId: 'second-disk' }, actor);
+  assert.equal((await f.broker.runTarget(selection, actor)).items[0].result, 'success');
+  assert.deepEqual(inputs, ['sudo -n -- /usr/sbin/smartctl --json=c --all /dev/sdb']);
+  await assert.rejects(f.broker.runTarget({ ...selection, command: 'id' }, actor), /SSH_TARGET_NOT_APPROVED/);
+  await assert.rejects(f.broker.runTarget({ ...selection, deviceId: 'missing' }, actor), /SSH_TARGET_NOT_APPROVED/);
+  await f.broker.invalidate(id); await assert.rejects(f.broker.runTarget(selection, actor), /SSH_APPROVAL_REQUIRED/);
+  assert.equal(inputs.length, 1);
+});
+
+test('manual SMART selection rejects multiple matching commands and cancelled external tasks cannot run', async t => {
+  const f = await fixture(t);
+  f.status.plugins[0].manifest.ssh.commands = ['daily', 'weekly'].map(name => ({ ...command(), id: name, operation: 'disk.smart.read', deviceScope: 'configured' }));
+  await f.approve(); await assert.rejects(f.broker.selectSmartTarget(id, { hostId: 'example-host', deviceId: 'example-disk' }, actor), /SSH_SMART_COMMAND_AMBIGUOUS/);
+  f.status.plugins[0].manifest.ssh.commands.pop(); await f.approve(); const selected = await f.broker.selectSmartTarget(id, { hostId: 'example-host', deviceId: 'example-disk' }, actor), controller = new AbortController(); controller.abort();
+  await assert.rejects(f.broker.runTarget(selected, actor, { signal: controller.signal }), /SSH_EXECUTION_CANCELLED/);
+  await assert.rejects(f.broker.selectSmartTarget(id, { hostId: 'example-host', deviceId: 'example-disk' }, { ...actor, admin: false }), /SSH_ADMIN_REQUIRED/); assert.equal(f.calls(), 0);
+});
 test('SSH review is actor-bound, expires and cannot be replayed or accepted without acknowledgment', async t => {
   const f = await fixture(t), review = await f.broker.review(id, actor), body = { pluginId: id, challenge: review.challenge, digest: review.digest, acknowledged: true };
   await assert.rejects(f.broker.approve(body, { ...actor, id: 'other-admin' }), /SSH_REVIEW_CONFIRMATION_REQUIRED/);

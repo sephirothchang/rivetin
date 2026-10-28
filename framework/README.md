@@ -78,6 +78,7 @@ Tower 原生对接使用公开 `POST /v2/api/create-user-audit-log`，包含中�
 | `/ssh-channel` | GET / POST | 管理员审计命令；review / approve / revoke，不提供任意命令执行 |
 | `/ssh-channel/results` | GET | 按 pluginId 读取有界采集结果，仅管理员 |
 | `/ssh-channel/hosts` | POST | CLI 管理加密主机连接资料；变化撤销已有审批，不连接主机 |
+| `/ssh-channel/preflight` | POST | 获取候选指纹、确认待保存指纹、使用已保存凭据进行无命令认证预检 |
 | `/plugins` | GET / POST | 清单与 install/update/rollback/enable/disable/reset/uninstall |
 | `/logs` | GET | 最近操作日志，可按插件过滤与分页 |
 

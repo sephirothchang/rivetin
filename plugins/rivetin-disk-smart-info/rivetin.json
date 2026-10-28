@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "rivetin-disk-smart-info",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "name": {
     "zh-CN": "磁盘健康展示",
     "en-US": "Disk SMART information"
@@ -19,7 +19,8 @@
     "tower": "CloudTower 4.9.0 controlled acceptance: API/DOM read checks and local tests; live host SMART unverified.",
     "towerBuilds": [
       "4.9.0"
-    ]
+    ],
+    "frameworkMinVersion": "0.1.1"
   },
   "frontend": {
     "format": "rivetin-global-v1",
@@ -65,8 +66,8 @@
     "uninstall": "retain-config"
   },
   "releaseNotes": {
-    "zh-CN": "0.1.1：按集群／主机真实只读 DOM 核验适配 4.9.0 侧栏；正式共享接口本地联调通过。仅供受控验收，非生产保证；SSH 默认关闭、未自动授权，真实主机 SMART 采集未实测。",
-    "en-US": "0.1.1: Adapt the 4.9.0 sidebar from read-only cluster/host DOM checks; shared API local integration passed. Controlled acceptance only, without production assurance. SSH stays off without explicit approval; live host SMART collection is untested."
+    "zh-CN": "0.1.2 受控候选：新增单盘立即采集，异步状态有限轮询，成功后刷新；未知结果不重发，切盘停止等待。真实SSH命令与计划须先人工审核，主机采集尚未验收。",
+    "en-US": "0.1.2 controlled candidate: collect one disk now, poll a bounded asynchronous operation, and refresh after success. Unknown outcomes are not resubmitted. Host SSH commands and plans require explicit review; live collection remains unverified."
   },
   "ssh": {
     "version": 1,

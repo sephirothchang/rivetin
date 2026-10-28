@@ -23,7 +23,7 @@ const expiry = value => typeof value === 'number' ? value : Date.parse(value);
 
 export function createSshSettings(React) {
   const h = React.createElement, { useState, useEffect, useRef } = React, ConnectionSettings = createSshConnectionSettings(React);
-  return function SshSettings({ client, locale = 'zh-CN', onError, connectionStore }) {
+  return function SshSettings({ client, locale = 'zh-CN', onError, connectionStore, preflightEnabled = false }) {
     const en = locale === 'en-US', t = (zh, english) => en ? english : zh;
     const [state, setState] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
     const [review, setReview] = useState(null), [acknowledged, setAcknowledged] = useState(false);
@@ -122,7 +122,7 @@ export function createSshSettings(React) {
           h('div', null, t('默认安装不会建立 SSH 连接。请在插件管理中启用 SSH 通道并保存通道配置，再分别审核消费插件的命令。', 'The default installation establishes no SSH connections. Enable the SSH channel in Plugin management and save its channel configuration, then review each requesting plugin’s commands.'))),
         !state.transportReady && h('p', { className: 'pk-ssh-note pk-ssh-warning' }, t('SSH 传输尚未就绪，不能批准命令执行。', 'SSH transport is not ready; command execution cannot be approved.')),
         h('div', { className: 'pk-ssh-note' }, t('仅接受框架允许的结构化只读操作。子插件不能上传任意命令或脚本；安装后 SSH 权限默认关闭。命令、版本、目标范围或计划变化后需重新审核。', 'Only structured read-only operations allowed by the framework are accepted. Plugins cannot upload arbitrary commands or scripts; SSH access is off after installation. Changes to commands, versions, targets or schedules require a new review.')),
-        connectionStore && h(ConnectionSettings, { store: connectionStore, client, locale }),
+        connectionStore && h(ConnectionSettings, { store: connectionStore, client, locale, preflightEnabled }),
         h('h4', null, t('已保存主机连接摘要', 'Saved host connection profiles')),
         h('p', { className: 'pk-ssh-muted' }, connectionStore ? t('下表为已保存状态。新凭据只经受认证的连接设置接口提交并由后端加密，不进入普通插件配置；已保存的密码和私钥不会返回此页面。', 'The table shows saved state. New credentials go only to the authenticated connection-settings API and are encrypted by the backend, outside ordinary plugin configuration. Saved passwords and private keys are never returned.') : t('凭据通过便携 CLI 从受控敏感文件导入；此摘要不显示、接收或保存密码和私钥。', 'Credentials are imported from a controlled sensitive file through the portable CLI. This summary does not display, accept or store passwords or private keys.')),
         state.hosts.length ? h('table', null, h('thead', null, h('tr', null, ...[t('主机 / 集群', 'Host / cluster'), t('地址 / 账户', 'Address / account'), t('主机密钥', 'Host key'), t('凭据', 'Credentials')].map(label => h('th', { key: label }, label)))),

@@ -61,6 +61,7 @@ type towerFixture struct {
 	wrongEntry          bool
 	noMount             bool
 	runtimeEnabled      bool
+	runtimeVersion      string
 	nonAdmin            bool
 	events              []string
 	registryInitialized bool
@@ -69,6 +70,13 @@ type towerFixture struct {
 
 func towerServer(t *testing.T, f *towerFixture) *Tower {
 	t.Helper()
+	if f.runtimeVersion == "" {
+		bundle, _, err := payload()
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.runtimeVersion = bundle.Version
+	}
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.events = append(f.events, r.Method+" "+r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
@@ -159,7 +167,7 @@ func towerServer(t *testing.T, f *towerFixture) *Tower {
 			return
 		}
 		if strings.HasSuffix(r.URL.Path, "/runtime") {
-			fmt.Fprintf(w, `{"initialized":true,"enabled":%t,"version":"0.1.0"}`, f.runtimeEnabled)
+			fmt.Fprintf(w, `{"initialized":true,"enabled":%t,"version":%q}`, f.runtimeEnabled, f.runtimeVersion)
 			return
 		}
 		w.WriteHeader(404)
@@ -265,12 +273,15 @@ func TestRegistrationFailureRollsBack(t *testing.T) {
 	}
 }
 func TestReadbackFailuresRollBack(t *testing.T) {
-	for _, kind := range []string{"entry", "mount", "runtime"} {
+	for _, kind := range []string{"entry", "mount", "runtime", "version"} {
 		t.Run(kind, func(t *testing.T) {
 			r, f, api := fixture(t)
 			f.wrongEntry = kind == "entry"
 			f.noMount = kind == "mount"
 			f.runtimeEnabled = kind == "runtime"
+			if kind == "version" {
+				f.runtimeVersion = "99999999.0.0"
+			}
 			err := (Engine{Remote: r, Tower: api}).Run(context.Background(), "install", "", "", "")
 			if err == nil || r.calls[len(r.calls)-1] != "rollback" {
 				t.Fatal(err, r.calls)

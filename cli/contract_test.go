@@ -113,8 +113,11 @@ assert directory.parent == expected_parent
 target = directory / 'release'
 target.mkdir()
 contents = module.extract_release(service, target)
-assert {'server/main.js', 'cli.mjs', 'package.json', 'LICENSE'}.issubset(contents)
+assert {'server/main.js', 'cli.mjs', 'package.json', 'LICENSE', 'shared/identity.js', 'shared/version.js',
+        'server/resource-actions.js', 'server/smart-provider.js', 'server/smart-collection.js',
+        'server/builtins/rivetin-ssh-channel.json', 'server/vendor/ssh2.cjs'}.issubset(contents)
 assert json.loads(contents['package.json'])['version'] == request['version']
+assert ('FRAMEWORK_VERSION = '+repr(request['version'])).encode() in contents['shared/version.js']
 assert all((target / name).read_bytes() == data for name, data in contents.items())
 print(json.dumps({'manifest': 'accepted', 'serviceFiles': len(contents)}))
 `

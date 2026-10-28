@@ -8,7 +8,7 @@ import http from 'node:http';
 import { once } from 'node:events';
 import { fixture, actor, bundle } from './helpers.js';
 import { createService } from '../server/service.js';
-import { validatePackage, validateManifest } from '../server/manifest.js';
+import { validatePackage, validateManifest, FRAMEWORK_VERSION } from '../server/manifest.js';
 import { createApi } from '../server/http.js';
 import { createTowerAuditSink } from '../server/audit.js';
 import { listenPort } from '../server/options.js';
@@ -21,7 +21,7 @@ test('listen port ignores Kubernetes service-link variables and rejects invalid 
 test('permanent Tower region uses an unversioned registry key; release version remains informational', async () => {
   const manifest = JSON.parse(await readFile(new URL('../sea-map.json', import.meta.url), 'utf8'));
   assert.equal(manifest.name, 'rivetin'); assert.equal(manifest.metadata.version, undefined);
-  assert.equal(manifest.metadata.info.version, '0.1.0'); assert.equal(manifest.data[0].island, './Rivetin');
+  assert.equal(manifest.metadata.info.version, FRAMEWORK_VERSION); assert.equal(manifest.data[0].island, './Rivetin');
   assert.equal(manifest.data[0].region, 'PERMANENT_CLUSTER_MANAGER_MODAL');
 });
 

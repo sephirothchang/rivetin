@@ -190,8 +190,9 @@ export function createSmartHistory(directory, { now = Date.now, limits: requeste
           if (JSON.stringify(original) !== JSON.stringify(record)) throw new Error('SMART_HISTORY_OPERATION_CONFLICT');
           return { record: structuredClone(sameOperation), inserted: false, replaced: false };
         }
-        if (previous && (previous.status === 'ok' || record.status !== 'ok' || previous.collectedAt > record.collectedAt)) return { record: structuredClone(previous), inserted: false, replaced: false, retainedSuccess: previous.status === 'ok' };
-        const next = previous ? { ...record, gapCode: previous.code } : record;
+        if (previous && (record.status !== 'ok' || previous.collectedAt >= record.collectedAt)) return { record: structuredClone(previous), inserted: false, replaced: false, retainedSuccess: previous.status === 'ok' };
+        const gapCode = previous?.status === 'ok' ? previous.gapCode : previous?.code;
+        const next = gapCode ? { ...record, gapCode } : record;
         const rows = [next, ...records.filter(item => item !== previous)].sort((a, b) => b.collectedAt.localeCompare(a.collectedAt));
         const all = Object.entries(current.entries), disks = new Set(all.map(([, row]) => row.diskKey));
         if (!disks.has(diskKey) && disks.size >= limits.maxDisks || !current.entries[key] && all.length >= limits.maxGenerations) throw new Error('SMART_HISTORY_CAPACITY_EXCEEDED');

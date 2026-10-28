@@ -149,8 +149,13 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
   async function persistResult(item, context, job) {
     // A timeout cancels transport, while authorization can still permit a metric-free failure record.
     const timeoutFailure = item.result === 'failed' && item.code === 'SSH_EXECUTION_TIMEOUT' && job.timedOut && !Object.hasOwn(item, 'stdout');
-    try { await onResult(structuredClone(item), context, { signal: timeoutFailure ? job.permissionController.signal : job.controller.signal, assertActive: () => assertActive(job, timeoutFailure) }); }
-    catch { throw new Error('SSH_RESULT_PERSIST_FAILED'); }
+    try {
+      const publication = await onResult(structuredClone(item), context, { signal: timeoutFailure ? job.permissionController.signal : job.controller.signal, assertActive: () => assertActive(job, timeoutFailure) });
+      if (job.requireSample && item.result === 'success' && (publication?.collectedStatus !== 'ok' || publication?.record?.status !== 'ok' || publication?.record?.operationId !== item.id)) {
+        const code = { SMART_UNSUPPORTED: 'SSH_SMART_UNSUPPORTED', SMART_OUTPUT_INVALID: 'SSH_SMART_OUTPUT_INVALID', SMART_IDENTITY_MISMATCH: 'SSH_SMART_IDENTITY_MISMATCH' }[publication?.collectedCode];
+        throw new Error(code || 'SSH_SMART_SAMPLE_FAILED');
+      }
+    } catch (failed) { throw new Error(['SSH_SMART_UNSUPPORTED', 'SSH_SMART_OUTPUT_INVALID', 'SSH_SMART_IDENTITY_MISMATCH', 'SSH_SMART_SAMPLE_FAILED'].includes(failed.message) ? failed.message : 'SSH_RESULT_PERSIST_FAILED'); }
   }
   async function record(pluginId, item, job, context, notify) {
     await disk.locked(async () => {
@@ -162,8 +167,9 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
       await atomic(path.join(root, 'results', `${pluginId}.json`), boundedResults([item, ...value.items]));
     });
   }
-  async function execute(pluginId, commandId, actor, scheduled = false) {
+  async function execute(pluginId, commandId, actor, scheduled = false, selection = null, externalSignal, requireSample = false) {
     admin(actor);
+    if (externalSignal?.aborted) throw new Error('SSH_EXECUTION_CANCELLED');
     if (!validId(pluginId) || typeof commandId !== 'string') throw new Error('SSH_REGISTRATION_INVALID');
     assertId(pluginId);
     await sync();
@@ -174,15 +180,24 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
       const command = registration.commands.find(item => item.id === commandId);
       if (!command) throw new Error('SSH_COMMAND_UNAVAILABLE');
       if (typeof approval.id !== 'string') throw new Error('SSH_APPROVAL_REQUIRED');
-      if (!command.targets.length || invocations.size >= 2) throw new Error('SSH_CONCURRENCY_LIMIT');
+      let targets = command.targets;
+      if (selection) {
+        if (command.operation !== 'disk.smart.read' || selection.digest !== registration.digest || selection.approvalId !== approval.id) throw new Error('SSH_APPROVAL_REVOKED');
+        targets = command.targets.filter(target => target.hostId === selection.hostId && target.deviceId === selection.deviceId);
+        if (targets.length !== 1) throw new Error('SSH_TARGET_NOT_APPROVED');
+      }
+      if (!targets.length || invocations.size >= 2) throw new Error('SSH_CONCURRENCY_LIMIT');
       await emit(actor, 'run.started', pluginId, 'started');
       invocations.add(invocation);
-      return { targets: command.targets, operation: command.operation, digest: approval.digest, approvalId: approval.id, deadline: now() + 300000 };
+      return { targets, operation: command.operation, digest: approval.digest, approvalId: approval.id, deadline: now() + 300000 };
     });
     const results = [];
     try { for (const target of batch.targets) {
-      const job = { id: randomUUID(), pluginId, commandId, hostId: target.hostId, target, controller: new AbortController(), permissionController: new AbortController(), timedOut: false, revoked: false, digest: batch.digest, approvalId: batch.approvalId };
+      const job = { id: randomUUID(), pluginId, commandId, hostId: target.hostId, target, controller: new AbortController(), permissionController: new AbortController(), timedOut: false, revoked: false, digest: batch.digest, approvalId: batch.approvalId, requireSample };
       const startedAt = now();
+      const externalAbort = () => cancelJob(job);
+      externalSignal?.addEventListener('abort', externalAbort, { once: true });
+      if (externalSignal?.aborted) externalAbort();
       let context, sinkAttempted = false;
       try {
         if (now() >= batch.deadline) throw new Error('SSH_BATCH_TIMEOUT');
@@ -200,6 +215,7 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
           catch { throw new Error('SSH_RESULT_CONTEXT_FAILED'); }
           await assertActive(job);
         }
+        if (requireSample && (!context || typeof onResult !== 'function')) throw new Error('SSH_RESULT_CONTEXT_FAILED');
         const timeoutMs = Math.max(1, Math.min(30000, batch.deadline - now())), maxBytes = 1024 * 1024;
         let timeout;
         const result = await Promise.race([
@@ -235,7 +251,7 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
         await record(pluginId, item, job, context, Boolean(onResult && !sinkAttempted));
         await emit(actor, 'run', pluginId, 'failed', item.code);
         results.push({ id: job.id, result: 'failed', code: item.code });
-      } finally { active.delete(job.id); }
+      } finally { externalSignal?.removeEventListener('abort', externalAbort); active.delete(job.id); }
     } } finally { invocations.delete(invocation); }
     return { items: results };
   }
@@ -246,6 +262,23 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
   }
   return {
     root, vault, sync, invalidate,
+    async selectSmartTarget(pluginId, target, actor) {
+      admin(actor); assertId(pluginId);
+      if (!target || Object.keys(target).sort().join() !== 'deviceId,hostId' || ![target.hostId, target.deviceId].every(value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value))) throw new Error('SSH_TARGET_NOT_APPROVED');
+      await sync();
+      return disk.locked(async () => {
+        const registration = await current(pluginId), approval = (await state()).approvals[pluginId];
+        if (!approval?.id || approval.digest !== registration.digest) throw new Error('SSH_APPROVAL_REQUIRED');
+        const commands = registration.commands.filter(command => command.operation === 'disk.smart.read' && command.targets.some(item => item.hostId === target.hostId && item.deviceId === target.deviceId));
+        if (commands.length !== 1) throw new Error(commands.length ? 'SSH_SMART_COMMAND_AMBIGUOUS' : 'SSH_TARGET_NOT_APPROVED');
+        return { pluginId, commandId: commands[0].id, hostId: target.hostId, deviceId: target.deviceId, digest: registration.digest, approvalId: approval.id };
+      });
+    },
+    runTarget(selection, actor, { signal, requireSample = false } = {}) {
+      if (!selection || Object.keys(selection).sort().join() !== 'approvalId,commandId,deviceId,digest,hostId,pluginId' || typeof selection.digest !== 'string' || !/^[a-f0-9]{64}$/.test(selection.digest) || ![selection.approvalId, selection.commandId, selection.deviceId, selection.hostId].every(value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value))) return Promise.reject(new Error('SSH_TARGET_NOT_APPROVED'));
+      if (typeof requireSample !== 'boolean') return Promise.reject(new Error('SSH_TARGET_NOT_APPROVED'));
+      return trackedExecute(selection.pluginId, selection.commandId, actor, false, selection, signal, requireSample);
+    },
     async status(actor) {
       admin(actor);
       const snapshot = await sync(), recentRuns = [];

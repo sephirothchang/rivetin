@@ -3,7 +3,7 @@ import { validId } from './storage.js';
 import { validateSshRegistration } from './ssh-policy.js';
 import { validateCompatibility } from './compatibility.js';
 
-export const FRAMEWORK_VERSION = '0.1.0';
+export { FRAMEWORK_VERSION } from '../shared/version.js';
 export const MAX_PACKAGE_BYTES = 16 * 1024 * 1024;
 export const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const semver = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;

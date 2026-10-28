@@ -49,6 +49,16 @@ test('operation IDs cannot be reused for a different document or date and gaps c
   await assert.rejects(f.store.append(sample(1, { gapCode: 'SSH_EXECUTION_TIMEOUT' })), /SMART_HISTORY_INVALID_DATA/);
 });
 
+test('later successful manual samples refresh the daily row without losing its original failure gap', async t => {
+  const f = await fixture(t), failed = sample(0, { status: 'unavailable', code: 'SSH_EXECUTION_TIMEOUT' }); delete failed.smart;
+  await f.store.append(failed); await f.store.append(sample(0, { operationId: 'first_success', collectedAt: new Date(time + 1000).toISOString() }));
+  const refreshed = await f.store.append(sample(0, { operationId: 'manual_success', collectedAt: new Date(time + 2000).toISOString(), smart: { temperature: { current: 50 } } }));
+  assert.equal(refreshed.replaced, true); assert.equal(refreshed.record.gapCode, 'SSH_EXECUTION_TIMEOUT'); assert.equal(refreshed.record.smart.temperature.current, 50);
+  assert.equal((await f.store.page(query())).items.length, 1);
+  const older = await f.store.append(sample(0, { operationId: 'late_arriving_old_success', collectedAt: new Date(time + 1500).toISOString() })); assert.equal(older.record.operationId, 'manual_success');
+  const sameTime = await f.store.append(sample(0, { operationId: 'same_time', collectedAt: new Date(time + 2000).toISOString() })); assert.equal(sameTime.record.operationId, 'manual_success');
+});
+
 test('disk generations, hosts and plugins have separate latest records and pages', async t => {
   const f = await fixture(t);
   for (const patch of [{}, { generation: 'b'.repeat(64) }, { hostId: 'second_host' }, { pluginId: 'rivetin-another-plugin' }]) await f.store.append(sample(0, patch));

@@ -1,14 +1,21 @@
-import { text, metricName, riskName, reasonText, errorText, gapText } from './i18n.js';
+import { text, metricName, riskName, reasonText, errorText, gapText, collectionText } from './i18n.js';
 import { withBaseline } from './provider.js';
 function element(doc, tag, content, className) {
   const node = doc.createElement(tag); if (content !== undefined) node.textContent = content; if (className) node.className = className; return node;
 }
-export function renderPanel(panel, state, locale, refresh, loadMore, selectSample) {
+export function renderPanel(panel, state, locale, refresh, loadMore, selectSample, collectNow) {
   const doc = panel.ownerDocument, t = (zh, en) => text(locale, zh, en), add = (tag, value, cls, parent = panel) => { const node = element(doc, tag, value, cls); parent.append(node); return node; };
   panel.replaceChildren(); panel.lang = locale;
   const card = add('div', undefined, 'pk-smart-card'), header = add('div', undefined, 'pk-smart-summary', card);
   add('h3', t('Smart 信息', 'SMART information'), '', header);
-  const retry = add('button', t('重新读取', 'Reload'), '', header); retry.type = 'button'; retry.disabled = Boolean(state.loading); retry.addEventListener('click', refresh);
+  const busy = state.collection?.status === 'running';
+  const actions = add('div', undefined, 'pk-smart-actions', header);
+  const retry = add('button', t('重新读取', 'Reload'), '', actions); retry.type = 'button'; retry.disabled = Boolean(state.loading || state.historyLoading || busy); retry.addEventListener('click', refresh);
+  const collect = add('button', busy ? t('采集中…', 'Collecting…') : t('立即采集', 'Collect now'), '', actions);
+  collect.type = 'button'; collect.dataset.smartCollect = ''; collect.disabled = Boolean(state.loading || state.historyLoading || busy || !state.result?.identity || !state.canCollect); collect.addEventListener('click', collectNow);
+  add('p', t('重新读取只刷新已有采样；立即采集需已配置可信设备并完成人工审核。', 'Reload only reads existing samples. Collect now requires a trusted device and explicit administrator approval.'), 'pk-smart-meta', card);
+  if (!state.canCollect) add('p', collectionText({ status: 'failed', code: 'SMART_COLLECTION_UNAVAILABLE' }, locale), 'pk-smart-meta', card);
+  if (state.collection) add('p', collectionText(state.collection, locale), 'pk-smart-notice pk-smart-collection', card).setAttribute('role', 'status');
   if (state.loading) { add('p', t('正在核验磁盘身份并读取数据…', 'Verifying disk identity and loading…'), '', card); return; }
   if (state.error) { add('p', errorText(state.error, locale), 'pk-smart-notice', card).setAttribute('role', 'status'); return; }
   const result = state.result; if (!result) return;
@@ -67,7 +74,7 @@ export function renderPanel(panel, state, locale, refresh, loadMore, selectSampl
     if (state.historyError) add('p', errorText(state.historyError, locale), 'pk-smart-notice').setAttribute('role', 'status');
     if (result.hasMore) {
       const more = add('button', state.historyLoading ? t('读取中…', 'Loading…') : t('读取更早记录', 'Load older samples'));
-      more.type = 'button'; more.dataset.smartMore = ''; more.disabled = Boolean(state.historyLoading || state.historyError); more.onclick = loadMore;
+    more.type = 'button'; more.dataset.smartMore = ''; more.disabled = Boolean(state.historyLoading || state.historyError || busy); more.onclick = loadMore;
     }
     add('p', `${t('已读取记录', 'Loaded records')}: ${result.history.length} / 365 · ${t('仅比较同一物理盘的有效采样；失败日不作基线。', 'Only valid samples from this disk generation are compared; failed days are excluded as baselines.')}`, 'pk-smart-meta');
     add('p', t('提示策略：NVMe 已用寿命 ≥80% 黄、≥90% 红、≥100% 深红；设备健康失败、严重警告或当前阈值越界为深红。错误计数和劣化另见条目依据。颜色用于辅助排查，不代表故障预测。厂商属性不通用推算寿命；温度、错误日志数和非正常关机数仅展示。', 'Display policy: NVMe endurance used ≥80% yellow, ≥90% red, ≥100% dark red. Failed health, critical warnings or current device threshold failures are dark red. See row reasons for errors and deterioration. Colors aid investigation and do not predict failures. Vendor attributes do not imply a universal lifespan. Temperature, error log entries and unsafe shutdowns are informational.'), 'pk-smart-policy');

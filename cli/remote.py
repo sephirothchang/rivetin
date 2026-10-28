@@ -251,7 +251,7 @@ def extract_release(data, target):
                 if name not in ['server', 'deploy', 'server/vendor', 'server/builtins', 'shared']:
                     fail('SERVICE_ARCHIVE_INVALID')
                 continue
-            if not m.isfile() or not (name in allowed or name in ['shared/identity.js', 'server/vendor/ssh2.cjs', 'server/builtins/rivetin-ssh-channel.json'] or re.fullmatch(r'(server/[a-z-]+\.js|deploy/[a-z.-]+)', name)):
+            if not m.isfile() or not (name in allowed or name in ['shared/identity.js', 'shared/version.js', 'server/vendor/ssh2.cjs', 'server/builtins/rivetin-ssh-channel.json'] or re.fullmatch(r'(server/[a-z-]+\.js|deploy/[a-z.-]+)', name)):
                 fail('SERVICE_ARCHIVE_INVALID')
             if name in contents:
                 fail('SERVICE_ARCHIVE_INVALID')
@@ -266,6 +266,24 @@ def extract_release(data, target):
         os.chmod(str(dest), 0o644)
     return contents
 
+def framework_metadata():
+    file = BASE / 'data' / 'framework' / 'settings.json'
+    if not file.exists():
+        return None
+    stored = json.loads(file.read_text())
+    if not isinstance(stored, dict) or type(stored.get('apiVersion')) is not int or stored['apiVersion'] != 1 or stored.get('version') not in ['0.1.0', '0.1.1']:
+        fail('FRAMEWORK_MIGRATION_REQUIRED')
+    return dict(apiVersion=1, version=stored['version'])
+
+def saved_framework_metadata(backup):
+    file = backup / 'framework-version-before.json'
+    if not file.exists():
+        return None  # Legacy recovery records never authorize a metadata change.
+    stored = json.loads(file.read_text())
+    if stored is not None and (not isinstance(stored, dict) or set(stored) != {'apiVersion', 'version'} or type(stored['apiVersion']) is not int or stored['apiVersion'] != 1 or stored['version'] not in ['0.1.0', '0.1.1']):
+        fail('FRAMEWORK_MIGRATION_REQUIRED')
+    return stored
+
 def prepare(req, found):
     op = req['operation']
     if not re.fullmatch('[a-f0-9]{32}', op):
@@ -279,11 +297,7 @@ def prepare(req, found):
         fail('ISLAND_BACKUP_LIMIT')
     if found['installed'] and not found['managed']:
         fail('EXISTING_INSTALLATION_UNMANAGED')
-    settings = BASE / 'data' / 'framework' / 'settings.json'
-    if settings.exists():
-        stored = json.loads(settings.read_text())
-        if stored.get('version') != '0.1.0' or stored.get('apiVersion') != 1:
-            fail('FRAMEWORK_MIGRATION_REQUIRED')
+    framework_metadata()
     if (BASE.exists() and any(BASE.iterdir()) and not owner_marker()):
         fail('EXISTING_INSTALLATION_UNMANAGED')
     if req['mode'] == 'install' and found['installed']:
@@ -310,6 +324,7 @@ def prepare(req, found):
     atomic(backup / 'state.json', dict(mode=req['mode'], phase='preparing', operation=op))
     (backup / 'island.tar.gz').write_bytes(old)
     with snapshot_locks():
+        atomic(backup / 'framework-version-before.json', framework_metadata())
         if (BASE / 'data').exists():
             # Recovery never overwrites active settings with this snapshot.
             with tarfile.open(str(backup / 'data.tar.gz'), 'w:gz') as archive:
@@ -413,6 +428,15 @@ def apply(req, backup):
     stage = backup / 'release'
     stage.mkdir()
     expected = extract_release(raw, stage)
+    package = json.loads(expected.get('package.json', b'{}'))
+    target_version = package.get('version')
+    if not (backup / 'framework-version-before.json').is_file():
+        fail('FRAMEWORK_MIGRATION_REQUIRED')
+    before_version = saved_framework_metadata(backup)
+    if package.get('name') != 'rivetin' or target_version not in ['0.1.0', '0.1.1']:
+        fail('FRAMEWORK_MIGRATION_REQUIRED')
+    if before_version and before_version['version'] != target_version and (before_version['version'], target_version) != ('0.1.0', '0.1.1'):
+        fail('FRAMEWORK_MIGRATION_REQUIRED')
     if target.exists():
         # Compare with the shipped archive, not a mutable on-disk inventory.
         for name, content in expected.items():
@@ -428,7 +452,10 @@ def apply(req, backup):
     kube('apply', '-f', '-', data=json.dumps(manifest).encode())
     kube('rollout', 'status', 'deployment/rivetin', '--timeout=%ss' % APPLY_ROLLOUT_SECONDS,
          timeout=APPLY_ROLLOUT_PROCESS_SECONDS)
-    kube('exec', 'deployment/rivetin', '--', 'node', 'cli.mjs', 'init', '--data', '/var/lib/rivetin')
+    init = ['exec', 'deployment/rivetin', '--', 'node', 'cli.mjs', 'init', '--data', '/var/lib/rivetin']
+    if before_version and before_version['version'] != target_version:
+        init += ['--upgrade-from', before_version['version']]
+    kube(*init)
     atomic(backup / 'state.json', dict(mode=req['mode'], phase='backend-ready', operation=req['operation']))
     return dict(phase='backend-ready')
 
@@ -442,6 +469,19 @@ def remove_owned():
 
 def rollback(backup):
     before = json.loads((backup / 'resources.json').read_text())
+    previous = saved_framework_metadata(backup)
+    if not owned(resources()):
+        fail('RESOURCE_OWNERSHIP_MISMATCH')
+    # Fail closed throughout restoration; only version metadata may be reverted.
+    disable()
+    with snapshot_locks():
+        current = framework_metadata()
+        if previous and current and previous != current:
+            if (previous['version'], current['version']) != ('0.1.0', '0.1.1'):
+                fail('FRAMEWORK_MIGRATION_REQUIRED')
+            file = BASE / 'data' / 'framework' / 'settings.json'
+            stored = json.loads(file.read_text())
+            atomic(file, dict(stored, version=previous['version']), True)
     if before:
         if not owned(resources()):
             fail('RESOURCE_OWNERSHIP_MISMATCH')

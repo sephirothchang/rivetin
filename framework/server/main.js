@@ -14,7 +14,8 @@ const origins = (process.env.RIVETIN_ORIGINS || '').split(',').filter(Boolean);
 const updateToken = process.env.RIVETIN_GITHUB_TOKEN || '', port = process.env.RIVETIN_LISTEN_PORT;
 if (!data || !towerUrl || !origins.length) throw new Error('EXPLICIT_DEPLOYMENT_CONFIGURATION_REQUIRED');
 const tower = createTowerConnection({ baseUrl: towerUrl });
-const service = createService(data, { towerSink: createTowerAuditSink({ request: tower.request }), updateSource: createUpdateSource({ token: updateToken }), sshRun: createSshTransport().run, towerVersionProvider: createTowerVersionProvider({ request: tower.request }), readDisk: createTowerDiskReader({ request: tower.request }), towerRequest: tower.request });
+const sshTransport = createSshTransport();
+const service = createService(data, { towerSink: createTowerAuditSink({ request: tower.request }), updateSource: createUpdateSource({ token: updateToken }), sshRun: sshTransport.run, sshPreflightTransport: sshTransport, towerVersionProvider: createTowerVersionProvider({ request: tower.request }), readDisk: createTowerDiskReader({ request: tower.request }), towerRequest: tower.request });
 service.sshChannel.start();
 const handler = createApi(service, { authenticate: tower.authenticate, origins });
 const server = http.createServer(async (req, res) => {
@@ -29,7 +30,7 @@ let stopping = false;
 async function stop() {
   if (stopping) return; stopping = true;
   const timer = setTimeout(() => process.exit(1), 5000); timer.unref();
-  try { await Promise.all([service.sshChannel.stop(), new Promise(resolve => server.close(resolve))]); clearTimeout(timer); process.exit(0); }
+  try { await Promise.all([service.sshPreflight.stop(), service.smartCollection.stop(), service.sshChannel.stop(), new Promise(resolve => server.close(resolve))]); clearTimeout(timer); process.exit(0); }
   catch { process.exit(1); }
 }
 process.on('SIGTERM', stop); process.on('SIGINT', stop);

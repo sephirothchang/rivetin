@@ -1,4 +1,29 @@
 export const text = (locale, zh, en) => locale === 'en-US' ? en : zh;
+export function collectionText(value, locale) {
+  if (value.status === 'running') return text(locale, '正在采集当前磁盘…离开此页只停止页面等待，不保证远端任务取消。', 'Collecting this disk… Leaving this page only stops waiting; the remote task may continue.');
+  if (value.status === 'succeeded') return text(locale, '采集任务已完成。', 'Collection completed.');
+  if (value.code === 'SMART_COLLECTION_WAIT_CANCELLED') return text(locale, '已停止页面等待，后台采集可能继续；请重新读取或联系管理员核实。', 'Stopped waiting. Collection may continue in the background; reload or ask an administrator to verify.');
+  const reasons = {
+    SSH_APPROVAL_REQUIRED: ['采集命令尚未审核或授权已失效，请联系管理员审核。', 'The collection command is not approved, or approval expired. Ask an administrator to review it.'],
+    SSH_REGISTRATION_CHANGED: ['采集声明已变化，需要管理员重新审核授权。', 'The collection declaration changed and requires administrator approval again.'],
+    SSH_CHANNEL_DISABLED: ['统一 SSH 通道未启用或未配置，请联系管理员。', 'The shared SSH channel is disabled or unconfigured. Contact an administrator.'],
+    SSH_TARGET_UNAVAILABLE: ['尚未配置可用采集目标，请联系管理员。', 'No collection target is configured. Contact an administrator.'],
+    SSH_DEVICE_UNAVAILABLE: ['采集设备尚未配置或已不可用，请联系管理员。', 'The collection device is unconfigured or unavailable. Contact an administrator.'],
+    SMART_PROFILE_UNAVAILABLE: ['可信采集主机配置不可用，请联系管理员。', 'The trusted collection host profile is unavailable. Contact an administrator.'],
+    SMART_DEVICE_UNAVAILABLE: ['可信采集设备不可用，请联系管理员。', 'The trusted collection device is unavailable. Contact an administrator.'],
+    SMART_COLLECTION_UNAVAILABLE: ['当前框架尚未提供立即采集，请联系管理员。', 'Collect now is unavailable in this framework. Contact an administrator.'],
+    SSH_CONCURRENCY_LIMIT: ['已有采集任务运行中，请稍后核实状态。', 'A collection is already running. Check its status before trying again.'],
+    SMART_COLLECTION_BUSY: ['已有采集任务运行中，请稍后核实状态。', 'A collection is already running. Check its status before trying again.'],
+    ADMIN_REQUIRED: ['立即采集需要管理员权限。', 'Collect now requires administrator access.'],
+    SMART_UNSUPPORTED: ['该设备不支持 SMART 采集或未透传，健康状态未知。', 'SMART collection is unsupported or not passed through; health is unknown.'],
+  };
+  if (value.status === 'unknown') {
+    const notice = text(locale, '采集结果待确认，任务可能仍在执行。未自动重发请求；请重新读取或联系管理员核实。', 'Collection outcome is unknown; the task may still be running. The request was not resent. Reload or ask an administrator to verify.');
+    return reasons[value.code] ? `${notice} ${text(locale, ...reasons[value.code])}` : notice;
+  }
+  if (reasons[value.code]) return text(locale, ...reasons[value.code]);
+  return value.code && value.code !== 'SMART_COLLECTION_UNKNOWN' ? errorText(value.code, locale) : text(locale, '采集任务失败，未提供详细原因。请重新读取并联系管理员核实。', 'Collection failed without a detailed reason. Reload and ask an administrator to verify.');
+}
 export function gapText(code, locale) {
   const reasons = {
     SMART_COLLECTION_FAILED: ['采集失败', 'collection failure'], SMART_UNAVAILABLE: ['数据不可用', 'data unavailable'],

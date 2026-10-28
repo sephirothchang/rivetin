@@ -1,3 +1,5 @@
+import { FRAMEWORK_VERSION } from '../shared/version.js';
+
 const version = /^(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})$/;
 const build = /^(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})(?:-[a-z0-9]+(?:[.-][a-z0-9]+)*)?$/;
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
@@ -15,7 +17,7 @@ export function validateCompatibility(value) {
   return structuredClone(value);
 }
 
-export function checkCompatibility(manifest, { towerBuild, frameworkApi = 1, frameworkVersion = '0.1.0' } = {}) {
+export function checkCompatibility(manifest, { towerBuild, frameworkApi = 1, frameworkVersion = FRAMEWORK_VERSION } = {}) {
   let declaration;
   try { declaration = validateCompatibility(manifest?.compatibility); } catch { /* Invalid declarations fail closed below. */ }
   const testedBuilds = declaration?.towerBuilds ? [...declaration.towerBuilds] : [];

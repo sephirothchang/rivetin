@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -173,7 +174,20 @@ func (m *mainActionTransport) RoundTrip(req *http.Request) (*http.Response, erro
 }
 
 func TestFrameworkEnableAuthenticatesAndVerifiesRuntime(t *testing.T) {
-	for _, runtime := range []string{`{"initialized":true,"enabled":true,"version":"0.1.0"}`, `{"initialized":true,"enabled":false,"version":"0.1.0"}`, `{"initialized":true,"enabled":true,"version":"0.2.0"}`} {
+	bundle, _, err := payload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mismatch := "0.0.0"
+	if bundle.Version == mismatch {
+		mismatch = "0.0.1"
+	}
+	for _, state := range []struct {
+		enabled bool
+		version string
+		valid   bool
+	}{{true, bundle.Version, true}, {false, bundle.Version, false}, {true, mismatch, false}} {
+		runtime := fmt.Sprintf(`{"initialized":true,"enabled":%t,"version":%q}`, state.enabled, state.version)
 		r, _, api := fixture(t)
 		transport := &mainActionTransport{delegate: api.http.Transport, runtime: runtime}
 		api.http.Transport = transport
@@ -181,7 +195,7 @@ func TestFrameworkEnableAuthenticatesAndVerifiesRuntime(t *testing.T) {
 		if !transport.enabled || strings.Join(r.calls, ",") != "probe" {
 			t.Fatal("enable bypassed expected API path", err, r.calls)
 		}
-		if strings.Contains(runtime, `"enabled":true,"version":"0.1.0"`) {
+		if state.valid {
 			if err != nil {
 				t.Fatal(err)
 			}

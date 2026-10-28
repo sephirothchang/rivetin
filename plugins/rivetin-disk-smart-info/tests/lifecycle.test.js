@@ -10,11 +10,14 @@ import { storage } from '../../../framework/server/storage.js';
 test('controlled candidate declares only the verified 4.9.0 acceptance target and synchronized versions', async () => {
   const manifest = JSON.parse(await readFile(new URL('../rivetin.json', import.meta.url)));
   assert.deepEqual(manifest.compatibility.towerBuilds, ['4.9.0']);
-  assert.equal(validateManifest(manifest).version, '0.1.1');
+  assert.equal(manifest.compatibility.frameworkMinVersion, '0.1.1');
+  assert.equal(validateManifest(manifest).version, '0.1.2');
   assert.equal(JSON.parse(await readFile(new URL('../package.json', import.meta.url))).version, manifest.version);
   const lock = JSON.parse(await readFile(new URL('../package-lock.json', import.meta.url)));
   assert.equal(lock.version, manifest.version); assert.equal(lock.packages[''].version, manifest.version);
   assert.equal(checkCompatibility(manifest, { towerBuild: '4.9.0' }).compatible, true);
+  assert.equal(checkCompatibility(manifest, { towerBuild: '4.9.0', frameworkVersion: '0.1.0' }).compatible, false);
+  assert.equal(checkCompatibility(manifest, { towerBuild: '4.9.0', frameworkVersion: '0.1.1' }).compatible, true);
   for (const towerBuild of ['4.8.0', '4.9.1', '4.10.0', null]) assert.equal(checkCompatibility(manifest, { towerBuild }).compatible, false);
   assert.deepEqual(manifest.permissions, ['inventory.read', 'ssh.channel.use', 'disk.smart.read']);
   assert.deepEqual(manifest.ssh.commands.map(({ id, operation, hostScope, deviceScope, intervalSeconds }) => ({ id, operation, hostScope, deviceScope, intervalSeconds })), [{ id: 'daily-smart', operation: 'disk.smart.read', hostScope: 'configured', deviceScope: 'configured', intervalSeconds: 86400 }]);
