@@ -40,6 +40,9 @@ export function createMockProvider({ now = Date.now(), state = () => 'ok' } = {}
     },
     async readHistory({ identity: disk, cursor, limit = 30, signal }) {
       if (signal.aborted) throw new Error('ABORTED');
+      const readFailure = { 'binding-changed': ['SMART_BINDING_CHANGED', 409], 'disk-forbidden': ['SMART_DISK_FORBIDDEN', 403],
+        'session-expired': ['AUTHENTICATION_REQUIRED', 401], 'plugin-disabled': ['SMART_PLUGIN_DISABLED', 403] }[state()];
+      if (readFailure) throw Object.assign(new Error('EXAMPLE_PRIVATE_SERVER_DETAIL'), { code: readFailure[0], status: readFailure[1] });
       return { schemaVersion: 1, source: 'mock', identity: mockIdentity(disk), items: Array.from({ length: Math.min(limit, 65 - Number(cursor || 0)) }, (_, index) => { const offset = Number(cursor || 0) + index + 1; const value = sample(disk, offset + (state() === 'stale' ? 3 : 0), now); return offset === 2 ? { ...value, status: 'unavailable', smart: undefined, code: 'SMART_COLLECTION_FAILED' } : value; }), nextCursor: Number(cursor || 0) + limit < 65 ? String(Number(cursor || 0) + limit) : null };
     },
     async collect({ identity: disk, requestId, signal }) {

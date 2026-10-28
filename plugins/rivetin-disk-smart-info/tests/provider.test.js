@@ -1,8 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadDiskData, validateSnapshot, validTime, validateIdentity, readHistoryPage, withBaseline } from '../src/provider.js';
+import { loadDiskData, validateSnapshot, validTime, validateIdentity, readHistoryPage, withBaseline, errorCode } from '../src/provider.js';
 import { createMockProvider, sample, disks, mockIdentity } from '../demo/fixtures.js';
 const now = Date.parse('2026-10-28T00:00:00Z'), signal = () => new AbortController().signal;
+
+test('binding, resource access, session and lifecycle read failures retain only fixed consumer codes', () => {
+  for (const code of ['SMART_BINDING_CHANGED', 'SMART_DISK_FORBIDDEN', 'AUTHENTICATION_REQUIRED', 'SMART_PLUGIN_DISABLED']) {
+    assert.equal(errorCode({ code, message: 'EXAMPLE_PRIVATE_SERVER_DETAIL' }), code);
+    assert.equal(errorCode(new Error(code)), code);
+  }
+  for (const value of ['SSH_AUTHENTICATION_FAILED', 'SSH_HOST_KEY_MISMATCH', 'EXAMPLE_PRIVATE_SERVER_DETAIL']) {
+    assert.equal(errorCode(new Error(value)), 'SMART_READ_FAILED');
+  }
+});
 test('provider validates disk/host/device identity and selects nearest earlier sample', async () => {
   const result = await loadDiskData(createMockProvider({ now }), disks[0].diskId, signal(), now);
   assert.equal(result.latest.status, 'ok'); assert.equal(result.previous.collectedAt, '2026-10-27T00:00:00.000Z');

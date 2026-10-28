@@ -8,12 +8,12 @@ import { PLUGIN_ID, defaults } from '../src/configuration.js';
 import { checkCompatibility } from '../../../framework/server/compatibility.js';
 import { storage } from '../../../framework/server/storage.js';
 import { assertCurrentReleaseManifest, legacyReleaseDeclaration, syntheticServiceManifest } from './fixtures/service-manifest.js';
-test('0.1.4 declares exact schema-2 compatibility and synchronized metadata versions', async () => {
+test('current candidate declares exact schema-2 compatibility and synchronized metadata versions', async () => {
   const manifest = JSON.parse(await readFile(new URL('../rivetin.json', import.meta.url)));
   assertCurrentReleaseManifest(manifest);
   assert.deepEqual(manifest.compatibility.towerBuilds, ['4.9.0']);
   assert.equal(manifest.compatibility.frameworkMinVersion, '0.2.0');
-  assert.equal(validateManifest(manifest).version, '0.1.4');
+  assert.equal(validateManifest(manifest).version, '0.1.6');
   assert.equal(JSON.parse(await readFile(new URL('../package.json', import.meta.url))).version, manifest.version);
   const lock = JSON.parse(await readFile(new URL('../package-lock.json', import.meta.url)));
   assert.equal(lock.version, manifest.version); assert.equal(lock.packages[''].version, manifest.version);

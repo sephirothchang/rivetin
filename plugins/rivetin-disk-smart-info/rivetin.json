@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "rivetin-disk-smart-info",
-  "version": "0.1.4",
+  "version": "0.1.6",
   "name": {
     "zh-CN": "磁盘健康展示",
     "en-US": "Disk SMART information"
@@ -69,8 +69,8 @@
     "uninstall": "retain-config"
   },
   "releaseNotes": {
-    "zh-CN": "0.1.4 本地兼容候选：仅更新兼容声明为 schema 2，要求框架 [0.2.0, 0.3.0)、API 1 与 Tower 4.9.0，SMTX 不作全局准入条件。前端功能与 0.1.3 逐字节一致；不新增设备策略、审批或采集能力，真实采集和新组合实机验收仍未完成。",
-    "en-US": "0.1.4 local compatibility candidate: schema 2 requires framework [0.2.0, 0.3.0), API 1 and Tower 4.9.0, without a global SMTX product gate. Frontend bytes match 0.1.3. No new device policy, approval or collection capability; real collection and live acceptance of this combination remain unverified."
+    "zh-CN": "0.1.6：明确显示磁盘采集命令范式、目标类别、新鲜主机库存参数来源及 all/custom 逐盘展开边界。用途声明不绑定固定设备路径，不增加执行命令或权限；物理盘样本及每日采集仍待真实环境测试。",
+    "en-US": "0.1.6: show the disk collection template, category, fresh host inventory argument source and all/custom per-disk expansion. The declaration selects no fixed path and adds no executable operation or permission. Physical samples and daily collection await real-environment testing."
   },
   "ssh": {
     "version": 1,
@@ -79,8 +79,8 @@
         "id": "daily-smart",
         "operation": "disk.smart.read",
         "purpose": {
-          "zh-CN": "每日采集已配置磁盘的 SMART 数据",
-          "en-US": "Collect SMART for configured disks daily"
+          "zh-CN": "读取各目标主机授权物理盘 SMART，按策略逐盘展开并保留人工审批。参数要求来自本机新鲜库存；旧v1仅原可信映射待核验，不自动扩权。命令范式：sudo -n -- /usr/sbin/smartctl --json=c --all <disk>",
+          "en-US": "Read each target host's authorized physical disks under all/custom policy and administrator approval. Require fresh host inventory; legacy v1 uses configured mappings pending verification without automatic widening. Template: sudo -n -- /usr/sbin/smartctl --json=c --all <disk>"
         },
         "hostScope": "configured",
         "deviceScope": "configured",

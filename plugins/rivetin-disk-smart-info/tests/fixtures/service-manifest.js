@@ -10,7 +10,7 @@ export function legacyReleaseDeclaration() {
 }
 
 export function assertCurrentReleaseManifest(manifest) {
-  assert.equal(manifest.version, '0.1.4');
+  assert.equal(manifest.version, '0.1.6');
   assert.deepEqual(manifest.compatibility, {
     schemaVersion: 2,
     frameworkApi: 1,

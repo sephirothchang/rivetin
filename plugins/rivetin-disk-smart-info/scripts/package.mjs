@@ -15,5 +15,5 @@ const bytes = Buffer.from(JSON.stringify({ format: 'rivetin-package-v1', manifes
 validatePackage(bytes);
 await mkdir(path.join(root, 'release'), { recursive: true });
 const output = path.join(root, 'release', `${metadata.name}-${metadata.version}.rivetin.json`);
-await writeFile(output, bytes);
+await writeFile(output, bytes, { flag: 'wx' });
 console.log(`Local Rivetin package: ${output}\nSHA-256: ${hash(bytes)}; ${bytes.length} bytes. No upload or deployment performed.`);

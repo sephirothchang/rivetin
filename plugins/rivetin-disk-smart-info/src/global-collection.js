@@ -1,4 +1,5 @@
 import { text, collectionText, smartFailureGuidance } from './i18n.js';
+import { SMART_COMMAND_DECLARATION as declaration } from './collection-declaration.js';
 
 const states = {
   queued: ['等待中', 'Queued'], running: ['采集中', 'Running'], succeeded: ['已完成', 'Succeeded'],
@@ -29,6 +30,14 @@ export function createGlobalCollection(React) {
       : collectionText({ status: 'failed', code: state.code }, locale);
     return h('section', { className: 'pk-smart-global', 'aria-label': t('全局手动采集', 'Global manual collection') },
       h('h4', null, t('全局手动采集', 'Global manual collection')),
+      h('section', { 'data-smart-command-declaration': '', 'data-smart-operation': declaration.operation,
+        'data-smart-category': declaration.category, 'data-smart-argument-source': declaration.argumentSource,
+        'data-smart-expansion': declaration.expansion, 'aria-label': t('采集命令声明', 'Collection command declaration') },
+        h('h5', null, t('命令范式（说明，不直接执行）', 'Command template (not executable input)')),
+        h('p', null, h('code', { 'data-smart-command-template': '', style: { overflowWrap: 'anywhere' } }, declaration.template)),
+        h('p', null, t('目标类别：物理磁盘（disk）。参数来源要求：目标主机的新鲜库存；v2由框架按授权范围逐盘展开计划。旧v1仅使用原可信映射，仍需核验，不自动迁移或扩大范围。', 'Target category: physical disks (disk). Argument source requirement: the target host’s fresh inventory. v2 expands authorized per-disk plans. Legacy v1 retains configured trusted mappings and requires verification; it is not automatically migrated or widened.')),
+        h('p', null, t('v2 all：目标主机全部授权物理盘；custom：仅明确选择的盘，空集不执行。范围由 SSH 连接设置控制，不跨主机选盘。', 'v2 all covers every authorized physical disk on the target host; custom includes only explicitly selected disks, and an empty selection executes nothing. SSH connection settings control the scope; disks are never selected across hosts.')),
+        h('p', null, t('模板、正则或通配符不能作为执行输入；实际路径须通过内置白名单、物理身份与人工审批检查。命令声明与展开后的逐盘计划分别审阅。', 'Templates, regular expressions and wildcards are not executable input. Actual paths must pass the built-in allowlist, physical identity and administrator approval checks. Review the declaration separately from its expanded per-disk plans.'))),
       h('p', null, t('采集所有已配置、已绑定且获授权的磁盘。未配置或未审核的目标不会执行；物理盘侧栏仍可单独采集。', 'Collect all configured, bound and authorized disks. Unconfigured or unapproved targets are not executed. Individual disks can still be collected from their sidebar.')),
       h('p', null, t('点击即发起一次采集，使用服务端已保存的目标与审核；无需保存本页设置，未保存草稿不参与采集。', 'Click to start one collection using saved server targets and approvals. No settings save is needed; unsaved drafts are not used.')),
       h('p', { className: 'pk-smart-meta' }, t('虚拟盘的本地模拟示例不计为采集成功，也不会写入真实历史。', 'Local virtual disk examples do not count as collected samples and are never written to actual history.')),

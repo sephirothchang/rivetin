@@ -55,6 +55,10 @@ export function gapText(code, locale) {
 export function errorText(code, locale) {
   const messages = {
     SMART_GENERATION_CHANGED: ['磁盘已更换或身份已变化，请重新读取。', 'The disk was replaced or its identity changed. Reload to verify it.'],
+    SMART_BINDING_CHANGED: ['可信采集绑定已变化，已清空旧数据。请联系管理员重新核验设备绑定与采集授权后再读取。', 'The trusted collection binding changed. Previous data was cleared. Ask an administrator to verify the binding and collection approval before reloading.'],
+    SMART_DISK_FORBIDDEN: ['没有读取该磁盘的权限，已清空旧数据。请联系管理员核实对象权限。', 'You no longer have read access to this disk. Previous data was cleared. Ask an administrator to verify object access.'],
+    AUTHENTICATION_REQUIRED: ['CloudTower 登录状态已失效，已清空旧数据。请重新登录后读取；主机 SSH 认证结果请查看通道独立检查。', 'Your CloudTower session is no longer valid. Previous data was cleared. Sign in again before reloading; check the SSH channel separately for host authentication results.'],
+    SMART_PLUGIN_DISABLED: ['磁盘健康插件已停用或当前不可用，已清空旧数据。请联系管理员核实插件启用状态与权限。', 'The Disk SMART plugin is disabled or unavailable. Previous data was cleared. Ask an administrator to verify plugin activation and permissions.'],
     SMART_HISTORY_CURSOR_STALE: ['历史记录已更新，请重新读取首页后继续翻页。', 'History changed. Reload the first page before continuing.'],
     SMART_DISK_UNBOUND: ['该磁盘尚未绑定可信采集设备，请联系管理员。', 'This disk has no trusted collection binding. Contact an administrator.'],
     SMART_NO_SAMPLE: ['尚无采样，等待已授权的后台采集。', 'No sample yet. Await authorized background collection.'],

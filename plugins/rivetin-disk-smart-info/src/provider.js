@@ -14,7 +14,9 @@ const gapCodes = new Set(['SMART_COLLECTION_FAILED', 'SMART_UNAVAILABLE', 'SMART
   'SMART_IDENTITY_MISMATCH', 'SMART_EXECUTION_TIMEOUT', 'SMART_EXECUTION_CANCELLED', 'SMART_OUTPUT_INVALID']);
 const failures = new Set(['SMART_NO_SAMPLE', 'SMART_DISK_UNBOUND', 'SMART_COLLECTION_FAILED', 'SMART_UNAVAILABLE', 'SMART_UNSUPPORTED',
   'SMART_INVALID_DATA', 'SMART_DEVICE_CHANGED', 'SMART_IDENTITY_MISMATCH', 'SMART_EXECUTION_TIMEOUT', 'SMART_EXECUTION_CANCELLED', 'SMART_OUTPUT_INVALID']);
-export const errorCode = error => [error?.code, error?.message].find(value => ['SMART_GENERATION_CHANGED', 'SMART_HISTORY_CURSOR_STALE', ...failures].includes(value)) || 'SMART_READ_FAILED';
+const readFailures = new Set(['SMART_GENERATION_CHANGED', 'SMART_HISTORY_CURSOR_STALE', 'SMART_BINDING_CHANGED',
+  'SMART_DISK_FORBIDDEN', 'AUTHENTICATION_REQUIRED', 'SMART_PLUGIN_DISABLED', ...failures]);
+export const errorCode = error => [error?.code, error?.message].find(value => readFailures.has(value)) || 'SMART_READ_FAILED';
 const cancelled = signal => { if (signal.aborted) throw new Error('REQUEST_CANCELLED'); };
 const successful = sample => ['ok', 'stale'].includes(sample.status);
 export function validateSnapshot(value, identity, now = Date.now()) {

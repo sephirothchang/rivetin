@@ -287,8 +287,15 @@ test('global shared failed collection retains unknown health and fresh history i
   const f = await setup(t); await f.bind(); f.state.mode = 'failed';
   const review = await f.service.sshChannel.review(PLUGIN_ID, admin);
   await f.service.sshChannel.approve({ pluginId: PLUGIN_ID, challenge: review.challenge, digest: review.digest, acknowledged: true }, admin);
-  const outcome = await collectAll(f.provider, { requestId: createRequestId(globalThis.crypto), signal: abort(), intervalMs: 50, timeoutMs: 5000 });
-  assert.equal(outcome.status, 'failed'); assert.equal(outcome.summary.failed, 1); assert.equal(f.state.runs, 1);
+  let submissions = 0;
+  const provider = {
+    collectAll: args => { submissions++; return f.provider.collectAll(args); },
+    // This test verifies committed failure history. Bounded waiting is tested
+    // separately; synchronize with real persistence rather than racing 30 polls.
+    collectionAll: async args => { await f.service.smartBatch.drain(); return f.provider.collectionAll(args); },
+  };
+  const outcome = await collectAll(provider, { requestId: createRequestId(globalThis.crypto), signal: abort(), intervalMs: 50, timeoutMs: 5000 });
+  assert.equal(outcome.status, 'failed'); assert.equal(outcome.summary.failed, 1); assert.equal(f.state.runs, 1); assert.equal(submissions, 1);
   const data = await loadDiskData(f.provider, f.state.disk.id, abort()); assert.equal(data.latest.risk, 'unknown'); assert.equal(data.history.length, 1);
   assert.equal(data.latest.code, 'SMART_EXECUTION_TIMEOUT'); assert.ok(data.latest.collectedAt);
 });

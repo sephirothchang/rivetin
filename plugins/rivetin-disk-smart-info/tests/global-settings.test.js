@@ -25,6 +25,21 @@ test('global settings has a distinct explicit action and never collects while re
   f.root.querySelector('button').click(); assert.equal(submits, 1); assert.equal(f.root.querySelector('button').type, 'button');
 });
 
+test('global settings separates the read-only command template from per-disk authorized plans in both languages', async t => {
+  let submits = 0; const f = await fixture(t, { locale: 'zh-CN', onCollect: () => submits++ });
+  assert.match(f.root.textContent, /命令范式/); assert.match(f.root.textContent, /目标主机.*库存/);
+  assert.match(f.root.textContent, /all.*custom/); assert.match(f.root.textContent, /逐盘/);
+  assert.equal(f.root.querySelector('[data-smart-command-template]').textContent, 'sudo -n -- /usr/sbin/smartctl --json=c --all <disk>');
+  const declaration = f.root.querySelector('[data-smart-command-declaration]');
+  assert.equal(declaration.dataset.smartCategory, 'disk'); assert.equal(declaration.dataset.smartArgumentSource, 'fresh-host-inventory');
+  assert.equal(declaration.dataset.smartExpansion, 'each-authorized-disk'); assert.match(declaration.textContent, /旧v1/);
+  assert.doesNotMatch(f.root.querySelector('[data-smart-command-declaration]').textContent, /\/dev\/sd[a-z]/);
+  assert.equal(submits, 0);
+  f.render({ locale: 'en-US', onCollect: () => submits++ });
+  assert.match(f.root.textContent, /Command template/); assert.match(f.root.textContent, /fresh inventory/);
+  assert.match(f.root.textContent, /not executable input/); assert.equal(submits, 0);
+});
+
 test('plugin settings wires the global action without saving drafts and stops its wait on unmount', async t => {
   let plugin, stop, posts = 0, aborted = false;
   const mock = createMockBatchProvider();

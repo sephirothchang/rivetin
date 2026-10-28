@@ -32,6 +32,29 @@ test('cluster and host route fixtures require exact disk identity and matching v
   f.win.location.hash = '#/vms/vm-demo'; assert.equal(routeDisk(f.win), null);
 });
 
+test('history read invalidation clears prior metrics and offers precise bilingual recovery without exposing server text', async t => {
+  for (const [code, status, zh, en] of [
+    ['SMART_BINDING_CHANGED', 409, /绑定已变化/, /binding changed/],
+    ['SMART_DISK_FORBIDDEN', 403, /没有读取该磁盘的权限/, /read access to this disk/],
+    ['AUTHENTICATION_REQUIRED', 401, /CloudTower 登录状态已失效/, /CloudTower session/],
+    ['SMART_PLUGIN_DISABLED', 403, /磁盘健康插件已停用/, /Disk SMART plugin is disabled/],
+  ]) {
+    const provider = createMockProvider();
+    const f = await fixture(t, { provider }); f.open(); await delay();
+    assert.ok(f.doc.querySelector('.pk-smart-table'));
+    provider.readHistory = async () => { throw Object.assign(new Error('EXAMPLE_PRIVATE_SERVER_DETAIL'), { code, status }); };
+    f.doc.querySelector('[data-pk-smart-panel] button').click(); await delay();
+    const panel = f.doc.querySelector('[data-pk-smart-panel]');
+    assert.equal(panel.querySelector('.pk-smart-table'), null);
+    assert.equal(panel.querySelectorAll('[data-sample-time]').length, 0);
+    assert.equal(panel.querySelector('[data-smart-collect]').disabled, true);
+    assert.match(panel.textContent, zh); assert.doesNotMatch(panel.textContent, /EXAMPLE_PRIVATE|SSH 认证失败/);
+    f.locale('en-US'); await delay(); assert.match(panel.textContent, en);
+    assert.doesNotMatch(panel.textContent, /EXAMPLE_PRIVATE|SSH authentication failed/);
+    f.stop();
+  }
+});
+
 test('observed Tower 4.9 cluster and host header-border-content shapes stay matched after mounting', async t => {
   const f = await fixture(t, { html: observedSidebar }), content = f.doc.querySelector('.tab-content');
   assert.equal(findDiskDetail(f.win).content, content);
