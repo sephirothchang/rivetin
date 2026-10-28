@@ -72,3 +72,33 @@ v4 的 `stage.json` 精确包含八个字段：`schemaVersion:1`、ISO `prepared
 官网回读仍使用七字段证明 `{schemaVersion:1,site,path,status,sha256,bytes,verifiedAt}`，清单实体和证明文件名仍是 `catalog.plugins.json`、`catalog.receipt.json`。v4 清单的证明路径必须为 `/catalog/v4/plugins.json`；包的固定下载路径不变。每个变化包都需要独立原始实体和证明，verify 逐字节核验后才更新选定 canonical。`draft --check` 和 `verify --check` 继续只检查，不写入。
 
 每次操作还会核对本地已知的 `catalog/plugins.json` 和 `catalog/v4/plugins.json`：同一插件 ID 和版本若存在不同已发布 SHA-256，或输入包与该已知摘要冲突，会拒绝操作。该检查不等于官网全局发布账本，也不验证已不在当前两个清单中的历史版本；官网仍需独立维护不可变发布记录。工具不联网核实证明来源，也不提供跨两个 canonical 文件的原子发布事务，发布方须串行维护并保存真实 HTTPS 回读证据。
+
+## v4 发行元数据交接
+
+`scripts/catalog-release.mjs` 为官网发行元数据提供独立入口，保留上述 `draft/stage/verify` 和严格 v3/v4 清单格式。它不修改框架运行时，也不让原 `stage.json` 携带正式发行号。
+
+生成原 v4 drop 后，用 `release-stage` 在该目录独占创建 `release-stage.json`。首次发行明确指定 `--first-release`；后续发行用 `--base-release` 指向已审核的上一份原始 `release.json`。工具校验上一份元数据与当前 canonical 清单的绑定，并记录其原始字节摘要。新请求只有八个字段：`schemaVersion`、私有 UUIDv4 `requestId`、`stageSHA256`、`catalogPath`、`indexSHA256`、`indexBytes`、`baseReleaseSHA256`、`candidateOnly`。它不分配 ML 号，不发布或更新 canonical；已有请求不会覆盖或自动重建。
+
+```sh
+node scripts/catalog-release.mjs release-stage --stage-output .local/site-drops/v4-example --first-release
+node scripts/catalog-release.mjs release-stage --stage-output .local/site-drops/v4-next --base-release .local/site-readback/previous/catalog.release.json
+```
+
+官网发布方维护发行号、不可变快照和账本，交回原始 `publication-output.json` 及提交态账本。协调方必须独立审核并冻结 output 的 SHA-256，再显式传给 `verify-release`；从回读证明中自行复制一个摘要不构成该信任来源。output 精确绑定请求、原 stage、新清单、元数据、不可变副本、账本和变化包。`local-committed` 只表示官网发布方本地提交，不能当成 HTTPS 上线或验证完成。
+
+每个发行都需要四份 HTTPS 原始实体及七字段回读证明：
+
+| 实体 | 证明 | 精确路径 |
+| --- | --- | --- |
+| `catalog.plugins.json` | `catalog.receipt.json` | `/catalog/v4/plugins.json` |
+| `catalog.release.json` | `catalog.release.receipt.json` | `/catalog/v4/release.json` |
+| `catalog.snapshot.plugins.json` | `catalog.snapshot.receipt.json` | `/catalog/v4/releases/<publicationId>/plugins.json` |
+| `catalog.snapshot.release.json` | `catalog.snapshot.release.receipt.json` | `/catalog/v4/releases/<publicationId>/release.json` |
+
+当前清单与不可变清单必须逐字节相同，当前元数据与不可变元数据也必须逐字节相同。元数据精确绑定 `ML-V4-YYMMDD.rev`、上海日期、UTC 毫秒时间、清单路径/大小/摘要和快照路径；不从下载内容重新序列化一份“预期字节”。账本只作为发布源证据，限制为编码 JSON 2 MiB 且不超过 5000 项，达到任一上限即拒绝。它不需要公开 HTTP 下载，工具也不修改它或为其标记 verified。
+
+```sh
+node scripts/catalog-release.mjs verify-release --stage-output .local/site-drops/v4-example --proof-directory .local/site-readback/v4-example --publication-output .local/publication-output.json --publication-output-sha256 <COORDINATOR_FROZEN_SHA256> --ledger .local/committed-ledger.json --check
+```
+
+证明时间须不早于 stage 和发行时间两者的较晚者，距离检查时间不超过 24 小时，且不能超前本地时钟五分钟；变化包沿用原实体/证明命名规则并遵守相同时间边界。四份实体、证明、账本和所有变化包全部通过后，工具调用原 `verify` 的包校验、跨清单摘要检查及 canonical 比较后写入流程。`--check` 不写，canonical 需要变化时返回 1；正式写入须显式省略 `--check` 并遵守维护方授权。离线工具校验的是交回证据，不能证明 HTTPS 请求实际发生；真实回读、单一写入窗口和发布后状态仍由发布方核验。请求 UUID、stage、output 和原始证明只保留在忽略目录，不随网站公开。
