@@ -42,7 +42,7 @@ export async function packageArtifacts(root, args = []) {
   const archiveBytes = await readFile(path.join(release, archive));
   const checksums = `${hash(bytes)}  ${standard}\n${hash(archiveBytes)}  ${archive}\n`;
   await writeFile(path.join(release, 'SHA256SUMS'), checksums, { flag: 'wx' });
-  console.log(`${standard}: ${bytes.length} bytes (dormant preview entry)`);
+  console.log(`${standard}: ${bytes.length} bytes (framework work page; no live network apply)`);
   console.log(`${archive}: ${archiveBytes.length} bytes (interactive local demo)`);
   console.log(checksums);
 }

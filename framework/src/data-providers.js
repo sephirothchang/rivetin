@@ -1,4 +1,5 @@
 import { validId } from '../shared/identity.js';
+import { topologyId, validateTopologyClusters, validateTopologySnapshot } from '../shared/network-topology.js';
 
 const id = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value);
 const generation = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
@@ -42,6 +43,19 @@ export function createDataProviders(api, pluginId) {
     live(signal); return result;
   }
   return {
+    networkTopology: Object.freeze({
+      async listClusters({ signal } = {}) {
+        live(signal); if (pluginId !== 'rivetin-network-topology') fail('TOPOLOGY_PERMISSION_REQUIRED');
+        const value = await api(`/data/network-topology/clusters?${query({ pluginId })}`, 'GET', undefined, { signal });
+        live(signal); return validateTopologyClusters(value);
+      },
+      async read({ clusterId, signal } = {}) {
+        live(signal); if (pluginId !== 'rivetin-network-topology') fail('TOPOLOGY_PERMISSION_REQUIRED');
+        if (!topologyId(clusterId)) fail('TOPOLOGY_CLUSTER_INVALID');
+        const value = await api(`/data/network-topology/snapshot?${query({ pluginId, clusterId })}`, 'GET', undefined, { signal });
+        live(signal); return validateTopologySnapshot(value, clusterId);
+      },
+    }),
     diskSmart: Object.freeze({
       async readInventory({ diskId, signal } = {}) {
         if (!id(diskId)) fail('SMART_IDENTITY_INVALID');

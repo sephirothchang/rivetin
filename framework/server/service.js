@@ -18,6 +18,7 @@ import { createSmartBatch } from './smart-batch.js';
 import { createResourceActions } from './resource-actions.js';
 import { createSshInventory } from './tower-inventory.js';
 import { createSshPreflight } from './ssh-preflight.js';
+import { createNetworkTopology } from './network-topology.js';
 
 const missing = { installed: false, enabled: false, version: null, packageId: null, previous: null };
 export function createService(directory, { towerSink, updateSource, builtinPackages = [], sshRun, sshPreflightTransport, towerBuild, towerVersionProvider, productVersionProvider, readDisk, readDiskInventory, towerRequest, componentProbes } = {}) {
@@ -108,6 +109,8 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
     towerBuildProvider: async () => (await compatibilityContext({ fresh: true })).towerBuild,
     audit: event => audit.append(event) }) : null;
   const sshInventory = towerRequest ? createSshInventory({ request: towerRequest }) : null;
+  const topology = towerRequest ? createNetworkTopology({ request: towerRequest, pluginStatus,
+    towerBuildProvider: async () => (await compatibilityContext({ fresh: true })).towerBuild }) : null;
   async function assertPreflightActive(actor) {
       if (!actor?.admin) throw Object.assign(new Error('ADMIN_REQUIRED'), { status: 403 });
       const runtime = await service.runtime(), channel = (await service.plugins()).find(item => item.id === 'rivetin-ssh-channel');
@@ -249,6 +252,10 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
       task(input) { if (!actions) throw Object.assign(new Error('RESOURCE_ACTION_UNAVAILABLE'), { status: 503 }); return actions.task(input); },
       openConsole(input) { if (!actions) throw Object.assign(new Error('RESOURCE_ACTION_UNAVAILABLE'), { status: 503 }); return actions.openConsole(input); },
     },
+    networkTopology: {
+      listClusters(input) { if (!topology) throw Object.assign(new Error('TOPOLOGY_PROVIDER_UNAVAILABLE'), { status: 503 }); return topology.listClusters(input); },
+      read(input) { if (!topology) throw Object.assign(new Error('TOPOLOGY_PROVIDER_UNAVAILABLE'), { status: 503 }); return topology.read(input); },
+    },
     smartBind(input, actor) {
       if (!actor?.admin) throw Object.assign(new Error('ADMIN_REQUIRED'), { status: 403 });
       return recorded(actor, 'smart.binding.save', null, async () => {
@@ -283,7 +290,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
     },
     async initialize(actor, { upgradeFrom } = {}) {
       actorCheck(actor);
-      if (upgradeFrom !== undefined && (!['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1', '0.2.2', '0.2.3'].includes(upgradeFrom) || FRAMEWORK_VERSION !== '0.2.4')) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
+      if (upgradeFrom !== undefined && (!['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1', '0.2.2', '0.2.3', '0.2.4', '0.2.5'].includes(upgradeFrom) || FRAMEWORK_VERSION !== '0.2.6')) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
       return disk.locked(() => runtimeDisk.locked(async () => {
         await mkdir(path.dirname(frameworkFile), { recursive: true });
         const created = !(await exists(frameworkFile));
@@ -291,7 +298,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
         if (created && upgradeFrom !== undefined) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
         if (!created) {
           const stored = await json(frameworkFile);
-          if (stored.apiVersion !== 1 || !['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1', '0.2.2', '0.2.3', FRAMEWORK_VERSION].includes(stored.version)) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
+          if (stored.apiVersion !== 1 || !['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1', '0.2.2', '0.2.3', '0.2.4', '0.2.5', FRAMEWORK_VERSION].includes(stored.version)) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
           if (upgradeFrom !== undefined && !(await exists(disabledFile))) throw new Error('FRAMEWORK_DISABLE_BEFORE_UPGRADE');
           if (stored.version !== FRAMEWORK_VERSION) {
             if (upgradeFrom !== stored.version) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');

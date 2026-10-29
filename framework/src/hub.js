@@ -16,6 +16,9 @@ import { createDataProviders } from './data-providers.js';
 import { createSshConnectionsStore } from './ssh-connection-settings.js';
 import { createComponentsStatus } from './components-status.js';
 import { RIVETIN_MARK_URL } from './brand.js';
+import { installUiContributions } from './ui-contributions.js';
+import { createTowerWorkPageHost } from './tower-workpage-host.js';
+import { readUiContributions } from '../shared/ui-contributions.js';
 
 const extraCss = `
 .pk-badge-suspended{color:#946000;background:#fff8e6;border-color:#f0d28d}
@@ -40,6 +43,7 @@ export function createFrameworkHub(options = {}) {
     const [updateSourceStatus, setUpdateSourceStatus] = useState({ checking: true, reachable: false }), [updateProbeEpoch, setUpdateProbeEpoch] = useState(0);
     const updateProbeRequest = useRef(null);
     const alive = useRef(true), sessions = useRef(new Map()), loading = useRef(false), generation = useRef(0);
+    const workPages = useRef(null), pageEntries = useRef([]);
     const dialog = useRef(null), confirmDialog = useRef(null), lastFocus = useRef(null), openRef = useRef(false);
     const [api] = useState(() => options.client || createClient(window));
     const [connectionStore] = useState(() => createSshConnectionsStore({ client: api, crypto: window.crypto }));
@@ -60,7 +64,7 @@ export function createFrameworkHub(options = {}) {
         if (!alive.current) return;
         setRuntime({ ...state, connected: true });
         // Stop immediately after runtime read, before package/config parsing.
-        if (!state.enabled) for (const session of sessions.current.values()) stopSession(session);
+        if (!state.enabled) { for (const session of sessions.current.values()) stopSession(session); pageEntries.current = []; workPages.current?.sync([], localeRef.current); }
         const listing = await api('/plugins');
         if (!Array.isArray(listing.items) || listing.items.some(record => !validId(record.id)) || new Set(listing.items.map(record => record.id)).size !== listing.items.length) throw new Error('INVALID_PLUGIN_LIST');
         if (!alive.current || currentGeneration !== generation.current) return;
@@ -78,10 +82,11 @@ export function createFrameworkHub(options = {}) {
               const factory = options.definitions?.[record.id] || await loadPlugin(window, record, api);
               if (!alive.current || generation.current !== currentGeneration) return;
               const providers = createDataProviders(api, record.id);
-              const scopedOptions = { ...options, diskSmartInfo: { ...options.diskSmartInfo, provider: providers.diskSmart }, resourceActions: requestedId => { if (requestedId !== record.id) throw new Error('PLUGIN_ID_MISMATCH'); return providers.resourceActions; } };
+              const { workPageHost: privateHost, uiHost: privateUiHost, ...pluginOptions } = options;
+              const scopedOptions = { ...pluginOptions, diskSmartInfo: { ...options.diskSmartInfo, provider: providers.diskSmart }, networkTopology: { provider: providers.networkTopology }, resourceActions: requestedId => { if (requestedId !== record.id) throw new Error('PLUGIN_ID_MISMATCH'); return providers.resourceActions; } };
               const definition = factory({ React, win: window, history, apolloClient, options: scopedOptions, getLocale: () => localeRef.current });
               if (definition.id !== record.id || !definition.store || typeof definition.Settings !== 'function' || typeof definition.activate !== 'function') throw new Error('PLUGIN_DEFINITION_INVALID');
-              session = { ...definition, id: record.id, version: record.packageId };
+              session = { id: record.id, version: record.packageId, store: definition.store, Settings: definition.Settings, activate: definition.activate, uiRegistration: readUiContributions(definition, record.manifest) };
               session.unsubscribe = session.store.subscribe(() => { if (alive.current) render(value => value + 1); });
               sessions.current.set(record.id, session); await session.store.load();
             } catch { if (alive.current) setError(`${record.id}: PLUGIN_LOAD_FAILED`); continue; }
@@ -89,10 +94,13 @@ export function createFrameworkHub(options = {}) {
           if (!session.stop) session.stop = session.activate(message => setError(message));
         }
         for (const [id, session] of sessions.current) if (!active.has(id)) stopSession(session);
+        pageEntries.current = listing.items.filter(record => state.enabled && record.active && sessions.current.get(record.id)?.version === record.packageId && sessions.current.get(record.id)?.store.status().loaded).map(record => ({ id: record.id, packageId: record.packageId, manifest: record.manifest, uiRegistration: sessions.current.get(record.id).uiRegistration }));
+        workPages.current?.sync(pageEntries.current, localeRef.current);
         setLoaded(Object.fromEntries(sessions.current));
         if (openRef.current) await refreshLogs();
       } catch {
         for (const session of sessions.current.values()) stopSession(session);
+        pageEntries.current = []; workPages.current?.sync([], localeRef.current);
         if (alive.current) { setRuntime(previous => ({ ...previous, enabled: false, connected: false })); setError('请求失败，请刷新后重试。'); }
       } finally { loading.current = false; }
     }
@@ -120,6 +128,21 @@ export function createFrameworkHub(options = {}) {
       return () => { current = false; window.clearInterval(timer); };
     }, [open, tab, updateProbeEpoch]);
     useEffect(() => watchTowerLocale(window, setLocale, suppliedLocale), [suppliedLocale]);
+    useEffect(() => {
+      const pages = installUiContributions({ win: window, history, resolveHost: options.uiHost || createTowerWorkPageHost(window),
+        renderPage(entry, root, props, controls) {
+          function paint(next) {
+            const title = entry.manifest.name?.[next.locale] || entry.id;
+            ReactDOM.render(h('div', { className: 'rv-workpage-shell', lang: next.locale }, h('header', { className: 'rv-workpage-header' },
+              h('h1', null, title), h('button', { type: 'button', onClick: controls.close }, next.locale === 'en-US' ? 'Back to native page' : '返回原页面')),
+            h(entry.page.Component, next)), root);
+          }
+          paint(props); return { update: paint, dispose: () => ReactDOM.unmountComponentAtNode(root) };
+        }, onStatus: (code, pluginId) => { if (alive.current) setError(pluginId ? `${pluginId}: ${code}` : code); } });
+      workPages.current = pages; pages.sync(pageEntries.current, localeRef.current);
+      return () => { pages.dispose(); workPages.current = null; };
+    }, [history]);
+    useEffect(() => { workPages.current?.sync(pageEntries.current, locale); }, [locale]);
     useEffect(() => {
       const notice = installUpgradeNotice({ win: window, getState: () => currentState.current, getLocale: () => localeRef.current, onOpen: show });
       upgradeNotice.current = notice;
@@ -237,7 +260,7 @@ export function createFrameworkHub(options = {}) {
               tab === 'about' ? h(About, { locale }) : tab === 'components' ? h(ComponentsStatus, { client: api, locale, t, onRefresh: refresh }) : tab === 'market' ? h(Marketplace, { client: api, locale, onInstalled: () => refresh(), onError: message => setError(message) }) : tab === 'rivetin-ssh-channel' ? h(React.Fragment, null,
                 session && h('fieldset', { className: 'c89-functional', disabled: !session.store.status().loaded || busy || !runtime.enabled || !records.some(record => record.id === tab && record.active) }, h(session.Settings, { preferences: session.store.getDraft(), store: session.store, t, locale })),
                 h(SshSettings, { client: api, locale, connectionStore, preflightEnabled: runtime.enabled === true && records.some(record => record.id === 'rivetin-ssh-channel' && record.active), onError: message => setError(message) })) : tab === 'center' || tab === 'logs' ? h(Management, { tab, records, packages, runtime, logs, onAction: perform, onUpload: upload,
-                onRefresh: () => { refresh(); setUpdateProbeEpoch(value => value + 1); }, onMore: () => refreshLogs(true).catch(() => setError('请求失败，请刷新后重试。')), onCheck: checkUpdates, onMarket: () => setTab('market'), updates, updateChecked, updateSourceStatus, busy, t, locale }) :
+                onRefresh: () => { refresh(); setUpdateProbeEpoch(value => value + 1); }, onMore: () => refreshLogs(true).catch(() => setError('请求失败，请刷新后重试。')), onCheck: checkUpdates, onMarket: () => setTab('market'), updates, updateChecked, updateSourceStatus, busy, t, locale, uiStates: Object.fromEntries([...sessions.current].map(([id, value]) => [id, value.uiRegistration])) }) :
               session ? h('fieldset', { className: 'c89-functional', disabled: !session.store.status().loaded || busy || !runtime.enabled || !records.some(record => record.id === tab && record.active) },
                 h(session.Settings, { preferences: session.store.getDraft(), store: session.store, t, locale })) : h('p', null, t('已禁用')),
               session?.store.status().error && h('p', { role: 'alert', className: 'pk-plugin-error' }, t(session.store.status().error))),

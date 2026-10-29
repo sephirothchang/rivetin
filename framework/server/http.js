@@ -45,6 +45,14 @@ export function createApi(service, { authenticate, origins = [] } = {}) {
           return send(res, 200, await service.components.status(actor, { fresh: values.fresh === 'true' }));
         }
         if (route === '/components/support') { parameters([]); return send(res, 200, await service.components.support(actor)); }
+        if (route === '/data/network-topology/clusters' || route === '/data/network-topology/snapshot') {
+          const snapshot = route.endsWith('/snapshot'), values = parameters(snapshot ? ['pluginId', 'clusterId'] : ['pluginId']);
+          if (Object.keys(values).sort().join() !== (snapshot ? 'clusterId,pluginId' : 'pluginId')) throw new Error('INVALID_REQUEST');
+          const controller = new AbortController(), cancel = () => { if (!res.writableEnded) controller.abort(); };
+          res.once('close', cancel);
+          try { return send(res, 200, await service.networkTopology[snapshot ? 'read' : 'listClusters']({ ...values, actor, signal: controller.signal })); }
+          finally { res.removeListener('close', cancel); }
+        }
         if (route.startsWith('/data/disk-smart/')) {
           const operation = route.slice('/data/disk-smart/'.length);
           if (operation === 'inventory') {

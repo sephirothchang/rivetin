@@ -1,6 +1,26 @@
 # rivetin-network-topology
 
-网络拓扑可视化编辑，版本 `0.1.0`。当前是**本地交互 Demo**。演示程序不连接真实 CloudTower，不提供真实网络修改能力，不安装到真实环境。社区独立开发，非 SmartX 官方产品。采用 [MIT](LICENSE)；[源码](https://github.com/sephirothchang/rivetin/tree/main/plugins/rivetin-network-topology)。
+网络拓扑可视化编辑，版本 `0.1.3`。既有 `0.1.0` / C04 为**本地交互 Demo**，固定包保持原样。当前按框架 0.2.6 通用 UI 合同提供工作页：真实资源只读、页面布局编辑、本地关联草稿与差异审查。已完成当前中文下的有限实机验证，待验范围见下文。社区独立开发，非 SmartX 官方产品。采用 [MIT](LICENSE)；[源码](https://github.com/sephirothchang/rivetin/tree/main/plugins/rivetin-network-topology)。
+
+## 实装开发状态
+
+用户已要求实装插件；旧 Demo-only 阶段限制不再作为新接入工作的限制。插件新增自身资源模型、四列工作页控制器、React 页面组件及本地关联草稿。`0.1.3` / C03 已返回正式 UI 定义，并在框架 `0.2.6` 下完成当前中文界面的有限实机验证；独立 Demo 与本地 fixture 的证据单独保留。`0.1.0` 旧固定包仍休眠，旧本地结果不作为本次实机结果。
+
+工作页不导入合成 Demo，不直接调用 Tower 接口或主机，不把浏览器计时器用作真实回滚。资源关系实线保留实际状态，本地草稿用单独差异及虚线标记，不发送网络修改。完整性、用途或观察新鲜度不足时拒绝生成关联草稿；未知用途、bond、链路速率或 LLDP 不补成模拟值。用户已要求**本轮同时实现真实网络变更与服务端回滚**；页面阶段可先验收，但不能据此完成整个任务。事务能力以服务端真实接口和可逆操作矩阵为准，当前界面明确显示真实应用尚不可用，随后接入计划、应用、确认、回滚和状态恢复，实际环境执行仍需准确目标和窗口。
+
+入口为现有集群“网络拓扑”页面中的“可视化编辑”按钮，由本插件的 `ui.contributions` 声明 label、icon、order、visibility 及 page 目标；框架在 `cluster-network-topology.toolbar.actions` 语义插槽登记入口、承载页面并处理脏草稿离开。首读严格使用原生入口 `context.clusterId`，不回退列表首项；集群选择跟随原页面。工作页使用 `options.networkTopology.provider`，不把框架 0.2.4 当成已提供这些能力。最低版本为 `0.2.6`，权限为 `inventory.read`，目标产品构建为 `4.9.0`；实机仅验证下述范围，不代表完整版本适配验收。兼容字段中的旧 max 仅为旧 reader 的语法载体，新框架不执行上限。详细边界与验收见 [实装接入方案](docs/live-integration.md)及[通用 UI 合同](../../docs/plugin-ui-contributions.md)及[只读提供器合同](../../docs/plugin-workpages.md)。以下章节描述保留的独立 Demo，所有自动创建、应用及 90 秒确认均为模拟。
+
+切换界面语言只更新现有会话的文案，保留关联草稿、布局、集群、资源观察与在途读取；停用、取消或上下文切换仍执行真正清理。旧 0.1.1 C01 因 dirty 切语丢草稿未通过独审，原包及证据保留；0.1.2 C02 为独立修正候选，不能沿用 C01 的验收结论。0.1.3 C03 另行迁移通用 UI 声明，C01/C02 原包与报告保留；C02 的本地验收不自动继承到新候选。
+
+## 已验证范围与待验事项（2026-10-29）
+
+- **已验证**：当前中文界面的原生拓扑页入口、保留集群树/标题/页签的右侧工作区、跟随当前集群的只读资源及关系展示、最小父子布局移动、干净返回原生画布和重入后的布局复位。
+- **用途疑点待查**：带管理/存储原生标识的对象在插件中显示为 workload，可信用途来源和映射仍待核对，尚未确认为 Bug。用途保护依赖提供器输入，本次不宣称已验证管理/存储对象的实机保护；未生成关联意图，真实本地草稿及 dirty Cancel/Discard 待验。
+- **切语待验**：本次使用当前中文，未更改账户、全局语言或浏览器偏好。本地 C03 已验证切语保留草稿，但 034 的真实切语仍待测试，不能标记全部解决。
+- **日志未决**：本次有 45 条共享模块版本 warning 与 2 条初始化阶段 HTTP 504 error。后者堆栈位于原生 bundle，端点、根因及与本插件的关系尚未证实；不以最终读取成功解释为零错误或全部通过。
+- **尚未实现**：真实网络事务、二次确认和独立服务端回滚。它们仍属于本轮接续目标，有限只读页面验收不代表整项完成。
+
+本次没有共享配置保存、真实网络应用/回滚、SSH 或新身份创建。原 C03 运行代码与固定包保持原字节；本节是后验文档更新，不重打同版制品。原始环境截图、DOM、日志和授权记录仅保留本地，不进入公开资料或制品。
 
 ## 页面结构依据
 
@@ -28,7 +48,7 @@ npm run demo
 
 打开 [本地 Demo](http://127.0.0.1:43182/)，仅监听回环地址。关闭 Node.js 进程即可停止。不要对外部署演示服务器。
 
-从 `release/rivetin-network-topology-0.1.0-local-demo.tar.gz` 解压后，无需安装依赖，直接 `node demo/server.mjs`。归档内的构建、测试脚本入口属于源码元信息，执行这些脚本需要完整仓库。
+从固定的独立 `*-local-demo.tar.gz` 解压后，无需安装依赖，直接 `node demo/server.mjs`。旧 C04 为 `0.1.0`；新候选版本以其独立目录和清单为准。归档内的构建、测试脚本入口属于源码元信息，执行这些脚本需要完整仓库。
 
 ## 左侧组件库与自动创建
 
@@ -109,17 +129,19 @@ npm run package
 npm run package -- --output-dir release/candidates/local-review-01
 ```
 
+Windows PowerShell 下若 npm 未原样透传 --output-dir，直接使用 node scripts/package.mjs --output-dir release/candidates/<新目录>；先核对失败未产生输出，不能重复覆盖已有候选。
+
 目录用于区分候选，包内版本仍以源码与清单为准；候选生成不代表发布或真实环境兼容验收。标准入口还会打包共享框架配置客户端，追溯时须同时核对共享源码、框架锁文件、工具链与最终构建摘要，不能仅凭插件源码相同推定包字节相同。
 
-输出：
+通用 UI 候选使用独立目录 `release/candidates/ui-20261029-c03/`；其冻结记录和实际摘要独立核对，候选不等于已部署或发布：
 
-- `release/rivetin-network-topology-0.1.0-local-demo.tar.gz`：独立可运行的交互演示。
-- `release/rivetin-network-topology-0.1.0.rivetin.json`：符合框架 v1 的休眠占位入口，复用空共享配置契约，不注入编辑器、不执行网络操作。**本轮不安装或启用此包。**
-- `release/SHA256SUMS`：制品 SHA-256。
+- `rivetin-network-topology-0.1.3-local-demo.tar.gz`：独立可运行的合成交互演示。
+- `rivetin-network-topology-0.1.3.rivetin.json`：框架 0.2.6 通用 UI 页面，只读真实资源与本地关联草稿，不执行网络应用。包格式仍为 v1，兼容声明为 schema2。
+- `SHA256SUMS`：同一独立候选目录内的制品 SHA-256。旧 `0.1.0` 包仍保留，不作为本次实装候选。
 
 包使用显式文件白名单；原始环境证据、截图、调查记录、备份、代理说明、日志、配置和 source map 不进入归档。正式包仅有 web/plugin.js 和 LICENSE。
 
-测试覆盖保护、单主机上联事务、跨主机拒绝、带宽语义、风险门禁、90 秒边界、重复事务、四列对象与真实连线、折叠 / 缩放、NIC / 连接点拖拽、自由布局与手势取消、新建对象删除依赖、虚拟网络重新关联、离开流程、语言和清理。浏览器实际验证独立记录于本地忽略目录，不作为生产验收。
+测试覆盖保护、单主机上联事务、跨主机拒绝、带宽语义、风险门禁、90 秒边界、重复事务、四列对象与真实连线、折叠 / 缩放、NIC / 连接点拖拽、自由布局与手势取消、新建对象删除依赖、虚拟网络重新关联、离开流程、语言和清理。独立 Demo 与本地 fixture 的浏览器证据保留在本地忽略目录，不能替代上述实机验证或扩大其范围。
 
 ## 正式接入缺口
 
@@ -131,4 +153,4 @@ npm run package -- --output-dir release/candidates/local-review-01
 
 当前目录、包名和 ID 均为 `rivetin-network-topology`，描述文件 `rivetin.json`；工厂注册在 `window.RivetinPlugins`，使用 `RivetinSDK`。标准包为 `rivetin-package-v1` / `rivetin-global-v1`，制品扩展名 `.rivetin.json`。配置只使用 `/api/rivetin/v1/config` 和当前 ID，不做历史 ID、目录、API 或格式回退，不迁移或双写旧配置。
 
-机器可检验的 `towerBuilds` 保持空数组，表示没有经过真实版本适配验收。包格式校验成功不代表可以在真实 CloudTower 安装或启用。配置规范见 [Rivetin 配置契约](../../docs/rivetin-configuration.md)。原作者的许可证与署名按原文保留。
+既有 `0.1.0` 固定描述文件中 `towerBuilds` 为空，原字节保留。`0.1.3` 源码声明 frameworkApi 1、最低框架 0.2.6、Tower 4.9.0、SMTX none 与 inventory.read；4.9.0 为框架核验的产品版本及本次有限实测版本，不代表本插件已完成所有功能、用途保护或版本适配测试。工作页只接收窄上下文和专属 provider，实际接口及服务端授权由框架提供。包格式校验成功不代表已经完成安装或启用。配置规范见 [Rivetin 配置契约](../../docs/rivetin-configuration.md)。原作者的许可证与署名按原文保留。

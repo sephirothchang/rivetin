@@ -39,6 +39,10 @@ METADATA_UPGRADES.update((source, '0.2.3') for source in KNOWN_METADATA_VERSIONS
 KNOWN_METADATA_VERSIONS += ('0.2.3',)
 METADATA_UPGRADES.update((source, '0.2.4') for source in KNOWN_METADATA_VERSIONS)
 KNOWN_METADATA_VERSIONS += ('0.2.4',)
+METADATA_UPGRADES.update((source, '0.2.5') for source in KNOWN_METADATA_VERSIONS)
+KNOWN_METADATA_VERSIONS += ('0.2.5',)
+METADATA_UPGRADES.update((source, '0.2.6') for source in KNOWN_METADATA_VERSIONS)
+KNOWN_METADATA_VERSIONS += ('0.2.6',)
 
 def fail(code):
     raise RuntimeError(code)
@@ -261,7 +265,7 @@ def extract_release(data, target):
                 if name not in ['server', 'deploy', 'server/vendor', 'server/builtins', 'shared']:
                     fail('SERVICE_ARCHIVE_INVALID')
                 continue
-            if not m.isfile() or not (name in allowed or name in ['shared/identity.js', 'shared/version.js', 'shared/framework-compatibility.js', 'server/vendor/ssh2.cjs', 'server/builtins/rivetin-ssh-channel.json', 'server/ssh-connections-v2.js'] or re.fullmatch(r'(server/[a-z-]+\.js|deploy/[a-z.-]+)', name)):
+            if not m.isfile() or not (name in allowed or name in ['shared/identity.js', 'shared/version.js', 'shared/framework-compatibility.js', 'shared/work-pages.js', 'shared/network-topology.js', 'server/vendor/ssh2.cjs', 'server/builtins/rivetin-ssh-channel.json', 'server/ssh-connections-v2.js'] or re.fullmatch(r'(server/[a-z-]+\.js|deploy/[a-z.-]+)', name)):
                 fail('SERVICE_ARCHIVE_INVALID')
             if name in contents:
                 fail('SERVICE_ARCHIVE_INVALID')

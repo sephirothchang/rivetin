@@ -2,10 +2,10 @@ import { convert, exportReview } from './converter.js';
 import { sampleInventory, sampleTraffic, sampleExternal } from './sample.js';
 
 export function createSession(initialLabelKey = 'application') {
-  const blank = () => ({ inventoryText: '', trafficText: '', clusterId: '', externalText: '', columnMap: {}, result: null, reviewed: false, error: '' });
+  const blank = () => ({ inventoryText: '', trafficText: '', clusterId: '', externalText: '', columnMap: {}, result: null, reviewed: false, error: '', reading: false });
   let state = blank(), revision = 0, active = false, labelKey = initialLabelKey;
   const listeners = new Set(), emit = () => { for (const listener of listeners) listener(); };
-  const invalidate = () => { revision++; state = { ...state, result: null, reviewed: false, error: '' }; };
+  const invalidate = () => { revision++; state = { ...state, result: null, reviewed: false, error: '', reading: false }; };
   return {
     view: () => structuredClone(state), isActive: () => active,
     subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
@@ -23,9 +23,9 @@ export function createSession(initialLabelKey = 'application') {
     sample() {
       this.set({ inventoryText: JSON.stringify(sampleInventory, null, 2), trafficText: sampleTraffic, clusterId: 'demo-cluster', externalText: sampleExternal, columnMap: {} });
     },
-    beginRead() { invalidate(); emit(); return revision; },
+    beginRead() { invalidate(); state.reading = true; emit(); return revision; },
     finishRead(ticket, field, text) { if (active && ticket === revision) this.set({ [field]: text }); },
-    failRead(ticket) { if (active && ticket === revision) { state.error = 'FILE_READ'; emit(); } },
+    failRead(ticket) { if (active && ticket === revision) { state.reading = false; state.error = 'FILE_READ'; emit(); } },
     run() {
       if (!active) return;
       invalidate();

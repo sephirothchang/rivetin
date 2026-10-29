@@ -282,12 +282,15 @@ test('leaving draft offers cancel/discard/save; locale follows host; dispose rol
   ctx.session.apply(true); ctx.stop(); assert.equal(ctx.root.children.length, 0); assert.deepEqual(ctx.session.view().current, createMockTopology());
 });
 
-test('Rivetin package entry is dormant, exposes shared config contract and performs no topology calls', async () => {
+test('plugin declares its own page entry and activation performs no topology reads or body injection', async () => {
   const dom = new JSDOM('', { url: 'http://127.0.0.1/' });
   let loads = 0;
   const definition = factory({ React: { createElement: (tag, props, text) => ({ tag, text }) }, win: dom.window,
     options: { configurationBackend: () => ({ load: async () => { loads++; return { revision: 0, updatedAt: null, settings: {} }; } }) } });
   assert.equal(definition.id, 'rivetin-network-topology');
+  assert.equal(Object.hasOwn(definition, 'workPage'), false);
+  assert.equal(definition.ui.contributions[0].slot, 'cluster-network-topology.toolbar.actions');
+  assert.equal(typeof definition.ui.pages[0].Component, 'function');
   assert.equal(typeof definition.activate(), 'function'); definition.activate()();
   assert.match(definition.Settings({ locale: 'en-US' }).text, /not implemented/);
   await definition.store.load(); assert.equal(loads, 1); assert.equal(definition.store.status().dirty, false);

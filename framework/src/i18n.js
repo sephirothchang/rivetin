@@ -12,6 +12,15 @@ export function watchTowerLocale(win, onChange, supplied) {
   return () => { observer.disconnect(); win.removeEventListener('storage', read); win.clearInterval(timer); };
 }
 const en = {
+  UI_LEGACY_WORKPAGE_UNAVAILABLE: 'This internal work-page format is retired. Update the plugin to UI contributions; its existing settings remain available.',
+  UI_FRAMEWORK_MINIMUM_REQUIRED: 'This UI contribution must declare framework 0.2.6 or later. Update the plugin declaration.',
+  UI_CONTRIBUTIONS_INVALID: 'The plugin UI declaration is invalid. Its entries are unavailable; existing settings remain available.',
+  UI_PAGE_TARGET_UNAVAILABLE: 'This plugin page is unavailable here. Return to the native page and check the plugin and current context.',
+  UI_PAGE_RENDER_FAILED: 'The plugin page could not be displayed. Native content has been restored.',
+  UI_PAGE_CLEANUP_FAILED: 'The plugin page reported a cleanup problem. Check the plugin before reopening it.',
+  UI_ACTION_FAILED: 'The plugin action failed. Check its current state before retrying any operation.',
+  UI_CONTRIBUTION_LIMIT: 'The UI entry limit was reached. Some entries are unavailable.',
+  UI_ROUTER_UNSUPPORTED: 'This host does not provide the navigation contract required for plugin UI entries.',
   FRAMEWORK_TOWER_INCOMPATIBLE: 'This CloudTower version is outside the framework verified range. Framework execution is disabled.',
   FRAMEWORK_VERSION_UNKNOWN: 'The framework version could not be verified. Compatibility remains unknown.',
   PLUGIN_COMPATIBILITY_INVALID: 'The plugin compatibility declaration is invalid. Installation and activation are blocked.',
@@ -77,6 +86,15 @@ const en = {
   '通用 BMC · 仅跳转': 'Generic BMC · redirection only',
 };
 const errorChinese = {
+  UI_LEGACY_WORKPAGE_UNAVAILABLE: '该内部工作页格式已废弃，请升级到贡献式入口插件；原有设置仍可使用。',
+  UI_FRAMEWORK_MINIMUM_REQUIRED: '该UI声明须要求框架0.2.6或更高版本，请更新插件声明。',
+  UI_CONTRIBUTIONS_INVALID: '插件UI声明无效，入口不可用；原有设置仍可使用。',
+  UI_PAGE_TARGET_UNAVAILABLE: '当前上下文无法打开该插件页面，请返回原生页面并检查插件状态。',
+  UI_PAGE_RENDER_FAILED: '无法显示插件页面，已恢复原生内容。',
+  UI_PAGE_CLEANUP_FAILED: '插件页面清理出现问题，请检查插件后再打开。',
+  UI_ACTION_FAILED: '插件操作失败，重试任何操作前请先核对当前状态。',
+  UI_CONTRIBUTION_LIMIT: '界面入口已达上限，部分入口不可用。',
+  UI_ROUTER_UNSUPPORTED: '当前宿主未提供插件界面需要的导航接口。',
   FRAMEWORK_TOWER_INCOMPATIBLE: '当前 CloudTower 版本不在框架已验证范围内，框架执行已停用。',
   FRAMEWORK_VERSION_UNKNOWN: '无法确认框架版本，兼容性仍为未知。',
   PLUGIN_COMPATIBILITY_INVALID: '插件兼容性声明无效，已阻止安装和启用。',

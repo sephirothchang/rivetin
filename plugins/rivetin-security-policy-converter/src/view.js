@@ -7,7 +7,7 @@ export const CSS = `
 
 export function createWorkbench(React, win, session) {
   const h = React.createElement;
-  return function Workbench({ locale = 'zh-CN', savedLabelKey }) {
+  return function Workbench({ locale = 'zh-CN', savedLabelKey, surface = 'settings' }) {
     const [, render] = React.useState(0), [page, setPage] = React.useState(0);
     React.useEffect(() => session.subscribe(() => render(value => value + 1)), []);
     const state = session.view(), en = locale === 'en-US', t = (zh, english) => en ? english : zh;
@@ -29,10 +29,12 @@ export function createWorkbench(React, win, session) {
     }
     const result = state.result, pages = Math.max(1, Math.ceil((result?.policies.length || 0) / 100)), currentPage = Math.min(page, pages - 1);
     return h('div', { className: 'pksp', lang: locale }, h('style', null, CSS),
-      h('div', { className: 'pksp-banner' }, h('h2', null, t('安全策略自动转化工具', 'Security policy converter')),
+      h('div', { className: 'pksp-banner' }, h('h2', null, t(surface === 'workpage' ? '安全策略转换' : '安全策略自动转化工具', 'Security policy converter')),
         h('strong', null, t('离线预览 · 无真实下发', 'Offline preview · No live deployment')),
         h('p', null, t('导入清单与流量 → 检查匹配 → 审查 MONITOR 候选策略 → 导出审查稿', 'Import inventory and traffic → Check identity → Review MONITOR candidates → Export review draft'))),
-      h('p', { className: 'pksp-hint' }, t('所有导入数据只保留在本页内存，关闭插件面板、停用或刷新会清除。请先脱敏。此版本没有登录、AI 外发、标签写入或策略下发功能。', 'Imported data stays in page memory and is cleared when the panel closes, the plugin stops or the page reloads. Redact before use. This version has no login, AI requests, label writes or policy deployment.')),
+      h('p', { className: 'pksp-hint' }, surface === 'workpage' ?
+        t('所有导入数据只保留在当前工作页内存。离开时选择“丢弃并退出”、停用插件或刷新页面会清除；取消离开会保留。请先脱敏。此版本没有登录、AI 外发、标签写入或策略下发功能。', 'Imported data stays in this workpage memory and is cleared by discarding this workpage, stopping the plugin or reloading. Cancelling navigation keeps it. Redact before use. This version has no login, AI requests, label writes or policy deployment.') :
+        t('所有导入数据只保留在本页内存，关闭插件面板、停用或刷新会清除。请先脱敏。此版本没有登录、AI 外发、标签写入或策略下发功能。', 'Imported data stays in page memory and is cleared when the panel closes, the plugin stops or the page reloads. Redact before use. This version has no login, AI requests, label writes or policy deployment.')),
       h('div', { className: 'pksp-actions' }, h('button', { type: 'button', 'data-action': 'sample', onClick: () => session.sample() }, t('载入脱敏演示', 'Load redacted sample')),
         h('button', { type: 'button', 'data-action': 'clear', onClick: () => session.set({ inventoryText: '', trafficText: '', clusterId: '', externalText: '', columnMap: {} }) }, t('清空输入', 'Clear inputs'))),
       h('div', { className: 'pksp-grid' },

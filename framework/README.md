@@ -1,6 +1,6 @@
 # Rivetin
 
-共享能力：[磁盘 SMART 数据接口](../docs/disk-smart-data.md)、[对象操作接口](../docs/resource-actions.md)、[SSH 通道](../docs/ssh-channel.md)。子插件通过框架注入的提供器访问，不接触认证材料或自行连接主机。
+共享能力：[磁盘 SMART 数据接口](../docs/disk-smart-data.md)、[对象操作接口](../docs/resource-actions.md)、[SSH 通道](../docs/ssh-channel.md)、[UI贡献式入口](../docs/plugin-ui-contributions.md)、[拓扑只读提供器](../docs/plugin-workpages.md)。子插件通过框架注入的提供器访问，不接触认证材料或自行连接主机。0.2.6已完成受控框架升级、原四插件保留及真实浏览器只读验收；安全策略转换0.1.4和拓扑0.1.3均已独立安装启用，并完成各自列明的真实页面及退出后保护验收。拓扑仅覆盖当前中文入口、真实读取、布局和干净退出重入，关联草稿、dirty退出与切语仍待测。通用UI入口由插件声明，已有语义插槽新增按钮只更新插件；旧内部工作页原型须明确迁移且保留Settings。[网络事务与独立回滚](../docs/network-transactions.md)仍是本轮接续设计，不以只读工作页通过宣称整个拓扑实装完成。用途证据、语言、控制台观察及准确实测范围见[验证记录](../docs/0.2-validation.md)。
 
 Rivetin 提供 CloudTower 中统一的插件中心、配置、生命周期和应急开关。功能插件位于仓库 `plugins/`，框架不导入具体插件功能。当前仅支持经过信任与审核的前端插件，**故障隔离按需求保留为 TODO**。
 

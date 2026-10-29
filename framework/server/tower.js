@@ -13,9 +13,12 @@ export function createTowerConnection({ baseUrl, fetchImpl = fetch }) {
     for await (const chunk of response.body) { size += chunk.length; if (size > max) throw new Error('TOWER_RESPONSE_TOO_LARGE'); chunks.push(Buffer.from(chunk)); }
     try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { throw new Error('TOWER_RESPONSE_INVALID'); }
   }
-  async function request(path, body, actor) {
+  async function request(path, body, actor, { signal, timeoutMs = 4000 } = {}) {
     if (typeof path !== 'string' || !/^\/(?:api|v2\/api\/[a-z0-9-]+)$/.test(path)) throw new Error('INVALID_TOWER_PATH');
-    const response = await fetchImpl(new URL(path, base), { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(4000),
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 4000) throw new Error('INVALID_TOWER_TIMEOUT');
+    const timeout = AbortSignal.timeout(timeoutMs), requestSignal = signal ? AbortSignal.any([timeout, signal]) : timeout;
+    requestSignal.throwIfAborted();
+    const response = await fetchImpl(new URL(path, base), { method: 'POST', redirect: 'error', signal: requestSignal,
       headers: { 'Content-Type': 'application/json', ...actor?.auth }, body: JSON.stringify(body) });
     if (!response.ok) {
       let reason = ''; try { reason = (await responseJson(response)).message || ''; } catch { /* No server diagnostic body is exposed. */ }

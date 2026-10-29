@@ -29,3 +29,13 @@ test('input file replacement resets column mapping and bad input clears previous
   const session = ready(); session.set({ columnMap: { srcIp: 2 } }); const ticket = session.beginRead(); session.finishRead(ticket, 'trafficText', 'bad');
   assert.deepEqual(session.view().columnMap, {}); session.run(); assert.equal(session.view().result, null); assert.equal(session.view().error, 'CSV_EMPTY');
 });
+
+test('pending file state is cleared by completion, failure, input invalidation and stop', () => {
+  const session = createSession(); session.activate();
+  let ticket = session.beginRead(); assert.equal(session.view().reading, true);
+  session.finishRead(ticket, 'inventoryText', '[]'); assert.equal(session.view().reading, false);
+  ticket = session.beginRead(); session.failRead(ticket); assert.equal(session.view().reading, false);
+  session.beginRead(); session.set({ clusterId: 'changed' }); assert.equal(session.view().reading, false);
+  session.beginRead(); session.configure('saved-new-key'); assert.equal(session.view().reading, false);
+  session.beginRead(); session.stop(); assert.equal(session.view().reading, false);
+});

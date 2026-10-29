@@ -11,7 +11,7 @@ function newerVersion(candidate, current) {
 export function createManagement(React) {
   const h = React.createElement;
   const singleLine = (value, className = '') => h('td', { className: `pk-log-single ${className}`.trim(), title: value }, value);
-  return function Management({ tab, records, packages, runtime, logs, onAction, onUpload, onRefresh, onMore, onCheck, onMarket, updates = {}, updateChecked, updateSourceStatus = { checking: true, reachable: false }, busy, t, locale }) {
+  return function Management({ tab, records, packages, runtime, logs, onAction, onUpload, onRefresh, onMore, onCheck, onMarket, updates = {}, updateChecked, updateSourceStatus = { checking: true, reachable: false }, busy, t, locale, uiStates = {} }) {
     const name = item => item.manifest?.name?.[locale] || item.id;
     if (tab === 'logs') return h(React.Fragment, null,
       h('div', { className: 'pk-toolbar' }, h('h3', null, t('操作日志')), h('button', { onClick: onRefresh, disabled: busy }, t('刷新'))),
@@ -50,6 +50,7 @@ export function createManagement(React) {
           updates[item.id]?.available && h('span', { className: 'c89-badge pk-new-version' }, `${t('有新版本')} ${updates[item.id].version}`)),
           h('span', { className: `c89-badge ${item.enabled && !item.active ? 'pk-badge-suspended' : item.enabled ? 'c89-badge-enabled' : 'c89-badge-disabled'}` }, t(item.installed ? item.enabled ? item.active ? '已启用' : '已暂停' : '已禁用' : '未安装'))),
         h('div', { className: 'pk-muted' }, item.id),
+        uiStates[item.id]?.code && h('p', { className: 'pk-warning', 'data-rivetin-ui-status': uiStates[item.id].code }, t(uiStates[item.id].code)),
         item.compatible === false && h('p', { className: 'pk-warning' }, t(item.reason || 'PLUGIN_INCOMPATIBLE')),
         item.manifest?.compatibility?.towerBuilds?.length > 0 && h('small', { className: 'pk-muted' }, `${t('已验证版本')}：${item.manifest.compatibility.towerBuilds.join(', ')}`),
         updateChecked && updates[item.id] && !updates[item.id].available && h('small', { className: 'pk-muted' }, t('已是最新版本')),

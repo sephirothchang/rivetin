@@ -114,7 +114,7 @@ class KubernetesFixture:
                 if stored['version'] != version:
                     if not (settings.parent / 'disabled.json').is_file():
                         raise RuntimeError('FRAMEWORK_DISABLE_BEFORE_UPGRADE')
-                    if args[-2:] != ('--upgrade-from', stored['version']) or (stored['version'], version) not in {('0.1.0', '0.1.1'), ('0.1.0', '0.1.2'), ('0.1.1', '0.1.2'), ('0.1.0', '0.1.3'), ('0.1.1', '0.1.3'), ('0.1.2', '0.1.3'), ('0.1.0', '0.1.4'), ('0.1.1', '0.1.4'), ('0.1.2', '0.1.4'), ('0.1.3', '0.1.4'), ('0.1.0', '0.1.5'), ('0.1.1', '0.1.5'), ('0.1.2', '0.1.5'), ('0.1.3', '0.1.5'), ('0.1.4', '0.1.5'), ('0.1.0', '0.2.0'), ('0.1.1', '0.2.0'), ('0.1.2', '0.2.0'), ('0.1.3', '0.2.0'), ('0.1.4', '0.2.0'), ('0.1.5', '0.2.0')} | {(source, '0.2.1') for source in ['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0']} | {(source, '0.2.2') for source in ['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1']} | {(source, '0.2.3') for source in ['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1', '0.2.2']} | {(source, '0.2.4') for source in ['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1', '0.2.2', '0.2.3']}:
+                    if args[-2:] != ('--upgrade-from', stored['version']) or (stored['version'], version) not in {('0.1.0', '0.1.1'), ('0.1.0', '0.1.2'), ('0.1.1', '0.1.2'), ('0.1.0', '0.1.3'), ('0.1.1', '0.1.3'), ('0.1.2', '0.1.3'), ('0.1.0', '0.1.4'), ('0.1.1', '0.1.4'), ('0.1.2', '0.1.4'), ('0.1.3', '0.1.4'), ('0.1.0', '0.1.5'), ('0.1.1', '0.1.5'), ('0.1.2', '0.1.5'), ('0.1.3', '0.1.5'), ('0.1.4', '0.1.5'), ('0.1.0', '0.2.0'), ('0.1.1', '0.2.0'), ('0.1.2', '0.2.0'), ('0.1.3', '0.2.0'), ('0.1.4', '0.2.0'), ('0.1.5', '0.2.0')} | {(source, '0.2.1') for source in ['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0']} | {(source, '0.2.2') for source in ['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1']} | {(source, '0.2.3') for source in ['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1', '0.2.2']} | {(source, '0.2.4') for source in ['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1', '0.2.2', '0.2.3']} | {(source, '0.2.5') for source in ['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1', '0.2.2', '0.2.3', '0.2.4']} | {(source, '0.2.6') for source in ['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1', '0.2.2', '0.2.3', '0.2.4', '0.2.5']}:
                         raise RuntimeError('FRAMEWORK_MIGRATION_REQUIRED')
                     stored['version'] = version
                     settings.write_text(json.dumps(stored))
@@ -194,14 +194,15 @@ class RemoteTests(unittest.TestCase):
                 remote.validate_manifest(wanted, 'a' * 64)
 
     def test_service_archive_accepts_shared_runtime_and_new_builtin_only(self):
-        for forbidden in ['server/builtins/pluginkit-ssh-channel.json', 'server/ssh-connections-v3.js', 'shared/unknown.js', 'shared/version-extra.js', 'shared/nested/version.js', 'shared/framework-compatibility-extra.js', 'shared/nested/framework-compatibility.js', 'shared/framework-compatibility.json', 'integrity-extra.json', 'server/integrity.json', 'integrity.json/extra.js']:
+        for forbidden in ['server/builtins/pluginkit-ssh-channel.json', 'server/ssh-connections-v3.js', 'shared/unknown.js', 'shared/work-pages-extra.js', 'shared/network-topology-extra.js', 'shared/version-extra.js', 'shared/nested/version.js', 'shared/framework-compatibility-extra.js', 'shared/nested/framework-compatibility.js', 'shared/framework-compatibility.json', 'integrity-extra.json', 'server/integrity.json', 'integrity.json/extra.js']:
             with self.assertRaisesRegex(RuntimeError, 'SERVICE_ARCHIVE_INVALID'):
                 remote.extract_release(archive([('server/main.js', b'// EXAMPLE'), (forbidden, b'{}')]), self.directory / 'rejected')
         target = self.directory / 'new-service'
         target.mkdir()
         content = remote.extract_release(archive([('server/main.js', b'// EXAMPLE'), ('shared/identity.js', b'// EXAMPLE'), ('shared/version.js', b'// EXAMPLE_VERSION'), ('shared/framework-compatibility.js', b'// EXAMPLE_DECLARATION'), ('integrity.json', b'{}'),
-            ('server/builtins/rivetin-ssh-channel.json', b'{}'), ('server/vendor/ssh2.cjs', b'// EXAMPLE'), ('server/ssh-connections-v2.js', b'// EXAMPLE_V2')]), target)
-        self.assertEqual(len(content), 8)
+            ('server/builtins/rivetin-ssh-channel.json', b'{}'), ('server/vendor/ssh2.cjs', b'// EXAMPLE'), ('server/ssh-connections-v2.js', b'// EXAMPLE_V2'),
+            ('shared/work-pages.js', b'// EXAMPLE_WORKPAGE_CONTRACT'), ('shared/network-topology.js', b'// EXAMPLE_TOPOLOGY_DTO')]), target)
+        self.assertEqual(len(content), 10)
         self.assertEqual((target / 'shared/version.js').read_bytes(), b'// EXAMPLE_VERSION')
         self.assertEqual((target / 'shared/framework-compatibility.js').read_bytes(), b'// EXAMPLE_DECLARATION')
         self.assertEqual((target / 'integrity.json').read_bytes(), b'{}')
@@ -247,6 +248,34 @@ class RemoteTests(unittest.TestCase):
         with tarfile.open(str(self.base / 'backups' / self.op / 'data.tar.gz'), 'r:gz') as saved:
             self.assertNotIn('data/.write.lock', saved.getnames())
             self.assertNotIn('data/framework/.write.lock', saved.getnames())
+
+    def test_025_to_026_snapshot_upgrade_and_rollback_preserve_existing_identity_receipt_and_audit_prefix(self):
+        config = self.installed()
+        settings = self.base / 'data/framework/settings.json'
+        settings.write_text('{"apiVersion":1,"version":"0.2.5"}')
+        ledger = self.base / 'data/ssh-channel/identity.v1.json'
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        original = b'{"version":1,"grants":{},"requests":{"EXAMPLE_COMPLETED_REQUEST":{"EXAMPLE":"RETAINED"}}}'
+        ledger.write_bytes(original)
+        audit = self.base / 'data/audit.jsonl'
+        prefix = b'{"EXAMPLE_EXISTING_IDENTITY_AUDIT":"RETAINED"}\n'
+        audit.write_bytes(prefix)
+        before_config = config.read_bytes()
+        self.op = 'e' * 32
+        self.begin('update')
+        with tarfile.open(str(self.base / 'backups' / self.op / 'data.tar.gz'), 'r:gz') as saved:
+            self.assertEqual(saved.extractfile('data/ssh-channel/identity.v1.json').read(), original)
+            self.assertEqual(saved.extractfile('data/audit.jsonl').read(), prefix)
+        data = archive([('server/main.js', b'// NEXT_026'), ('package.json', b'{"name":"rivetin","version":"0.2.6"}')])
+        self.apply('update', service=data)
+        self.assertIn(('--upgrade-from', '0.2.5'), [args[-2:] for args, _ in self.kube.calls])
+        self.assertEqual(ledger.read_bytes(), original)
+        self.assertTrue(audit.read_bytes().startswith(prefix))
+        remote.handle({'action': 'rollback', 'operation': self.op})
+        self.assertEqual(json.loads(settings.read_text())['version'], '0.2.5')
+        self.assertEqual(ledger.read_bytes(), original)
+        self.assertTrue(audit.read_bytes().startswith(prefix))
+        self.assertEqual(config.read_bytes(), before_config)
 
     def test_snapshot_uses_service_locks_and_releases_only_its_locks(self):
         directory = self.base / 'data/framework'
@@ -361,7 +390,7 @@ class RemoteTests(unittest.TestCase):
             return self.kube(*args, **kw)
 
         target_version = json.loads((ROOT.parent / 'framework/package.json').read_text())['version']
-        self.assertEqual(target_version, '0.2.4')
+        self.assertEqual(target_version, '0.2.6')
         data = archive([('server/main.js', b'// NEXT'), ('package.json', json.dumps(dict(name='rivetin', version=target_version)).encode())])
         with patch.object(remote, 'kube', execute):
             with self.assertRaisesRegex(RuntimeError, 'EXAMPLE_POST_INIT_TRANSPORT_FAILURE'):
@@ -561,7 +590,9 @@ class RemoteTests(unittest.TestCase):
         expected.update((source, '0.2.2') for source in sources + ('0.2.0', '0.2.1'))
         expected.update((source, '0.2.3') for source in sources + ('0.2.0', '0.2.1', '0.2.2'))
         expected.update((source, '0.2.4') for source in sources + ('0.2.0', '0.2.1', '0.2.2', '0.2.3'))
-        self.assertEqual(remote.KNOWN_METADATA_VERSIONS, sources + ('0.2.0', '0.2.1', '0.2.2', '0.2.3', '0.2.4'))
+        expected.update((source, '0.2.5') for source in sources + ('0.2.0', '0.2.1', '0.2.2', '0.2.3', '0.2.4'))
+        expected.update((source, '0.2.6') for source in sources + ('0.2.0', '0.2.1', '0.2.2', '0.2.3', '0.2.4', '0.2.5'))
+        self.assertEqual(remote.KNOWN_METADATA_VERSIONS, sources + ('0.2.0', '0.2.1', '0.2.2', '0.2.3', '0.2.4', '0.2.5', '0.2.6'))
         self.assertEqual(remote.METADATA_UPGRADES, expected)
         self.assertNotIn(('0.2.0', '0.1.5'), remote.METADATA_UPGRADES)
         self.assertIn(('0.2.0', '0.2.1'), remote.METADATA_UPGRADES)

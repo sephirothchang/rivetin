@@ -110,17 +110,25 @@ test('export requires acknowledgement, has no live payload and is stable for reo
   const lines = sampleTraffic.trim().split('\n');
   assert.deepEqual(convert(input({ trafficText: [lines[0], ...lines.slice(1).reverse()].join('\n') })).policies, result.policies);
 });
-test('configuration and manifest agree and no live Tower build is claimed', () => {
+test('candidate manifest agrees with configuration and requires the actual workpage framework floor', () => {
   const manifest = JSON.parse(readFileSync(new URL('../rivetin.json', import.meta.url)));
   assert.equal(validateManifest(manifest).id, configuration.id);
   assert.deepEqual(configuration.defaults(), manifest.configuration.defaults);
   assert.deepEqual(validateSettings(configuration.defaults(), manifest.configuration.schema), configuration.defaults());
   assert.throws(() => configuration.validate({ version: 1, labelKey: 'a', credential: 'fixture' }));
-  assert.equal(checkCompatibility(manifest, { towerBuild: '4.9.0' }).compatible, false);
-  assert.equal(manifest.compatibility.schemaVersion, 1);
-  assert.deepEqual(manifest.compatibility.towerBuilds, []);
-  assert.equal(checkCompatibility(manifest, { towerBuild: '4.9.0', frameworkVersion: '0.2.0' }).reason, 'PLUGIN_COMPATIBILITY_UNDECLARED');
-  assert.throws(() => validateManifest({ ...manifest, compatibility: { ...manifest.compatibility, schemaVersion: 2 } }), /INVALID_MANIFEST/);
+  assert.equal(manifest.version, '0.1.4'); assert.equal(manifest.name['zh-CN'], '安全策略转换');
+  assert.equal(manifest.compatibility.schemaVersion, 2);
+  assert.equal(manifest.compatibility.frameworkMinVersion, '0.2.6');
+  assert.equal(manifest.compatibility.frameworkMaxVersionExclusive, '0.3.0');
+  assert.deepEqual(manifest.compatibility.towerBuilds, ['4.9.0']);
+  assert.equal(manifest.compatibility.smtx, 'none'); assert.deepEqual(manifest.permissions, []);
+  assert.match(manifest.compatibility.tower, /acceptance pending/);
+  assert.equal(checkCompatibility(manifest, { towerBuild: '4.9.0', frameworkVersion: '0.2.6' }).compatible, true);
+  assert.equal(checkCompatibility(manifest, { towerBuild: '4.9.0', frameworkVersion: '0.2.5' }).reason, 'PLUGIN_INCOMPATIBLE');
+  assert.equal(checkCompatibility(manifest, { towerBuild: '4.9.1', frameworkVersion: '0.2.6' }).compatible, false);
+  // Local predicate checks do not establish native-page or future-framework acceptance.
+  assert.equal(checkCompatibility(manifest, { towerBuild: '4.9.0', frameworkVersion: '0.3.0' }).compatible, true);
+  assert.throws(() => validateManifest({ ...manifest, compatibility: { ...manifest.compatibility, towerBuilds: [] } }), /INVALID_MANIFEST/);
 });
 test('review export accepts only the Rivetin draft format and current plugin ID', () => {
   const result = convert(input());

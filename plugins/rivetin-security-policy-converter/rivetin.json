@@ -1,14 +1,22 @@
 {
   "manifestVersion": 1,
   "id": "rivetin-security-policy-converter",
-  "version": "0.1.1",
-  "name": { "zh-CN": "安全策略自动转化工具（离线预览）", "en-US": "Security policy converter (offline preview)" },
+  "version": "0.1.4",
+  "name": { "zh-CN": "安全策略转换", "en-US": "Security policy converter" },
   "description": { "zh-CN": "从清单与流量 CSV 生成 MONITOR 候选策略审查稿；不连接或修改 Everoute。", "en-US": "Generate MONITOR policy review drafts from inventory and traffic CSV. No live Everoute operations." },
   "author": "Rivetin contributors",
   "license": "MIT",
   "repository": "https://github.com/sephirothchang/rivetin",
   "homepage": "https://github.com/sephirothchang/rivetin/tree/main/plugins/rivetin-security-policy-converter",
-  "compatibility": { "schemaVersion": 1, "frameworkApi": 1, "tower": "Offline preview only; no live CloudTower or Everoute build has been validated.", "towerBuilds": [] },
+  "compatibility": {
+    "schemaVersion": 2,
+    "frameworkApi": 1,
+    "frameworkMinVersion": "0.2.6",
+    "frameworkMaxVersionExclusive": "0.3.0",
+    "tower": "Candidate UI target: CloudTower 4.9.0; native workpage acceptance pending. No live Everoute policy operations.",
+    "towerBuilds": ["4.9.0"],
+    "smtx": "none"
+  },
   "frontend": { "format": "rivetin-global-v1", "entry": "web/plugin.js" },
   "permissions": [],
   "locales": ["zh-CN", "en-US"],
@@ -21,5 +29,5 @@
     "defaults": { "version": 1, "labelKey": "application" }
   },
   "lifecycle": { "reset": "defaults", "uninstall": "retain-config" },
-  "releaseNotes": { "zh-CN": "0.1.1 离线预览：核对构建输入与产物，拒绝覆盖同版制品。无已验收 Tower 构建，真实启用仍受门禁阻止。", "en-US": "0.1.1 offline preview: verify build inputs and outputs, and refuse overwriting fixed releases. No validated Tower builds; live activation remains gated." }
+  "releaseNotes": { "zh-CN": "0.1.4 开发候选：由插件声明安全策略转换入口与页面，消费通用 UI contributions v1，移除旧工作页字段。最低框架 0.2.6；真实入口待验收，仅离线转换和审查稿导出。", "en-US": "0.1.4 development candidate: plugin-owned navigation and page declarations using UI contributions v1, replacing the prototype workPage field. Requires framework 0.2.6. Native acceptance pending; offline review export only." }
 }
