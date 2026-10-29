@@ -65,3 +65,16 @@ test('known v3/v4 same identity digest checks reject conflicts without inventing
   assert.throws(() => assertKnownDigestConsistency([{ schemaVersion: 3, plugins: [a] }], [{ ...a, status: 'draft', sha256: 'f'.repeat(64) }]), /CATALOG_KNOWN_DIGEST_CONFLICT/);
   assert.equal(assertKnownDigestConsistency([{ schemaVersion: 3, plugins: [a] }], [candidateEntry(fixtureV4Package('rivetin-example', '0.2.0'), 4)]), true);
 });
+
+test('v4 minimum-only packages state the actual reader floor; immutable legacy upper metadata remains data', () => {
+  const bytes = fixtureV4Package('rivetin-example', '0.2.1', { frameworkMinVersion: '0.2.4', frameworkMaxVersionExclusive: undefined });
+  const entry = candidateEntry(bytes, 4);
+  assert.equal(Object.hasOwn(entry.compatibility, 'frameworkMaxVersionExclusive'), false);
+  assert.equal(entry.compatibility.frameworkMinVersion, '0.2.4');
+  assert.deepEqual(validateCatalog({ schemaVersion: 4, plugins: [entry] }, 4).plugins[0], entry);
+  assert.throws(() => candidateEntry(fixtureV4Package('rivetin-example', '0.2.1', { frameworkMaxVersionExclusive: undefined }), 4));
+  const old = candidateEntry(fixtureV4Package('rivetin-example', '0.2.0', { frameworkMinVersion: '0.2.0', frameworkMaxVersionExclusive: '0.1.0' }), 4);
+  assert.equal(old.compatibility.frameworkMaxVersionExclusive, '0.1.0');
+  const catalog = { schemaVersion: 4, plugins: [old] };
+  assert.throws(() => mergeEntries(catalog, [{ ...old, compatibility: { ...old.compatibility, frameworkMaxVersionExclusive: '0.3.0' } }], 4), /CATALOG_SAME_VERSION_IMMUTABLE/);
+});

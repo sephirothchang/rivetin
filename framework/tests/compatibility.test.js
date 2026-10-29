@@ -35,11 +35,25 @@ test('legacy compatibility text remains readable but is never inferred into an a
   assert.equal(checkCompatibility({}, context).reason, 'PLUGIN_COMPATIBILITY_UNDECLARED');
 });
 
-test('framework version bounds compare numerically with inclusive minimum and exclusive maximum', () => {
+test('framework versions compare numerically against the inclusive minimum; legacy maximum is inert', () => {
   const value = manifest({ frameworkMinVersion: '0.1.9', frameworkMaxVersionExclusive: '0.2.0' });
-  for (const frameworkVersion of ['0.1.9', '0.1.10', '0.1.99']) assert.equal(checkCompatibility(value, { ...context, frameworkVersion }).compatible, true);
-  for (const frameworkVersion of ['0.1.8', '0.2.0', '1.0.0', '0.1.09', '0.1.9-rc', undefined]) assert.equal(checkCompatibility(value, { ...context, frameworkVersion }).compatible, false);
+  for (const frameworkVersion of ['0.1.9', '0.1.10', '0.1.99', '0.2.0', '0.3.0', '1.0.0']) assert.equal(checkCompatibility(value, { ...context, frameworkVersion }).compatible, true);
+  for (const frameworkVersion of ['0.1.8', '0.1.09', '0.1.9-rc', null]) assert.equal(checkCompatibility(value, { ...context, frameworkVersion }).compatible, false);
   assert.equal(assertCompatible(value, { ...context, frameworkVersion: '0.1.10' }).compatible, true);
+});
+
+test('minimum-only declarations require their actual reader floor and preserve older raw metadata', () => {
+  const value = declaration({ frameworkMinVersion: '0.2.4' }); delete value.frameworkMaxVersionExclusive;
+  assert.deepEqual(validateCompatibility(value), value);
+  assert.equal(checkCompatibility({ compatibility: value }, { ...context, frameworkVersion: '0.2.4' }).compatible, true);
+  assert.equal(checkCompatibility({ compatibility: value }, { ...context, frameworkVersion: '0.2.3' }).compatible, false);
+  assert.equal(checkCompatibility({ compatibility: value }, { ...context, frameworkVersion: '99.0.0' }).compatible, true);
+  assert.throws(() => validateCompatibility({ ...value, frameworkMinVersion: '0.2.0' }), /INVALID_COMPATIBILITY/);
+  for (const frameworkMaxVersionExclusive of ['0.0.1', '0.1.0']) {
+    const old = declaration({ frameworkMaxVersionExclusive });
+    assert.deepEqual(validateCompatibility(old), old);
+    assert.equal(checkCompatibility({ compatibility: old }, { ...context, frameworkVersion: '1.0.0' }).compatible, true);
+  }
 });
 
 test('invalid declarations fail validation and never become compatible', () => {
@@ -48,8 +62,7 @@ test('invalid declarations fail validation and never become compatible', () => {
     { towerBuilds: [towerBuild, towerBuild] }, { towerBuilds: '*' }, { towerBuilds: Array.from({ length: 21 }, (_, index) => `4.9.${index}`) },
     ...['4.*', '4.9.0 ', 'v4.9.0', '../4.9.0', '4.9.0+build', '4.9.0-' + 'a'.repeat(100)].map(value => ({ towerBuilds: [value] })),
     { frameworkMinVersion: undefined }, { frameworkMaxVersionExclusive: undefined }, { towerBuilds: undefined }, { towerBuilds: [] },
-    { frameworkMinVersion: '01.2.3' }, { frameworkMaxVersionExclusive: '1.0.0-rc' }, { frameworkMinVersion: '0.2.0', frameworkMaxVersionExclusive: '0.1.0' },
-    { frameworkMinVersion: '0.1.0', frameworkMaxVersionExclusive: '0.1.0' }, { anythingElse: true },
+    { frameworkMinVersion: '01.2.3' }, { frameworkMaxVersionExclusive: '1.0.0-rc' }, { anythingElse: true },
   ]) {
     const value = declaration(patch);
     assert.throws(() => validateCompatibility(value), /INVALID_COMPATIBILITY/);

@@ -74,6 +74,10 @@ export function createApi(service, { authenticate, origins = [] } = {}) {
           return send(res, 200, await service.sshDeviceInventory(values.hostId, values.category, actor));
         }
         if (route === '/ssh-channel/inventory') return send(res, 200, await service.sshInventory(actor));
+        if (route === '/ssh-channel/identity') {
+          const values = parameters(['requestId']);
+          return send(res, 200, values.requestId ? await service.sshChannel.identity.result(values.requestId, actor) : await service.sshChannel.identity.recent(actor));
+        }
         if (route === '/resource-actions/read') {
           const { pluginId, type, id } = parameters(['pluginId', 'type', 'id']);
           return send(res, 200, await service.resourceActions.read({ pluginId, resource: { type, id }, actor }));
@@ -114,6 +118,15 @@ export function createApi(service, { authenticate, origins = [] } = {}) {
         if (action === 'discover' && fields === 'action,address,hostId,port') return send(res, 200, await service.sshPreflight.discover({ ...input, actor }));
         if (action === 'confirm' && fields === 'acknowledged,action,address,challenge,hostId,port') return send(res, 200, await service.sshPreflight.confirm({ ...input, actor }));
         if (action === 'verify' && fields === 'action,hostId') return send(res, 200, await service.sshPreflight.verify({ ...input, actor }));
+        throw new Error('INVALID_REQUEST');
+      }
+      if (req.method === 'POST' && route === '/ssh-channel/identity') {
+        const value = JSON.parse(await body(req, 4096));
+        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('INVALID_REQUEST');
+        const { action, ...input } = value, fields = Object.keys(input).sort().join();
+        if (action === 'review' && fields === 'hostId') return send(res, 200, await service.sshChannel.identity.review(input.hostId, actor));
+        if (action === 'approve' && fields === 'acknowledged,challenge,digest') return send(res, 200, await service.sshChannel.identity.approve(input, actor));
+        if (action === 'execute' && fields === 'approvalId,digest,hostId,requestId') return send(res, 200, await service.sshChannel.identity.execute(input, actor));
         throw new Error('INVALID_REQUEST');
       }
       if (req.method === 'POST' && route === '/data/disk-smart/collect-all') {

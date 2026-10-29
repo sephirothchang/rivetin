@@ -3,6 +3,7 @@ import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { storage, atomic, json, validId, assertId } from './storage.js';
 import { SSH_CHANNEL_ID, SSH_OPERATIONS, SSH_REJECTED_EXAMPLES, validateSshRegistration, compileSshCommand, sshRegistrationDigest } from './ssh-policy.js';
 import { createSshVault } from './ssh-vault.js';
+import { createSshIdentity } from './ssh-identity.js';
 
 const fixedError = error => /^(?:SSH_[A-Z_]+|ABORT_ERR)$/.test(error?.message || '') ? error.message : 'SSH_EXECUTION_FAILED';
 const systemActor = { id: 'ssh-scheduler', name: 'SSH scheduler', source: 'cli', admin: true };
@@ -18,12 +19,13 @@ function boundedResults(items) {
   while (kept.length > 1 && Buffer.byteLength(JSON.stringify({ items: kept })) > 4 * 1024 * 1024) kept.pop();
   return { items: kept };
 }
-export function createSshBroker(directory, { serviceStatus, vault = createSshVault(directory), run: transport, audit = async () => {}, now = Date.now, prepareResultContext, onResult, manualOnly = false } = {}) {
+export function createSshBroker(directory, { serviceStatus, vault = createSshVault(directory), run: transport, inventory, audit = async () => {}, now = Date.now, prepareResultContext, onResult, manualOnly = false } = {}) {
   if (typeof serviceStatus !== 'function') throw new Error('SSH_STATUS_PROVIDER_REQUIRED');
   if (prepareResultContext !== undefined && typeof prepareResultContext !== 'function' || onResult !== undefined && typeof onResult !== 'function') throw new Error('SSH_RESULT_HOOK_INVALID');
   const root = path.join(path.resolve(directory), 'ssh-channel'), disk = storage(root);
   const stateFile = path.join(root, 'approvals.json'), challenges = new Map(), active = new Map(), invocations = new Set(), pending = new Set();
   let timer, ticking = false, booted = false, stopped = false;
+  const identity = createSshIdentity({ root, disk, vault, serviceStatus, inventory, transport, audit, active, invocations, now });
   const admin = actor => { if (!actor?.admin || !['tower', 'cli', 'demo'].includes(actor.source) || typeof actor.id !== 'string' || !actor.id.length || actor.id.length > 128) throw new Error('SSH_ADMIN_REQUIRED'); };
   async function state() {
     const value = await json(stateFile, { version: 1, approvals: {}, schedules: {}, revocations: { global: '', plugins: {} } });
@@ -131,6 +133,7 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
         }
       }
       for (const job of active.values()) {
+        if (job.builtinIdentity) continue;
         const registration = items.find(item => item.pluginId === job.pluginId), approval = value.approvals[job.pluginId];
         if (!gate(status) || !registration?.enabled || registration.reason || registration.digest !== job.digest || approval?.digest !== job.digest || approval?.id !== job.approvalId) cancelJob(job);
       }
@@ -141,6 +144,7 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
   async function invalidate(pluginId = null, reason = 'SSH_APPROVAL_REVOKED') {
     if (pluginId !== null && !validId(pluginId)) throw new Error('SSH_REGISTRATION_INVALID');
     if (pluginId !== null) assertId(pluginId);
+    if (pluginId === null || pluginId === SSH_CHANNEL_ID) identity.cancel();
     abortMatching(pluginId);
     return disk.locked(async () => {
       abortMatching(pluginId);
@@ -277,7 +281,7 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
     return task;
   }
   return {
-    root, vault, sync, invalidate,
+    root, vault, sync, invalidate, identity,
     async selectSmartTarget(pluginId, target, actor) {
       admin(actor); assertId(pluginId);
       if (!target || Object.keys(target).sort().join() !== 'deviceId,hostId' || ![target.hostId, target.deviceId].every(value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value))) throw new Error('SSH_TARGET_NOT_APPROVED');
@@ -354,7 +358,7 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
         if (manualOnly || await vault.v2?.active()) {
           // Keep authorization polling for the lifetime of a manual invocation;
           // disabling background schedules must not disable emergency revocation.
-          for (const job of active.values()) { try { await assertActive(job); } catch { cancelJob(job); } }
+          for (const job of active.values()) { try { if (job.builtinIdentity) await identity.check(job); else await assertActive(job); } catch { cancelJob(job); } }
           return;
         }
         const snapshot = await sync(), due = [];
@@ -380,7 +384,7 @@ export function createSshBroker(directory, { serviceStatus, vault = createSshVau
       } catch { abortMatching(null); }
       finally { ticking = false; }
     },
-    start() { stopped = false; if (!timer) { timer = setInterval(() => { this.tick(); }, 1000); timer.unref?.(); } },
-    async stop() { stopped = true; clearInterval(timer); timer = undefined; abortMatching(null); await Promise.allSettled([...pending]); },
+    start() { stopped = false; identity.start(); if (!timer) { timer = setInterval(() => { this.tick(); }, 1000); timer.unref?.(); } },
+    async stop() { stopped = true; clearInterval(timer); timer = undefined; abortMatching(null); await identity.stop(); await Promise.allSettled([...pending]); },
   };
 }

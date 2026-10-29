@@ -8,6 +8,7 @@ import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { fixture, actor } from './helpers.js';
 import { createApi } from '../server/http.js';
+import { createService } from '../server/service.js';
 
 async function api(t) {
   const f = await fixture(t); await f.install();
@@ -26,12 +27,41 @@ test('component APIs work while globally disabled, require admin and perform rea
   const f = await api(t);
   const before = await readFile(path.join(f.directory, 'plugins/rivetin-example/state.json'));
   const result = await f.call('/components/status?fresh=true'); assert.equal(result.status, 200);
-  assert.equal(result.value.schemaVersion, 1); assert.equal(result.value.components.length, 18);
+  assert.equal(result.value.schemaVersion, 1); assert.equal(result.value.components.length, 17);
   assert.equal(result.value.components.find(item => item.id === 'gateway').status, 'unknown');
+  assert.equal(result.value.components.some(item => item.id === 'api-smart'), false);
+  assert.equal(result.value.components.find(item => item.id === 'api-market').code, 'API_PROBE_UNCONFIRMED');
   assert.deepEqual(await readFile(path.join(f.directory, 'plugins/rivetin-example/state.json')), before);
   f.identity({ ...actor, admin: false });
   for (const route of ['/components/status', '/components/support']) assert.equal((await f.call(route)).status, 403);
   f.identity(actor); assert.equal((await f.call('/components/status?fresh=false')).status, 400);
+});
+
+test('market component probes the read-only listing and keeps unavailable sources unknown without writes', async t => {
+  const f = await api(t);
+  let unavailable = false, reads = 0, downloads = 0;
+  const service = createService(f.directory, { towerBuild: '4.9.0', updateSource: {
+    market: async () => { reads++; if (unavailable) throw new Error('UPDATE_SOURCE_ACCESS_REQUIRED'); return []; },
+    download: async () => { downloads++; throw new Error('UNEXPECTED_DOWNLOAD'); },
+  } });
+  const files = async root => {
+    const entries = await readdir(root, { withFileTypes: true }), output = [];
+    for (const entry of entries) {
+      const file = path.join(root, entry.name);
+      if (entry.isDirectory()) output.push(...(await files(file)));
+      else output.push([file, createHash('sha256').update(await readFile(file)).digest('hex')]);
+    }
+    return output.sort(([a], [b]) => a.localeCompare(b));
+  };
+  const before = await files(f.directory);
+  const healthy = await service.components.status(actor, { fresh: true });
+  assert.equal(healthy.components.find(item => item.id === 'api-market').status, 'ok');
+  unavailable = true;
+  const failed = await service.components.status(actor, { fresh: true });
+  assert.equal(failed.components.find(item => item.id === 'api-market').status, 'unknown');
+  assert.equal(failed.components.find(item => item.id === 'api-market').code, 'API_PROBE_UNCONFIRMED');
+  assert.equal(reads, 2); assert.equal(downloads, 0);
+  assert.deepEqual(await files(f.directory), before);
 });
 
 test('unified support download contains only projected metadata and anonymous log references', async t => {
@@ -40,7 +70,7 @@ test('unified support download contains only projected metadata and anonymous lo
   const bytes = Buffer.from(result.value.data, 'base64'); assert.equal(bytes.length, result.value.bytes);
   assert.equal(createHash('sha256').update(bytes).digest('hex'), result.value.sha256);
   const text = gunzipSync(bytes).toString(), support = JSON.parse(text);
-  assert.equal(support.plugins.items.length, 1); assert.equal(support.components.items.length, 18);
+  assert.equal(support.plugins.items.length, 1); assert.equal(support.components.items.length, 17);
   assert.ok(support.logs.items.length > 0); assert.equal(text.includes(actor.id), false); assert.equal(text.includes(actor.name), false);
   assert.equal(text.includes('settings'), false); assert.equal(text.includes(f.directory.replaceAll('\\', '\\\\')), false);
   assert.equal((await readdir(f.directory)).includes('support'), false);

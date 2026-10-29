@@ -59,7 +59,7 @@ function compatibility(value) {
   if (!object(value)) fail('SUPPORT_INPUT_INVALID');
   const tested = value.towerBuilds === undefined ? [] : array(value.towerBuilds, 20).map(build => version(build, true));
   if (tested.some(item => item === null) || new Set(tested).size !== tested.length) fail('SUPPORT_INPUT_INVALID');
-  return { schemaVersion: integer(value.schemaVersion), frameworkApi: integer(value.frameworkApi), towerBuilds: tested, smtx: smtxDeclaration(value.smtx), frameworkMinVersion: version(value.frameworkMinVersion), frameworkMaxVersionExclusive: version(value.frameworkMaxVersionExclusive) };
+  return { schemaVersion: integer(value.schemaVersion), frameworkApi: integer(value.frameworkApi), towerBuilds: tested, smtx: smtxDeclaration(value.smtx), frameworkMinVersion: version(value.frameworkMinVersion) };
 }
 
 function smtxDeclaration(value) {

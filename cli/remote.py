@@ -35,6 +35,10 @@ METADATA_UPGRADES.update((source, '0.2.1') for source in KNOWN_METADATA_VERSIONS
 KNOWN_METADATA_VERSIONS += ('0.2.1',)
 METADATA_UPGRADES.update((source, '0.2.2') for source in KNOWN_METADATA_VERSIONS)
 KNOWN_METADATA_VERSIONS += ('0.2.2',)
+METADATA_UPGRADES.update((source, '0.2.3') for source in KNOWN_METADATA_VERSIONS)
+KNOWN_METADATA_VERSIONS += ('0.2.3',)
+METADATA_UPGRADES.update((source, '0.2.4') for source in KNOWN_METADATA_VERSIONS)
+KNOWN_METADATA_VERSIONS += ('0.2.4',)
 
 def fail(code):
     raise RuntimeError(code)

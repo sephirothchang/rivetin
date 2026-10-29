@@ -190,3 +190,12 @@ test('styles isolate component selectors and preserve cancellation/repair/reset 
   assert.doesNotMatch(COMPONENTS_CSS, /position:\s*fixed|\.c89-panel/);
   assert.doesNotMatch(COMPONENTS_CSS.match(/\.rv-components\s*\{([^}]*)\}/)?.[1] || '', /(?:width|height)\s*:/);
 });
+
+test('compatibility details render the minimum and ignore a legacy upper field even in an older response', async t => {
+  const value = fixture();
+  value.plugins[0].compatibility.declared.frameworkMinVersion = '0.2.0';
+  value.plugins[0].compatibility.declared.frameworkMaxVersionExclusive = '0.3.0';
+  const view = await mount(t, () => value);
+  assert.match(view.root.textContent, /frameworkMinVersion/);
+  assert.doesNotMatch(view.root.textContent, /frameworkMaxVersionExclusive/);
+});

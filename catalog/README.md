@@ -23,7 +23,9 @@
 
 ## 兼容性声明
 
-`compatibility` 使用 `frameworkApi`、`tower`、`towerBuilds`，以及可选的 `frameworkMinVersion` 和 `frameworkMaxVersionExclusive`。最低框架版本包含边界，最高版本不包含边界。`towerBuilds` 必须精确匹配可信后端报告的版本，不接受通配符，不根据产品名称或说明猜测兼容性。粗粒度的产品版本不能代替 CLI 对精确镜像构建与组件布局的安装检查。
+`compatibility` 包含框架 API、Tower 构建及框架版本声明。自框架 0.2.4 起，schema 2 必须声明 `frameworkMinVersion`，仅检查包含最低边界的版本条件；旧 `frameworkMaxVersionExclusive` 只校验格式，不再限制运行。0.2.2／0.2.3 及旧读取器仍按原上下界规则解析，因此当前生产 v4 清单及固定包保留旧字段原始字节。省略旧上限字段的新 schema 2 声明要求最低框架版本至少为 0.2.4；向现有目录混入这种记录可能使旧读取器拒读整份目录，生产切换须先明确读取基线。完整规则见[兼容性声明与读取版本](../docs/rivetin-compatibility.md#旧字段与读取版本)。
+
+`towerBuilds` 必须精确匹配可信后端报告的版本，不接受通配符，不根据产品名称或说明猜测兼容性。框架 API、Tower 和 SMTX 的独立条件保持；粗粒度的产品版本不能代替 CLI 对精确镜像构建与组件布局的安装检查。
 
 ## 发布流程
 

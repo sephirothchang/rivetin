@@ -81,6 +81,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
     return { ...plugin, frameworkEnabled: runtime.enabled, enabled: Boolean(plugin?.active), compatible: Boolean(plugin?.compatible) };
   };
   const ssh = createSshBroker(disk.root, { vault, run: sshRun, manualOnly: true,
+    inventory: actor => service.sshInventory(actor),
     serviceStatus: async () => {
       const runtime = await service.runtime(), plugins = await service.plugins();
       const channel = plugins.find(item => item.id === 'rivetin-ssh-channel');
@@ -282,7 +283,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
     },
     async initialize(actor, { upgradeFrom } = {}) {
       actorCheck(actor);
-      if (upgradeFrom !== undefined && (!['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1'].includes(upgradeFrom) || FRAMEWORK_VERSION !== '0.2.2')) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
+      if (upgradeFrom !== undefined && (!['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1', '0.2.2', '0.2.3'].includes(upgradeFrom) || FRAMEWORK_VERSION !== '0.2.4')) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
       return disk.locked(() => runtimeDisk.locked(async () => {
         await mkdir(path.dirname(frameworkFile), { recursive: true });
         const created = !(await exists(frameworkFile));
@@ -290,7 +291,7 @@ export function createService(directory, { towerSink, updateSource, builtinPacka
         if (created && upgradeFrom !== undefined) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
         if (!created) {
           const stored = await json(frameworkFile);
-          if (stored.apiVersion !== 1 || !['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1', FRAMEWORK_VERSION].includes(stored.version)) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
+          if (stored.apiVersion !== 1 || !['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1', '0.2.2', '0.2.3', FRAMEWORK_VERSION].includes(stored.version)) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');
           if (upgradeFrom !== undefined && !(await exists(disabledFile))) throw new Error('FRAMEWORK_DISABLE_BEFORE_UPGRADE');
           if (stored.version !== FRAMEWORK_VERSION) {
             if (upgradeFrom !== stored.version) throw new Error('FRAMEWORK_MIGRATION_REQUIRED');

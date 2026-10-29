@@ -76,8 +76,10 @@ test('framework UI follows host locale, separates plugin drafts, confirms lifecy
     await click('[data-pk-tab="logs"]'); assert.ok(document.querySelector('.c89-content').textContent.includes('No activity yet'));
     await click('.pk-about-tab'); assert.match(document.querySelector('.pk-about').textContent, /Facebook/); assert.match(document.querySelector('.pk-about').textContent, /MIT License/);
     const website = document.querySelector('.pk-about-links .pk-website-link');
-    assert.equal(website.textContent, 'Website'); assert.equal(website.href, 'https://rivetin.dev/');
+    assert.equal(website.textContent, 'Rivetin Website'); assert.equal(website.href, 'https://rivetin.dev/');
     assert.equal(website.target, '_blank'); assert.equal(website.rel, 'noopener noreferrer'); assert.equal(website.tabIndex, 0);
+    assert.equal(website.querySelector('.pk-website-heart').getAttribute('aria-hidden'), 'true');
+    assert.equal(document.querySelector('.pk-github-link').textContent, 'GitHub');
     const links = [...document.querySelectorAll('.pk-notice-link')]; assert.equal(links.length, notices.components.length);
     for (const [index, link] of links.entries()) {
       assert.equal(link.href, notices.components[index].projectUrl); assert.ok(link.href.startsWith('https://'));
@@ -116,7 +118,7 @@ test('navigation puts SSH first, preferences directly before about and locally b
     assert.equal(document.querySelector('.c89-nav button').dataset.pkTab, 'center');
     const logo = document.querySelector('#pk-title img'); assert.equal(decodeURIComponent(logo.src.split(',')[1]), RIVETIN_MARK_SVG);
     assert.equal(logo.alt, ''); assert.equal(logo.getAttribute('aria-hidden'), 'true'); assert.equal(logo.width, 32);
-    await act(async () => about.click()); assert.equal(document.querySelector('.pk-website-link').textContent, '官网');
+    await act(async () => about.click()); assert.equal(document.querySelector('.pk-website-link').textContent, 'Rivetin Website');
     assert.match(document.querySelector('.pk-notice-link').getAttribute('aria-label'), /源码仓库|官网/);
   } finally { await act(async () => ReactDOM.unmountComponentAtNode(root)); dom.window.close(); delete globalThis.window; delete globalThis.document; }
 });

@@ -12,14 +12,14 @@ const object = value => value !== null && typeof value === 'object' && !Array.is
 const exact = (value, fields) => object(value) && Object.keys(value).sort().join() === [...fields].sort().join();
 const error = code => Object.assign(new Error(code), { inspectionCode: code });
 const hash = value => createHash('sha256').update(value).digest('hex');
-const kinds = ['runtime', 'framework-compatibility', 'code-integrity', 'storage', 'audit', 'update-source', 'package-store', 'island-registration', 'gateway', 'api-runtime', 'api-plugins', 'api-config', 'api-components', 'api-support', 'api-ssh', 'api-smart', 'api-resources', 'api-market'];
+const kinds = ['runtime', 'framework-compatibility', 'code-integrity', 'storage', 'audit', 'update-source', 'package-store', 'island-registration', 'gateway', 'api-runtime', 'api-plugins', 'api-config', 'api-components', 'api-support', 'api-ssh', 'api-resources', 'api-market'];
 const labels = {
   runtime: ['框架运行时', 'Framework runtime'], 'framework-compatibility': ['框架兼容性', 'Framework compatibility'],
   'code-integrity': ['代码完整性', 'Code integrity'], storage: ['配置存储', 'Configuration storage'], audit: ['操作日志存储', 'Activity log storage'],
   'update-source': ['更新源', 'Update source'], 'package-store': ['插件包存储', 'Plugin package storage'], 'island-registration': ['Island 注册', 'Island registration'], gateway: ['部署网关', 'Deployment gateway'],
   'api-runtime': ['运行状态 API', 'Runtime API'], 'api-plugins': ['插件管理 API', 'Plugin management API'], 'api-config': ['配置 API', 'Configuration API'],
   'api-components': ['组件状态 API', 'Component status API'], 'api-support': ['支持包 API', 'Support bundle API'], 'api-ssh': ['SSH 通道 API', 'SSH channel API'],
-  'api-smart': ['SMART 数据 API', 'SMART data API'], 'api-resources': ['对象操作 API', 'Resource actions API'], 'api-market': ['插件市场 API', 'Plugin marketplace API'],
+  'api-resources': ['对象操作 API', 'Resource actions API'], 'api-market': ['插件市场 API', 'Plugin marketplace API'],
 };
 const compatibilityCodes = new Set(['TOWER_BUILD_UNKNOWN', 'FRAMEWORK_TOWER_INCOMPATIBLE', 'FRAMEWORK_VERSION_UNKNOWN', 'PLUGIN_COMPATIBILITY_UNDECLARED', 'PLUGIN_COMPATIBILITY_INVALID', 'PLUGIN_INCOMPATIBLE', 'SMTX_SNAPSHOT_UNAVAILABLE', 'SMTX_SNAPSHOT_INVALID', 'SMTX_SCOPE_UNTRUSTED', 'SMTX_SCOPE_INCOMPLETE', 'SMTX_SNAPSHOT_EXPIRED', 'SMTX_VERSION_UNKNOWN', 'SMTX_SCOPE_EMPTY', 'SMTX_INCOMPATIBLE', 'SMTX_AUTHORITY_REQUIRED', 'SMTX_INVENTORY_LIMIT', 'SMTX_INVENTORY_INVALID', 'SMTX_CLUSTER_UNAVAILABLE', 'SMTX_INVENTORY_UNAVAILABLE', 'SMTX_CHECK_TIMEOUT', 'SMTX_CHECK_CANCELLED']);
 
@@ -27,7 +27,7 @@ function declaration(value) {
   if (!object(value)) return null;
   const out = {};
   for (const key of ['schemaVersion', 'frameworkApi']) if (Number.isSafeInteger(value[key])) out[key] = value[key];
-  for (const key of ['frameworkVersion', 'frameworkMinVersion', 'frameworkMaxVersionExclusive']) if (versionToken(value[key])) out[key] = value[key];
+  for (const key of ['frameworkVersion', 'frameworkMinVersion']) if (versionToken(value[key])) out[key] = value[key];
   if (Array.isArray(value.towerBuilds) && value.towerBuilds.length <= 20 && value.towerBuilds.every(versionToken)) out.towerBuilds = [...value.towerBuilds];
   if (value.smtx === 'none') out.smtx = 'none';
   else if (object(value.smtx) && value.smtx.product === 'SMTX_OS' && value.smtx.scope === 'all-managed-product-clusters' && Array.isArray(value.smtx.builds) && value.smtx.builds.length <= 20 && value.smtx.builds.every(versionToken)) out.smtx = { product: 'SMTX_OS', scope: 'all-managed-product-clusters', builds: [...value.smtx.builds] };

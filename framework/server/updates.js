@@ -14,7 +14,7 @@ function metadata(value) {
   return { name: ['zh-CN', 'en-US'].map(locale => value.name[locale]), description: ['zh-CN', 'en-US'].map(locale => value.description[locale]), author: value.author,
     license: value.license, permissions: [...value.permissions].sort(), compatibility: { schemaVersion: compatibility.schemaVersion ?? 1, frameworkApi: compatibility.frameworkApi, tower: compatibility.tower,
       smtx: compatibility.smtx && compatibility.smtx !== 'none' ? { product: compatibility.smtx.product, scope: compatibility.smtx.scope, builds: [...compatibility.smtx.builds].sort() } : 'none',
-      towerBuilds: [...(compatibility.towerBuilds || [])].sort(), frameworkMinVersion: compatibility.frameworkMinVersion ?? null, frameworkMaxVersionExclusive: compatibility.frameworkMaxVersionExclusive ?? null } };
+      towerBuilds: [...(compatibility.towerBuilds || [])].sort(), frameworkMinVersion: compatibility.frameworkMinVersion ?? null } };
 }
 export function newer(candidate, current) {
   if (!versionPattern.test(candidate || '') || !versionPattern.test(current || '')) return false;

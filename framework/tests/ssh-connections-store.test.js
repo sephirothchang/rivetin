@@ -345,6 +345,21 @@ test('SSH authentication verification sends only the saved host ID and never cre
   assert.match(document.querySelector('.pk-ssh-verified').textContent, /Command permissions, device SMART support and disk health were not verified/);
 });
 
+test('legacy read-only connections allow only saved-pin authentication outside the disabled edit fieldset', async t => {
+  const f = await fixture(t); f.failures.migration = true; await f.store.load();
+  f.failures.preflight = body => ({ hostId: body.hostId, verified: true, checkedAt: new Date().toISOString() });
+  await mount(t, f, 'zh-CN', { preflightEnabled: true });
+  const section = document.querySelector('.pk-ssh-saved-verification');
+  assert.ok(section); assert.equal(section.closest('fieldset'), null);
+  assert.equal(document.querySelector('fieldset.pk-ssh-draft').disabled, true);
+  assert.equal([...section.querySelectorAll('button')].some(button => button.textContent === discoverText), false);
+  const verify = [...section.querySelectorAll('button')].find(button => button.textContent === verifyText);
+  assert.equal(verify.matches(':disabled'), false); await act(async () => verify.click());
+  assert.equal(f.calls.filter(call => call.route === '/ssh-channel/preflight').length, 1);
+  assert.equal(f.calls.filter(call => call.method === 'PUT').length, 0);
+  assert.equal(f.store.status().dirty, false);
+});
+
 test('SSH preflight never sends unsaved secrets and verification stays disabled for a dirty draft', async t => {
   const f = await fixture(t); f.failures.preflight = body => observed(body); replace(f.store, 'EXAMPLE_UNSAVED_PREFLIGHT_SECRET');
   await mount(t, f, 'zh-CN', { preflightEnabled: true }); assert.equal(preflightButton(verifyText).disabled, true);

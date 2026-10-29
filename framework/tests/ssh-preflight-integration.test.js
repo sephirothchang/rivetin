@@ -10,7 +10,7 @@ import { createApi } from '../server/http.js';
 import { bundle } from './helpers.js';
 
 const channel = 'rivetin-ssh-channel', route = '/ssh-channel/preflight';
-const actor = { id: 'example-admin', name: 'Example administrator', source: 'tower', admin: true, auth: { Authorization: 'Bearer EXAMPLE_SYNTHETIC_TOKEN' } };
+const actor = { id: 'example-admin', name: 'Example administrator', source: 'tower', admin: true, role: 'ROOT', auth: { Authorization: 'Bearer EXAMPLE_SYNTHETIC_TOKEN' } };
 const profile = () => ({ hostId: 'host-example', clusterId: 'cluster-example', address: '192.0.2.10', port: 22, username: 'saved-reader', password: 'EXAMPLE_SAVED_SECRET', hostKeySha256: 'a'.repeat(64), devices: [] });
 const discover = () => ({ action: 'discover', hostId: 'host-example', address: '192.0.2.10', port: 22 });
 const confirm = challenge => ({ ...discover(), action: 'confirm', challenge, acknowledged: true });
@@ -29,7 +29,7 @@ async function fixture(t) {
       if (endpoint === '/v2/api/get-hosts') return [{ id: 'host-example', name: 'Example host', cluster: { id: 'cluster-example' }, management_ip: state.address }];
       throw new Error('UNEXPECTED_TOWER_ENDPOINT');
     },
-    sshRun: async () => { throw new Error('EXECUTION_MUST_NOT_BE_USED'); },
+    sshRun: async input => { if (!state.allowIdentity) throw new Error('EXECUTION_MUST_NOT_BE_USED'); state.identityCalls = (state.identityCalls || 0) + 1; assert.equal(input.command, '/usr/bin/uname -srm'); return { exitCode: 0, stdout: 'Linux 6.1.0-example x86_64\n' }; },
     sshPreflightTransport: {
       discover: async args => { state.discoverCalls.push(args); return { algorithm: 'ssh-ed25519', sha256Hex: 'b'.repeat(64), fingerprint: 'SHA256:' + Buffer.from('b'.repeat(64), 'hex').toString('base64').replace(/=+$/, '') }; },
       verify: async args => {
@@ -107,6 +107,21 @@ test('saved effective credentials and saved pin alone reach auth-only verify; se
   const call = f.state.verifyCalls.at(-1); assert.equal(call.host.username, 'global-reader'); assert.equal(call.host.password, 'EXAMPLE_GLOBAL_SECRET'); assert.equal(call.host.hostKeySha256, 'a'.repeat(64)); assert.ok(call.timeoutMs <= 5000); assert.equal(Object.hasOwn(call, 'command'), false);
   const audit = await readFile(path.join(f.directory, 'audit.jsonl'), 'utf8');
   for (const secret of ['EXAMPLE_SAVED_SECRET', 'EXAMPLE_GLOBAL_SECRET', 'EXAMPLE_SYNTHETIC_TOKEN']) { assert.ok(!JSON.stringify(verified.body).includes(secret)); assert.ok(!audit.includes(secret)); }
+});
+
+test('typed identity HTTP uses the existing legacy connection without disk migration and rejects arbitrary commands', async t => {
+  const f = await fixture(t); await f.ready(); await f.service.saveConfig(channel, { enabled: true }, actor); f.state.allowIdentity = true;
+  const endpoint = '/ssh-channel/identity';
+  assert.equal((await f.request(endpoint, 'POST', { action: 'review', hostId: 'host-example' }, { Origin: 'https://untrusted.example.invalid' })).status, 403);
+  const review = await f.request(endpoint, 'POST', { action: 'review', hostId: 'host-example' }); assert.equal(review.status, 200);
+  const approval = await f.request(endpoint, 'POST', { action: 'approve', challenge: review.body.challenge, digest: review.body.digest, acknowledged: true }); assert.equal(approval.status, 200);
+  const request = { action: 'execute', hostId: 'host-example', digest: approval.body.digest, approvalId: approval.body.approvalId, requestId: randomUUID() };
+  assert.equal((await f.request(endpoint, 'POST', { ...request, command: 'id' })).status, 400);
+  const result = await f.request(endpoint, 'POST', request); assert.equal(result.status, 200); assert.equal(result.body.status, 'success');
+  assert.equal((await f.request(endpoint + '?requestId=' + request.requestId, 'GET')).body.status, 'success');
+  assert.equal((await f.request(endpoint, 'POST', request)).body.status, 'success'); assert.equal(f.state.identityCalls, 1);
+  assert.equal((await f.service.sshConnections(actor)).migration.persistedVersion, 1);
+  assert.doesNotMatch(JSON.stringify(result.body), /stdout|stderr|EXAMPLE_SAVED_SECRET/);
 });
 
 test('framework disable and channel configuration saves abort an active auth-only request', async t => {

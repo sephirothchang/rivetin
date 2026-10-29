@@ -114,7 +114,7 @@ class KubernetesFixture:
                 if stored['version'] != version:
                     if not (settings.parent / 'disabled.json').is_file():
                         raise RuntimeError('FRAMEWORK_DISABLE_BEFORE_UPGRADE')
-                    if args[-2:] != ('--upgrade-from', stored['version']) or (stored['version'], version) not in {('0.1.0', '0.1.1'), ('0.1.0', '0.1.2'), ('0.1.1', '0.1.2'), ('0.1.0', '0.1.3'), ('0.1.1', '0.1.3'), ('0.1.2', '0.1.3'), ('0.1.0', '0.1.4'), ('0.1.1', '0.1.4'), ('0.1.2', '0.1.4'), ('0.1.3', '0.1.4'), ('0.1.0', '0.1.5'), ('0.1.1', '0.1.5'), ('0.1.2', '0.1.5'), ('0.1.3', '0.1.5'), ('0.1.4', '0.1.5'), ('0.1.0', '0.2.0'), ('0.1.1', '0.2.0'), ('0.1.2', '0.2.0'), ('0.1.3', '0.2.0'), ('0.1.4', '0.2.0'), ('0.1.5', '0.2.0')} | {(source, '0.2.1') for source in ['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0']} | {(source, '0.2.2') for source in ['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1']}:
+                    if args[-2:] != ('--upgrade-from', stored['version']) or (stored['version'], version) not in {('0.1.0', '0.1.1'), ('0.1.0', '0.1.2'), ('0.1.1', '0.1.2'), ('0.1.0', '0.1.3'), ('0.1.1', '0.1.3'), ('0.1.2', '0.1.3'), ('0.1.0', '0.1.4'), ('0.1.1', '0.1.4'), ('0.1.2', '0.1.4'), ('0.1.3', '0.1.4'), ('0.1.0', '0.1.5'), ('0.1.1', '0.1.5'), ('0.1.2', '0.1.5'), ('0.1.3', '0.1.5'), ('0.1.4', '0.1.5'), ('0.1.0', '0.2.0'), ('0.1.1', '0.2.0'), ('0.1.2', '0.2.0'), ('0.1.3', '0.2.0'), ('0.1.4', '0.2.0'), ('0.1.5', '0.2.0')} | {(source, '0.2.1') for source in ['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0']} | {(source, '0.2.2') for source in ['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1']} | {(source, '0.2.3') for source in ['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1', '0.2.2']} | {(source, '0.2.4') for source in ['0.1.0', '0.1.1', '0.1.2', '0.1.3', '0.1.4', '0.1.5', '0.2.0', '0.2.1', '0.2.2', '0.2.3']}:
                         raise RuntimeError('FRAMEWORK_MIGRATION_REQUIRED')
                     stored['version'] = version
                     settings.write_text(json.dumps(stored))
@@ -361,7 +361,7 @@ class RemoteTests(unittest.TestCase):
             return self.kube(*args, **kw)
 
         target_version = json.loads((ROOT.parent / 'framework/package.json').read_text())['version']
-        self.assertEqual(target_version, '0.2.2')
+        self.assertEqual(target_version, '0.2.4')
         data = archive([('server/main.js', b'// NEXT'), ('package.json', json.dumps(dict(name='rivetin', version=target_version)).encode())])
         with patch.object(remote, 'kube', execute):
             with self.assertRaisesRegex(RuntimeError, 'EXAMPLE_POST_INIT_TRANSPORT_FAILURE'):
@@ -559,7 +559,9 @@ class RemoteTests(unittest.TestCase):
         expected.update((source, '0.2.0') for source in sources)
         expected.update((source, '0.2.1') for source in sources + ('0.2.0',))
         expected.update((source, '0.2.2') for source in sources + ('0.2.0', '0.2.1'))
-        self.assertEqual(remote.KNOWN_METADATA_VERSIONS, sources + ('0.2.0', '0.2.1', '0.2.2'))
+        expected.update((source, '0.2.3') for source in sources + ('0.2.0', '0.2.1', '0.2.2'))
+        expected.update((source, '0.2.4') for source in sources + ('0.2.0', '0.2.1', '0.2.2', '0.2.3'))
+        self.assertEqual(remote.KNOWN_METADATA_VERSIONS, sources + ('0.2.0', '0.2.1', '0.2.2', '0.2.3', '0.2.4'))
         self.assertEqual(remote.METADATA_UPGRADES, expected)
         self.assertNotIn(('0.2.0', '0.1.5'), remote.METADATA_UPGRADES)
         self.assertIn(('0.2.0', '0.2.1'), remote.METADATA_UPGRADES)

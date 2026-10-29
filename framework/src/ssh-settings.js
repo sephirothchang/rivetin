@@ -1,4 +1,5 @@
 import { createSshConnectionSettings } from './ssh-connection-settings.js';
+import { createSshIdentitySettings } from './ssh-identity.js';
 
 const supportedOperations = new Set(['host.identity', 'disk.smart.read']);
 const rejectedExamples = [
@@ -47,7 +48,7 @@ function executionText(run, locale) {
 }
 
 export function createSshSettings(React) {
-  const h = React.createElement, { useState, useEffect, useRef } = React, ConnectionSettings = createSshConnectionSettings(React);
+  const h = React.createElement, { useState, useEffect, useRef } = React, ConnectionSettings = createSshConnectionSettings(React), IdentitySettings = createSshIdentitySettings(React);
   return function SshSettings({ client, locale = 'zh-CN', onError, connectionStore, preflightEnabled = false }) {
     const en = locale === 'en-US', t = (zh, english) => en ? english : zh;
     const [state, setState] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false);
@@ -161,6 +162,7 @@ export function createSshSettings(React) {
       if (example && impact && typeof impact === 'object') examples.set(example, impact);
     }
     return h('div', { className: 'pk-ssh' }, h('style', null, CSS),
+      h(IdentitySettings, { client, hosts: state?.hosts || [], enabled: Boolean(state?.enabled && state?.transportReady), locale }),
       h('div', { className: 'pk-ssh-header' }, h('h3', null, t('SSH 通道', 'SSH channel')), h('button', { disabled: busy, onClick: refresh }, t('刷新', 'Refresh'))),
       error && !review && h('p', { className: 'pk-ssh-error', role: 'alert' }, t('操作未完成：', 'Operation incomplete: ') + error),
       !state ? h('p', null, busy ? t('正在加载…', 'Loading…') : t('无法读取 SSH 通道状态。', 'SSH channel state is unavailable.')) : h(React.Fragment, null,

@@ -136,7 +136,7 @@ export function createComponentsStatus(React, helpers = {}) {
     };
     const fields = value => {
       if (!value || typeof value !== 'object') return h('span', null, '—');
-      const allowed = ['towerBuilds', 'towerVersion', 'towerBuild', 'smtxVersion', 'smtxVersions', 'frameworkApi', 'frameworkVersion', 'frameworkMinVersion', 'frameworkMaxVersionExclusive'];
+      const allowed = ['towerBuilds', 'towerVersion', 'towerBuild', 'smtxVersion', 'smtxVersions', 'frameworkApi', 'frameworkVersion', 'frameworkMinVersion'];
       return h('dl', { className: 'rv-components-fields' }, ...allowed.filter(key => Object.hasOwn(value, key)).map(key => {
         const raw = value[key], values = Array.isArray(raw) ? raw.slice(0, 20) : [raw];
         return h(React.Fragment, { key }, h('dt', null, key), h('dd', null, values.map(item => typeof item === 'number' && Number.isSafeInteger(item) ? String(item) : text(item)).join(', ') || '—'));

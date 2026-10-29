@@ -131,6 +131,16 @@ test('reviewed build and permission ordering does not change metadata equivalenc
   assert.deepEqual(await publishedSource(bytes, row).download(id, '0.1.1'), bytes);
 });
 
+test('deprecated upper metadata has no download fingerprint meaning; minimum remains exact', async () => {
+  const bytes = bundle(id, '0.1.1', value => { value.manifest.compatibility.frameworkMinVersion = '0.2.4'; return value; });
+  const row = item(bytes); delete row.compatibility.frameworkMaxVersionExclusive;
+  assert.deepEqual(await publishedSource(bytes, row).download(id, '0.1.1'), bytes);
+  const changed = item(bytes); changed.compatibility.frameworkMaxVersionExclusive = '0.0.1';
+  assert.deepEqual(await publishedSource(bytes, changed).download(id, '0.1.1'), bytes);
+  changed.compatibility.frameworkMinVersion = '0.2.5';
+  await assert.rejects(publishedSource(bytes, changed).download(id, '0.1.1'), { message: 'UPDATE_METADATA_MISMATCH' });
+});
+
 test('catalog and package redirects cannot leave the exact official canonical path', async () => {
   const bytes = bundle(id, '0.1.1');
   for (const location of [

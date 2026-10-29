@@ -118,6 +118,7 @@ test('unknown plugin compatibility cannot claim active and SMTX observation cont
   const result = await f.inspect({ readPlugins: async () => [{ ...f.plugins[0], manifest: { ...f.plugins[0].manifest, compatibility: { frameworkApi: 1, frameworkMinVersion: '0.1.0', frameworkMaxVersionExclusive: '0.2.0', towerBuilds: ['4.9.0'] } }, compatibility: { compatible: false, status: 'unknown', reason: 'SMTX_SNAPSHOT_EXPIRED' } }], readCompatibility: async () => ({ ...compatible, observed: { ...compatible.observed, smtx: snapshot } }) });
   assert.equal(result.plugins[0].active, false); assert.equal(result.plugins[0].compatibility.status, 'unknown');
   assert.equal(result.plugins[0].compatibility.declared.frameworkMinVersion, '0.1.0');
+  assert.equal(Object.hasOwn(result.plugins[0].compatibility.declared, 'frameworkMaxVersionExclusive'), false);
   assert.deepEqual(result.framework.compatibility.observed.smtxVersions, ['6.3.0']);
   assert.equal(result.framework.compatibility.observed.clusterCount, 1); assert.equal(result.framework.compatibility.observed.smtxClusterCount, 1);
   assert.doesNotMatch(JSON.stringify(result), /EXAMPLE_PRIVATE_CLUSTER/);
@@ -139,7 +140,7 @@ test('timed out readers are unknown, late values do not overwrite results, and t
 });
 
 test('the overall five-second deadline bounds queued API probes and keeps completed independent checks', async t => {
-  const f = await fixture(t), apiRegistry = ['api-runtime', 'api-plugins', 'api-config', 'api-components', 'api-support', 'api-ssh', 'api-smart', 'api-resources', 'api-market'].map(id => ({ id, registered: true, probe: () => new Promise(() => {}) }));
+  const f = await fixture(t), apiRegistry = ['api-runtime', 'api-plugins', 'api-config', 'api-components', 'api-support', 'api-ssh', 'api-resources', 'api-market'].map(id => ({ id, registered: true, probe: () => new Promise(() => {}) }));
   const start = Date.now(), result = await f.inspect({ apiRegistry });
   assert.ok(Date.now() - start < 5500); assert.equal(component(result, 'code-integrity').status, 'ok'); assert.equal(component(result, 'gateway').status, 'unknown'); assert.equal(result.actions.support.available, false);
   assert.ok(result.components.some(row => row.code === 'READER_TIMEOUT' || row.code === 'INSPECTION_TIMEOUT'));

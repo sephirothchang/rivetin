@@ -172,3 +172,11 @@ The command accepts `upgrade`, `rollback` or `recover`. It requires the persiste
 Use `rollback` with the original upgrade operation ID only before any successful v2 connection edit. It checks the original key/backup digests, restores v1/legacy ciphertext bytes, retains the v2 archive and keeps approvals revoked. After edits, `SSH_CONNECTION_DOWNGRADE_UNREPRESENTABLE` refuses a conversion that could lose credentials or widen scopes. This format operation does not itself roll back framework code, Island or version metadata; those require the separate exact supported installer recovery record. Never restore a pre-migration whole-data archive over current SMART history or administrator settings.
 
 For a pending connection save, `recover` requires that save's operation ID. It reconciles ciphertext revision/request HMAC with the durable journal, without replaying PUT. Proven precommit failure is marked aborted with approval revoked; proven committed writes receive their receipt. Ambiguous or corrupt state remains blocked for controlled repair. Successful command output is not a reason to enable old approvals or schedules.
+
+### 0.2.3 元数据升级边界
+
+0.2.3 显式支持从已知 0.1.0 至 0.2.2 的版本元数据升级，仍要求先停用框架并准确指定来源。不会自动迁移 SSH v1/v2、修改凭据或重建插件配置；升级、恢复与用户当前插件开关按本次窗口保护。内置身份诊断新增的独立回执文件须纳入备份，回退代码时保留回执，不恢复旧授权或删除去重记录。0.2.3 的交叉构建、本机验证和真实部署是独立证据，源码版本更新本身不代表已部署。
+
+### 0.2.4 最低框架版本策略
+
+0.2.4 显式支持从已知 0.1.0 至 0.2.3 的版本元数据升级，停用、准确来源与备份／回退要求沿用；升级只修改框架版本元数据，不迁移凭据、连接、插件配置或身份诊断账本。框架兼容性判断取消最高版本门槛，最低版本、框架 API、Tower、可选 SMTX 条件和权限仍按原合同核验。现有固定插件包中的上限字段在新框架内无执行含义，原包字节不改。无该字段的新声明与目录需要最低 0.2.4 读取基线；不能据此声称旧框架能读取新目录。详细生产边界见[兼容性契约](../docs/rivetin-compatibility.md)。本版本的本地、部署、实机与发布状态分别记录。

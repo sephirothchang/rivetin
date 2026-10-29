@@ -45,7 +45,11 @@ export function createComponents({ service, dataDirectory, codeDirectory = path.
       { id: 'api-config', registered: true, probe: async () => (await readConfig()).version === 1 },
       { id: 'api-components', registered: true, probe: readGateway },
       { id: 'api-support', registered: true, probe: async () => createSupportBundle({ runtime: await readRuntime(), components: [], plugins: [], logs: [] }).bytes > 0 },
-      ...['api-ssh', 'api-smart', 'api-resources', 'api-market'].map(id => ({ id, registered: true })),
+      ...['api-ssh', 'api-resources'].map(id => ({ id, registered: true })),
+      { id: 'api-market', registered: true, probe: async ({ actor }) => {
+        const result = await service.marketplace(actor);
+        return result?.source?.reachable === true && Array.isArray(result.items) && result.items.length <= 500;
+      } },
     ],
   });
   function view(status) {

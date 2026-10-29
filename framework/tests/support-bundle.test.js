@@ -44,7 +44,7 @@ test('only explicit public state, version declarations, counters and configurati
   assert.equal(document.plugins.count, 1); assert.equal(document.plugins.installedCount, 1); assert.equal(document.plugins.activeCount, 0); assert.equal(document.plugins.compatibleCount, 0);
   assert.equal(plugin.id, 'rivetin-example'); assert.equal(plugin.packageSha256, packageId);
   assert.deepEqual(plugin.configuration, { revision: 3, schemaVersion: 1 });
-  assert.deepEqual(plugin.compatibility, { schemaVersion: 2, frameworkApi: 1, towerBuilds: ['4.9.0'], smtx: { product: 'SMTX_OS', scope: 'all-managed-product-clusters', builds: ['6.3.0'] }, frameworkMinVersion: '0.1.5', frameworkMaxVersionExclusive: '0.2.0' });
+  assert.deepEqual(plugin.compatibility, { schemaVersion: 2, frameworkApi: 1, towerBuilds: ['4.9.0'], smtx: { product: 'SMTX_OS', scope: 'all-managed-product-clusters', builds: ['6.3.0'] }, frameworkMinVersion: '0.1.5' });
   assert.equal(plugin.code, 'SMTX_INCOMPATIBLE');
   assert.deepEqual(document.components.items[0], { id: 'runtime', status: 'ok', code: null, dependsOn: ['storage'] });
   assert.equal(document.framework.compatibility.observed.clusterCount, 2);

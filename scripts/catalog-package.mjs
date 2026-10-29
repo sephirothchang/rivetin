@@ -32,6 +32,8 @@ function entry(value, schemaVersion = 3) {
       ...(schemaVersion === 4 ? { schemaVersion: 2 } : {}),
       frameworkApi: compatibility.frameworkApi, tower: compatibility.tower, ...(compatibility.towerBuilds === undefined ? {} : { towerBuilds: [...compatibility.towerBuilds] }),
       ...(compatibility.frameworkMinVersion === undefined ? {} : { frameworkMinVersion: compatibility.frameworkMinVersion }),
+      // Preserve immutable legacy metadata for older catalog readers. Current
+      // compatibility decisions and update fingerprints ignore this field.
       ...(compatibility.frameworkMaxVersionExclusive === undefined ? {} : { frameworkMaxVersionExclusive: compatibility.frameworkMaxVersionExclusive }),
       ...(schemaVersion === 4 && compatibility.smtx !== undefined ? { smtx: structuredClone(compatibility.smtx) } : {}),
     } };

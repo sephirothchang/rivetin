@@ -44,12 +44,12 @@ func mainFixtureDirectory(t *testing.T) string {
 func TestReleaseVersionAndLocalizedHelp(t *testing.T) {
 
 	var version bytes.Buffer
-	if err := run([]string{"version"}, &version); err != nil || version.String() != "rivetin 0.2.2\n" {
+	if err := run([]string{"version"}, &version); err != nil || version.String() != "rivetin 0.2.4\n" {
 		t.Fatal("release version mismatch", err, version.String())
 	}
 	for _, language := range []string{"zh-CN", "en-US"} {
 		var help bytes.Buffer
-		if err := run([]string{"--lang", language, "--help"}, &help); err != nil || !strings.Contains(help.String(), "0.2.2") {
+		if err := run([]string{"--lang", language, "--help"}, &help); err != nil || !strings.Contains(help.String(), "0.2.4") {
 			t.Fatal("localized help version mismatch", language, err)
 		}
 	}

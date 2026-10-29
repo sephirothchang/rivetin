@@ -136,7 +136,7 @@ function candidateFingerprint(value) {
 function createHostPreflight(React) {
   const h = React.createElement, { useState, useRef, useEffect } = React;
   const allowedErrors = new Set(['ADMIN_REQUIRED', 'ADMIN_OR_ORIGIN_REQUIRED', 'AUTHENTICATION_REQUIRED', 'SSH_CHANNEL_DISABLED', 'SSH_AUTHENTICATION_FAILED', 'SSH_HOST_KEY_MISMATCH', 'SSH_CONNECTION_FAILED', 'SSH_CONNECTION_CLOSED', 'SSH_KEY_UNAVAILABLE', 'SSH_UNAVAILABLE', 'SSH_ABORTED', 'SSH_TIMEOUT', 'SSH_HANDSHAKE_TIMEOUT', 'SSH_PREFLIGHT_DISABLED', 'SSH_PREFLIGHT_BUSY', 'SSH_PREFLIGHT_LIMIT', 'SSH_PREFLIGHT_TARGET_INVALID', 'SSH_PREFLIGHT_TARGET_REJECTED', 'SSH_PREFLIGHT_TARGET_MISMATCH', 'SSH_PREFLIGHT_TARGET_CHANGED', 'SSH_PREFLIGHT_CONFIRMATION_REQUIRED', 'SSH_PREFLIGHT_CHALLENGE_INVALID', 'SSH_PREFLIGHT_CHALLENGE_EXPIRED', 'SSH_PREFLIGHT_CHALLENGE_LIMIT', 'SSH_PREFLIGHT_CANCELLED', 'SSH_PREFLIGHT_TIMEOUT', 'SSH_PREFLIGHT_UNAVAILABLE', 'SSH_PREFLIGHT_STOPPED', 'SSH_PREFLIGHT_AUDIT_FAILED', 'SSH_PREFLIGHT_FORBIDDEN', 'SSH_PREFLIGHT_INVENTORY_FAILED', 'SSH_PREFLIGHT_HOST_UNAVAILABLE', 'SSH_PREFLIGHT_REQUEST_INVALID', 'SSH_PREFLIGHT_CONNECTION_UNAVAILABLE', 'SSH_PREFLIGHT_CONNECTION_CHANGED', 'SSH_PREFLIGHT_FAILED', 'SSH_PREFLIGHT_RESPONSE_INVALID', 'SSH_PREFLIGHT_CANDIDATE_EXPIRED']);
-  return function HostPreflight({ store, index, client, enabled = false, locale }) {
+  return function HostPreflight({ store, index, client, enabled = false, locale, verifyOnly = false }) {
     const en = locale === 'en-US', t = (zh, english) => en ? english : zh;
     const alive = useRef(false), active = useRef(null), enabledRef = useRef(enabled); enabledRef.current = enabled;
     const empty = context => ({ context, busy: false, candidate: null, acknowledged: false, confirmed: false, verified: null, error: '' });
@@ -165,6 +165,7 @@ function createHostPreflight(React) {
       return alive.current && enabledRef.current && active.current === job && !job.control.signal.aborted && hostPreflightContext(store, index) === job.context && !(job.action === 'verify' && store.status().dirty);
     }
     async function run(action) {
+        if (verifyOnly && action !== 'verify') return;
       if (!client || !enabled || !validTarget || current.busy || active.current || status.saving || status.loading || action === 'verify' && !canVerify) return;
       const candidate = current.candidate;
       if (action === 'confirm' && (!candidate || !current.acknowledged)) return;
@@ -204,7 +205,7 @@ function createHostPreflight(React) {
       !enabled && h('p', { className: 'pk-ssh-notice' }, t('请先启用框架与 SSH 通道插件，预验证不会绕过禁用开关。', 'Enable the framework and SSH channel plugin first. Preflight never bypasses disabled state.')),
       !validTarget && h('p', { className: 'pk-ssh-rule-note' }, t('先选择主机并填写管理地址和端口。', 'Select a host and enter its management address and port first.')),
       h('p', { className: 'pk-ssh-rule-note' }, t('本次目标：', 'Target: ') + `${target?.hostId || '—'} · ${target?.address || '—'}:${target?.port || '—'}`),
-      h('div', { className: 'pk-ssh-preflight-actions' }, h('button', { type: 'button', className: 'c89-text-button', disabled, onClick: () => run('discover') }, t('获取候选指纹（不认证）', 'Discover fingerprint (no authentication)')),
+      h('div', { className: 'pk-ssh-preflight-actions' }, !verifyOnly && h('button', { type: 'button', className: 'c89-text-button', disabled, onClick: () => run('discover') }, t('获取候选指纹（不认证）', 'Discover fingerprint (no authentication)')),
         h('button', { type: 'button', className: 'c89-text-button', disabled: disabled || !canVerify, onClick: () => run('verify') }, t('验证 SSH（不执行命令）', 'Verify SSH (no commands)'))),
       status.dirty && h('p', { className: 'pk-ssh-rule-note' }, t('SSH 验证仅针对已保存配置；请先保存连接草稿。', 'SSH verification uses saved settings only. Save the connection draft first.')),
       !status.dirty && !canVerify && h('p', { className: 'pk-ssh-rule-note' }, t('SSH 验证需要此主机已有已保存的指纹和有效凭据。', 'SSH verification requires this host to have a saved pin and a ready credential.')),
@@ -420,10 +421,12 @@ export function createSshConnectionSettings(React) {
                 h('div', { className: 'pk-ssh-pin' }, field(t('已独立核验的主机密钥 SHA-256（64 位十六进制）', 'Independently verified host key SHA-256 (64 hex characters)'), row.hostKeySha256, hostKeySha256 => patchTarget(index, { hostKeySha256 })))),
               h('p', { className: 'pk-ssh-rule-note' }, t('已保存的有效凭据来源：', 'Saved effective credential source: ') + sourceNames[previous?.effective.source || 'none'] + (previous && !previous.effective.ready ? t('（凭据未就绪）', ' (credential unready)') : '')),
               h('p', { className: 'pk-ssh-rule-note' }, row.connection ? t('此主机有专属例外。请在上方例外卡片修改；删除例外不会删除目标。', 'This host has an override. Edit it in the exception cards above; deleting the override preserves the target.') : t('此主机没有专属例外，将按集群例外或全局默认继承。', 'This host has no host override and inherits its cluster override or global default.')),
-              h(HostPreflight, { store, index, client, enabled: preflightEnabled, locale }),
+              !status.readOnly && h(HostPreflight, { store, index, client, enabled: preflightEnabled, locale }),
               previous?.policyState.disk !== 'ready' && previous && h('p', { className: 'pk-ssh-notice' }, t('原设备范围存在未解析或身份变化的项，请刷新清单并明确重选；旧历史仍保留。', 'Existing scope contains unresolved or changed identities. Refresh and explicitly reselect; old history is retained.')),
               h(HostDeviceScope, { store, index, client, capabilities, locale })));
         })),
+      status.readOnly && h('section', { className: 'pk-ssh-saved-verification' }, h('h4', null, t('验证已保存连接', 'Verify saved connections')),
+        ...saved.hosts.map((row, index) => h(HostPreflight, { key: row.hostId, store, index, client, enabled: preflightEnabled, locale, verifyOnly: true }))),
       bulkOpen && h(BulkHostPicker, { inventory, hosts: draft.hosts, locale, disabled: status.saving || status.readOnly || status.outcomeUnknown, onClose: () => setBulkOpen(false), onAdd: hosts => store.update({ hosts }) }));
   };
 }
